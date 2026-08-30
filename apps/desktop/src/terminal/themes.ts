@@ -10,11 +10,11 @@ const graphiteTheme: ITheme = {
 };
 
 const paperTheme: ITheme = {
-  background: "#fbfbfc", foreground: "#26272a", cursor: "#1769d2", cursorAccent: "#fbfbfc",
-  selectionBackground: "#1769d233", black: "#34363a", red: "#b83b42", green: "#287947",
-  yellow: "#8b6700", blue: "#1769d2", magenta: "#7949a3", cyan: "#13777a", white: "#e4e5e7",
-  brightBlack: "#75777c", brightRed: "#d44c53", brightGreen: "#319258", brightYellow: "#a47a00",
-  brightBlue: "#2d7fe8", brightMagenta: "#9363ba", brightCyan: "#168f93", brightWhite: "#ffffff",
+  background: "#f7f4ed", foreground: "#2d2926", cursor: "#c96442", cursorAccent: "#f7f4ed",
+  selectionBackground: "#c9644233", black: "#3a3531", red: "#b94a3d", green: "#4f7754",
+  yellow: "#936d2d", blue: "#4d6d80", magenta: "#805a75", cyan: "#427579", white: "#e8e1d6",
+  brightBlack: "#837a72", brightRed: "#d15f4b", brightGreen: "#668c68", brightYellow: "#aa813c",
+  brightBlue: "#64859a", brightMagenta: "#987087", brightCyan: "#5d8d8f", brightWhite: "#fffdf8",
 };
 
 export function resolveTerminalTheme(colorScheme: TerminalColorScheme, appearanceTheme: AppearanceTheme) {

@@ -24,7 +24,7 @@ const cursorStyles: Array<{ id: TerminalCursorStyle; label: string }> = [
 const colorSchemes: Array<{ id: TerminalColorScheme; name: string; description: string }> = [
   { id: "adaptive", name: "自动", description: "跟随应用外观" },
   { id: "graphite", name: "石墨", description: "深色外观 · 低眩光" },
-  { id: "paper", name: "纸张", description: "明亮外观 · 高对比" },
+  { id: "paper", name: "纸张", description: "暖色外观 · 柔和低眩光" },
 ];
 
 export function TerminalSettingsView({
