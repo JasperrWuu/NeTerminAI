@@ -6,6 +6,7 @@ import type {
   TelnetLoginMode,
   TelnetSessionFolder,
 } from "./types";
+import { FolderIcon } from "../workbench/icons";
 
 interface TelnetConnectionDialogProps {
   folders: TelnetSessionFolder[];
@@ -160,7 +161,7 @@ export function TelnetConnectionDialog({ folders, initialSession, onCancel, onSu
                   onClick={() => setFolderMenuOpen((open) => !open)}
                   type="button"
                 >
-                  <span className="folder-picker-icon">▱</span>
+                  <span className="folder-picker-icon"><FolderIcon /></span>
                   <span>{selectedFolderName}</span>
                   <i aria-hidden="true" />
                 </button>

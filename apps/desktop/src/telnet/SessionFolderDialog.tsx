@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TelnetSessionFolder } from "./types";
+import { FolderIcon } from "../workbench/icons";
 
 export function SessionFolderDialog({ folder, onCancel, onSave }: {
   folder?: TelnetSessionFolder;
@@ -26,7 +27,7 @@ export function SessionFolderDialog({ folder, onCancel, onSave }: {
         onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSave(name.trim()); }}
       >
         <header className="connection-dialog-header">
-          <div className="dialog-protocol-icon folder-dialog-icon">▱</div>
+          <div className="dialog-protocol-icon folder-dialog-icon"><FolderIcon /></div>
           <div><h2>{folder ? "重命名分区" : "新建会话分区"}</h2><p>像文件夹一样整理数量较多的连接会话。</p></div>
         </header>
         <div className="folder-dialog-body">

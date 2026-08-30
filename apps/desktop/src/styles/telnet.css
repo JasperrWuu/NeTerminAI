@@ -1,10 +1,14 @@
 .telnet-tab-icon,
 .telnet-profile-icon {
-  color: #72c6aa;
+  color: #4d9a84;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 8px;
   font-weight: 750;
   letter-spacing: -0.03em;
+}
+
+.telnet-profile-icon {
+  background: color-mix(in srgb, #4d9a84 14%, transparent);
 }
 
 .menu-section-label {
@@ -18,8 +22,8 @@
   border-top: 1px solid var(--border-subtle);
   display: flex;
   justify-content: space-between;
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
 }
 
 .connection-list {
@@ -35,14 +39,26 @@
   align-items: center;
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
   display: flex;
-  font-size: 16px;
-  height: 22px;
+  height: 26px;
   justify-content: center;
-  margin: -5px 1px -5px 0;
-  width: 22px;
+  margin: -6px 0;
+  position: relative;
+  width: 32px;
+}
+
+.group-add-button svg:first-child { height: 16px; width: 16px; }
+.group-add-button svg:last-child {
+  background: var(--bg-panel-solid);
+  border-radius: 50%;
+  bottom: 1px;
+  height: 10px;
+  position: absolute;
+  right: 1px;
+  stroke-width: 2.4;
+  width: 10px;
 }
 
 .group-add-button:hover,
@@ -52,7 +68,7 @@
 }
 
 .session-folder {
-  margin-bottom: 3px;
+  margin-bottom: 5px;
 }
 
 .session-folder-header {
@@ -70,11 +86,11 @@
   color: var(--text-secondary);
   display: grid;
   flex: 1;
-  gap: 5px;
-  grid-template-columns: 12px 16px minmax(0, 1fr) auto;
-  height: 30px;
+  gap: 7px;
+  grid-template-columns: 14px 19px minmax(0, 1fr) auto;
+  height: 34px;
   min-width: 0;
-  padding: 0 7px;
+  padding: 0 8px;
   text-align: left;
 }
 
@@ -85,32 +101,42 @@
 
 .folder-chevron {
   color: var(--text-tertiary);
-  display: inline-block;
-  font-size: 13px;
-  transform: rotate(0deg);
+  height: 14px;
+  transform: rotate(90deg);
   transition: transform var(--motion-fast) ease-out;
+  width: 14px;
 }
 
 .folder-chevron[data-collapsed="true"] {
-  transform: rotate(-90deg);
+  transform: rotate(0deg);
 }
 
 .folder-symbol {
   color: var(--accent-strong);
-  font-size: 14px;
+  height: 18px;
+  stroke-width: 1.7;
+  width: 18px;
 }
 
 .folder-name {
-  font-size: 11px;
-  font-weight: 580;
+  font-size: 12px;
+  font-weight: 620;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .folder-count {
+  align-items: center;
+  background: var(--bg-active);
+  border-radius: 9px;
   color: var(--text-tertiary);
+  display: flex;
   font-size: 9px;
+  height: 18px;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 5px;
 }
 
 .folder-actions {
@@ -134,22 +160,32 @@
   align-items: center;
   background: var(--bg-panel-solid);
   border: 0;
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--text-tertiary);
   display: flex;
-  font-size: 12px;
-  height: 22px;
+  height: 24px;
   justify-content: center;
-  width: 22px;
+  width: 24px;
 }
 
-.session-folder .saved-connection-row {
-  margin-left: 16px;
+.folder-actions button svg { height: 13px; width: 13px; }
+
+.session-folder-contents {
+  border-left: 1px solid var(--border-strong);
+  margin: 1px 0 6px 15px;
+  padding-left: 10px;
 }
 
 .ungrouped-folder .saved-connection-row,
 .session-folder.ungrouped-folder {
   margin-left: 0;
+}
+
+.empty-folder-hint {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  margin: 0;
+  padding: 7px 8px 8px;
 }
 
 .ungrouped-label {
@@ -164,9 +200,12 @@
   align-items: center;
   display: flex;
   position: relative;
+  width: 100%;
 }
 
 .saved-connection-main {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 42px;
   padding-right: 34px;
 }
 
@@ -178,8 +217,14 @@
 
 .saved-connection-main .connection-name small {
   color: var(--text-tertiary);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 450;
+}
+
+.session-mode {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  padding-right: 1px;
 }
 
 .saved-connection-remove {
@@ -189,7 +234,6 @@
   border-radius: 5px;
   color: var(--text-tertiary);
   display: flex;
-  font-size: 16px;
   height: 24px;
   justify-content: center;
   opacity: 0;
@@ -198,9 +242,16 @@
   width: 24px;
 }
 
+.saved-connection-remove svg { height: 13px; width: 13px; }
+
 .saved-connection-row:hover .saved-connection-remove,
 .saved-connection-remove:focus-visible {
   opacity: 1;
+}
+
+.saved-connection-row:hover .session-mode,
+.saved-connection-row:focus-within .session-mode {
+  opacity: 0;
 }
 
 .saved-connection-remove:hover {
@@ -215,10 +266,10 @@
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   display: flex;
-  gap: 8px;
-  height: 34px;
-  margin-top: 4px;
-  padding: 0 9px;
+  gap: 10px;
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 6px 8px;
   text-align: left;
   width: 100%;
 }
@@ -228,16 +279,33 @@
   color: var(--text-primary);
 }
 
-.new-connection-button span {
+.new-connection-icon {
+  align-items: center;
+  background: var(--accent-soft);
+  border-radius: 7px;
   color: var(--accent-strong);
-  font-size: 17px;
-  width: 26px;
+  display: flex;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
 }
+
+.new-connection-icon svg { height: 15px; width: 15px; }
+
+.new-connection-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.new-connection-copy strong { color: var(--text-primary); font-size: 12px; font-weight: 590; }
+.new-connection-copy small { color: var(--text-tertiary); font-size: 10px; }
 
 .connection-gesture-hint {
   color: var(--text-tertiary);
   font-size: 9px;
-  margin: 7px 9px 0 43px;
+  margin: 5px 8px 0 48px;
 }
 
 .dialog-scrim {
@@ -446,8 +514,10 @@
 
 .folder-picker-icon {
   color: var(--accent-strong);
-  font-size: 14px;
+  display: flex;
 }
+
+.folder-picker-icon svg { height: 15px; width: 15px; }
 
 .folder-picker-trigger i {
   border-left: 4px solid transparent;
@@ -575,8 +645,10 @@
 }
 
 .folder-dialog-icon {
-  font-size: 18px;
+  color: var(--accent-strong);
 }
+
+.folder-dialog-icon svg { height: 20px; width: 20px; }
 
 .folder-dialog-body {
   padding: 3px 24px 22px;

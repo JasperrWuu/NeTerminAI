@@ -8,6 +8,7 @@ function IconFrame({ children, ...props }: IconProps) {
       aria-hidden="true"
       fill="none"
       height="18"
+      stroke="currentColor"
       viewBox="0 0 24 24"
       width="18"
       {...props}
@@ -80,6 +81,47 @@ export function MoonIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
       <path d="M20 15.2A8 8 0 0 1 8.8 4a8 8 0 1 0 11.2 11.2Z" />
+    </IconFrame>
+  );
+}
+
+export function FolderIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4.2l1.7 2h8.6a1 1 0 0 1 1 1v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5v-10Z" />
+      <path d="M4 9h16" opacity=".55" />
+    </IconFrame>
+  );
+}
+
+export function ChevronIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="m9 7 5 5-5 5" />
+    </IconFrame>
+  );
+}
+
+export function PlusIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </IconFrame>
+  );
+}
+
+export function EditIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="m14.5 5.5 4 4M5 19l1-4 9-9a2.12 2.12 0 0 1 3 3l-9 9-4 1Z" />
+    </IconFrame>
+  );
+}
+
+export function CloseIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="m7 7 10 10M17 7 7 17" />
     </IconFrame>
   );
 }
