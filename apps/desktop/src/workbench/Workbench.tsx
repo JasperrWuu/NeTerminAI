@@ -188,7 +188,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
               aria-valuemin={220}
               aria-valuenow={Math.round(preferences.leftSidebarWidth)}
               className="resize-handle resize-handle-left"
-              onDoubleClick={() => preferences.setLeftSidebarWidth(268)}
+              onDoubleClick={() => preferences.setLeftSidebarWidth(260)}
               role="separator"
               tabIndex={0}
               {...leftResize}
@@ -264,7 +264,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
               aria-valuemin={280}
               aria-valuenow={Math.round(preferences.rightSidebarWidth)}
               className="resize-handle resize-handle-right"
-              onDoubleClick={() => preferences.setRightSidebarWidth(328)}
+              onDoubleClick={() => preferences.setRightSidebarWidth(320)}
               role="separator"
               tabIndex={0}
               {...rightResize}

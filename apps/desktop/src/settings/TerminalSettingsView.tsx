@@ -117,18 +117,20 @@ export function TerminalSettingsView({
                   );
                 })}
               </div>
+              <div className="terminal-preview" style={{ background: previewTheme.background, color: previewTheme.foreground }}>
+                <div className="preview-title">
+                  <span>实时预览</span>
+                  <span>{settings.colorScheme === "adaptive" ? "自动" : colorSchemes.find((scheme) => scheme.id === settings.colorScheme)?.name}</span>
+                </div>
+                <pre style={{ fontFamily: settings.fontFamily, fontSize: settings.fontSize, fontWeight: settings.fontWeight, lineHeight: settings.lineHeight }}>
+                  <span style={{ color: previewTheme.green }}>❯</span> ssh edge-node{`\n`}
+                  <span style={{ color: previewTheme.blue }}>info</span>  Connected to 10.0.0.8{`\n`}
+                  <span style={{ color: previewTheme.yellow }}>warn</span>  2 updates available{`\n`}
+                  <span style={{ color: previewTheme.red }}>error</span> retry required
+                </pre>
+              </div>
             </SettingsGroup>
           </div>
-
-          <aside className="terminal-preview" style={{ background: previewTheme.background, color: previewTheme.foreground }}>
-            <div className="preview-title">实时预览</div>
-            <pre style={{ fontFamily: settings.fontFamily, fontSize: settings.fontSize, fontWeight: settings.fontWeight, lineHeight: settings.lineHeight }}>
-              <span style={{ color: previewTheme.green }}>❯</span> ssh edge-node{`\n`}
-              <span style={{ color: previewTheme.blue }}>info</span>  Connected to 10.0.0.8{`\n`}
-              <span style={{ color: previewTheme.yellow }}>warn</span>  2 updates available{`\n`}
-              <span style={{ color: previewTheme.red }}>error</span> retry required
-            </pre>
-          </aside>
         </div>
       </div>
     </section>

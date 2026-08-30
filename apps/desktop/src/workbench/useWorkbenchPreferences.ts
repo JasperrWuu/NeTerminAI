@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import type { WorkbenchPreferences } from "./types";
 
-const STORAGE_KEY = "neterminai.workbench.preferences.v1";
+const STORAGE_KEY = "neterminai.workbench.preferences.v2";
 
 const defaultPreferences: WorkbenchPreferences = {
   leftSidebarOpen: true,
-  rightSidebarOpen: true,
-  leftSidebarWidth: 268,
-  rightSidebarWidth: 328,
+  rightSidebarOpen: false,
+  leftSidebarWidth: 260,
+  rightSidebarWidth: 320,
 };
 
 function readPreferences(): WorkbenchPreferences {

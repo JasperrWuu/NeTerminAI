@@ -29,10 +29,10 @@
 }
 
 :root[data-theme="light"] {
-  --bg-canvas: #f3efe7;
-  --bg-panel: rgba(243, 239, 231, 0.9);
-  --bg-panel-solid: #f3efe7;
-  --bg-elevated: rgba(255, 252, 245, 0.82);
+  --bg-canvas: #f7f4ed;
+  --bg-panel: rgba(237, 232, 223, 0.92);
+  --bg-panel-solid: #f0ebe3;
+  --bg-elevated: #fffdf8;
   --bg-hover: rgba(78, 63, 51, 0.055);
   --bg-active: rgba(78, 63, 51, 0.09);
   --border-subtle: rgba(78, 63, 51, 0.09);
@@ -328,7 +328,7 @@ button:focus-visible,
 
 .connection-item {
   align-items: center;
-  background: var(--bg-active);
+  background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
   display: grid;
@@ -342,6 +342,10 @@ button:focus-visible,
 
 .connection-item:hover {
   background: var(--bg-hover);
+}
+
+.connection-item:active {
+  background: var(--bg-active);
 }
 
 .connection-profile-icon {
@@ -419,6 +423,7 @@ button:focus-visible,
 
 .main-area {
   background: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
+  container-type: inline-size;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
