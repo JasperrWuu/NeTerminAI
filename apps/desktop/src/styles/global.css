@@ -9,6 +9,8 @@
   --radius-lg: 16px;
   --motion-fast: 120ms;
   --motion-standard: 220ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
   --bg-canvas: #111214;
   --bg-panel: rgba(26, 27, 30, 0.9);
@@ -230,6 +232,10 @@ button:focus-visible,
   color: var(--text-tertiary);
   height: 36px;
   position: relative;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-out);
   width: 36px;
 }
 
@@ -251,6 +257,28 @@ button:focus-visible,
   left: -7px;
   position: absolute;
   width: 2px;
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+
+.activity-panel-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+
+@starting-style {
+  .activity-panel-content {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
 }
 
 .sidebar {
@@ -337,6 +365,9 @@ button:focus-visible,
   height: 34px;
   padding: 0 9px;
   text-align: left;
+  transition:
+    background-color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-out);
   width: 100%;
 }
 
@@ -346,6 +377,7 @@ button:focus-visible,
 
 .connection-item:active {
   background: var(--bg-active);
+  transform: scale(0.985);
 }
 
 .connection-profile-icon {
@@ -432,40 +464,44 @@ button:focus-visible,
 }
 
 .tabbar {
-  align-items: stretch;
+  align-items: center;
   background: var(--bg-panel-solid);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
-  flex: 0 0 38px;
+  flex: 0 0 42px;
+  padding: 4px 6px;
 }
 
 .tab-list {
+  align-items: center;
   display: flex;
+  gap: 3px;
   min-width: 0;
   overflow: hidden;
 }
 
 .tab {
-  align-items: stretch;
+  align-items: center;
   background: transparent;
-  border-right: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
+  border-radius: 8px;
   display: flex;
+  height: 32px;
   min-width: 112px;
   position: relative;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
   width: 158px;
 }
 
 .tab[data-active="true"] {
-  background: var(--bg-canvas);
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--text-primary) 8%, transparent);
   color: var(--text-primary);
-}
-
-.tab[data-active="true"]::before {
-  background: var(--accent);
-  content: "";
-  height: 1px;
-  inset: 0 0 auto;
-  position: absolute;
 }
 
 .tab-select {
@@ -479,7 +515,12 @@ button:focus-visible,
   min-width: 0;
   padding: 0 4px 0 14px;
   text-align: left;
+  transition:
+    color 140ms ease,
+    transform var(--motion-fast) var(--ease-out);
 }
+
+.tab-select:active { transform: scale(0.985); }
 
 .tab[data-active="true"] .tab-select {
   color: var(--text-primary);
@@ -506,8 +547,12 @@ button:focus-visible,
   border-radius: 5px;
   font-size: 17px;
   height: 24px;
-  margin: 7px 6px 0 0;
+  margin: 0 4px 0 0;
   opacity: 0;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    opacity var(--motion-fast) ease;
   width: 24px;
 }
 
@@ -527,7 +572,7 @@ button:focus-visible,
 .new-tab-control {
   align-items: center;
   display: flex;
-  margin: 5px 0 5px 6px;
+  margin: 0 0 0 6px;
   position: relative;
 }
 
@@ -584,8 +629,14 @@ button:focus-visible,
   height: 34px;
   padding: 0 8px;
   text-align: left;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-out);
   width: 100%;
 }
+
+.terminal-profile-option:active { transform: scale(0.985); }
 
 .terminal-profile-option:hover {
   background: var(--bg-hover);
@@ -625,6 +676,28 @@ button:focus-visible,
   position: relative;
 }
 
+.workspace-view {
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition:
+    opacity 140ms var(--ease-out),
+    visibility 0s linear 140ms;
+  visibility: hidden;
+  z-index: 0;
+}
+
+.workspace-view[data-active="true"] {
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 140ms var(--ease-out),
+    visibility 0s linear 0s;
+  visibility: visible;
+  z-index: 1;
+}
+
 .terminal-pane {
   background: #0d0e10;
   flex: 1;
@@ -632,10 +705,6 @@ button:focus-visible,
   min-width: 0;
   overflow: hidden;
   position: relative;
-}
-
-.terminal-pane[hidden] {
-  display: none;
 }
 
 .empty-workspace {

@@ -235,9 +235,10 @@ export function TerminalPane(props: TerminalPaneProps) {
 
   return (
     <section
-      className="terminal-pane"
+      className="terminal-pane workspace-view"
       aria-label={isTelnet ? `Telnet ${remoteHost}` : "本地终端"}
-      hidden={!active}
+      aria-hidden={!active}
+      data-active={active}
     >
       <div className="terminal-container" onPointerDown={() => terminalRef.current?.focus()} ref={containerRef} />
       {status !== "ready" && (

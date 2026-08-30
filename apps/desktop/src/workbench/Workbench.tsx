@@ -164,22 +164,24 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           <>
             <aside className="sidebar sidebar-left">
               <PanelHeader title={activePanel.title} />
-              {activity === "connections" ? (
-                <ConnectionsSidebar
-                  folders={telnetSessions.folders}
-                  sessions={telnetSessions.sessions}
-                  onConnect={workspaceTabs.openTelnet}
-                  onCreateFolder={() => setFolderDialog({ open: true })}
-                  onCreateLocal={workspaceTabs.createTerminal}
-                  onCreateTelnet={() => setTelnetDialog({ open: true })}
-                  onEdit={(session) => setTelnetDialog({ open: true, session })}
-                  onRemoveFolder={telnetSessions.removeFolder}
-                  onRemoveSession={telnetSessions.removeSession}
-                  onRenameFolder={(folder) => setFolderDialog({ open: true, folder })}
-                />
-              ) : (
-                <EmptyPanel description={activePanel.description} />
-              )}
+              <div className="activity-panel-content" key={activity}>
+                {activity === "connections" ? (
+                  <ConnectionsSidebar
+                    folders={telnetSessions.folders}
+                    sessions={telnetSessions.sessions}
+                    onConnect={workspaceTabs.openTelnet}
+                    onCreateFolder={() => setFolderDialog({ open: true })}
+                    onCreateLocal={workspaceTabs.createTerminal}
+                    onCreateTelnet={() => setTelnetDialog({ open: true })}
+                    onEdit={(session) => setTelnetDialog({ open: true, session })}
+                    onRemoveFolder={telnetSessions.removeFolder}
+                    onRemoveSession={telnetSessions.removeSession}
+                    onRenameFolder={(folder) => setFolderDialog({ open: true, folder })}
+                  />
+                ) : (
+                  <EmptyPanel description={activePanel.description} />
+                )}
+              </div>
             </aside>
             <div
               aria-label="调整左侧栏宽度"

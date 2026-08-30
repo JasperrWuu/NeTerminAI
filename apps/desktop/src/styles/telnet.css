@@ -271,8 +271,13 @@
   margin-top: 8px;
   padding: 6px 8px;
   text-align: left;
+  transition:
+    background-color var(--motion-fast) ease,
+    transform var(--motion-fast) var(--ease-out);
   width: 100%;
 }
+
+.new-connection-button:active { transform: scale(0.985); }
 
 .new-connection-button:hover {
   background: var(--bg-hover);

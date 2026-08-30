@@ -24,6 +24,8 @@ pub enum TerminalProfile {
     PowerShell,
     #[serde(rename = "commandPrompt")]
     CommandPrompt,
+    #[serde(rename = "gitBash")]
+    GitBash,
 }
 
 struct TerminalSession {
@@ -70,7 +72,7 @@ impl TerminalManager {
         let child = pair
             .slave
             .spawn_command(command)
-            .map_err(|error| format!("无法启动 PowerShell：{error}"))?;
+            .map_err(|error| format!("无法启动本地终端：{error}"))?;
 
         drop(pair.slave);
 
@@ -195,7 +197,31 @@ fn shell_command(profile: TerminalProfile) -> CommandBuilder {
             command
         }
         TerminalProfile::CommandPrompt => CommandBuilder::new("cmd.exe"),
+        TerminalProfile::GitBash => {
+            let mut command = CommandBuilder::new(git_bash_executable());
+            command.arg("--login");
+            command.arg("-i");
+            command
+        }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn git_bash_executable() -> std::path::PathBuf {
+    let candidates = [
+        std::env::var_os("ProgramFiles")
+            .map(|root| std::path::PathBuf::from(root).join("Git/bin/bash.exe")),
+        std::env::var_os("ProgramFiles(x86)")
+            .map(|root| std::path::PathBuf::from(root).join("Git/bin/bash.exe")),
+        std::env::var_os("LOCALAPPDATA")
+            .map(|root| std::path::PathBuf::from(root).join("Programs/Git/bin/bash.exe")),
+    ];
+
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| std::path::PathBuf::from("bash.exe"))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -212,8 +238,12 @@ mod tests {
     fn local_profiles_map_to_distinct_shells() {
         let powershell = shell_command(TerminalProfile::PowerShell);
         let command_prompt = shell_command(TerminalProfile::CommandPrompt);
+        let git_bash = shell_command(TerminalProfile::GitBash);
 
         assert_eq!(powershell.get_argv()[0].to_string_lossy(), "powershell.exe");
         assert_eq!(command_prompt.get_argv()[0].to_string_lossy(), "cmd.exe");
+        assert!(git_bash.get_argv()[0].to_string_lossy().ends_with("bash.exe"));
+        assert_eq!(git_bash.get_argv()[1].to_string_lossy(), "--login");
+        assert_eq!(git_bash.get_argv()[2].to_string_lossy(), "-i");
     }
 }

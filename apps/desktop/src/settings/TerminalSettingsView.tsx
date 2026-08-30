@@ -5,6 +5,7 @@ import type {
   TerminalFontWeight,
   TerminalSettings,
 } from "./types";
+import type { CSSProperties } from "react";
 import { resolveTerminalTheme } from "../terminal/themes";
 
 interface TerminalSettingsViewProps {
@@ -37,7 +38,7 @@ export function TerminalSettingsView({
   const previewTheme = resolveTerminalTheme(settings.colorScheme, appearanceTheme);
 
   return (
-    <section className="settings-view" hidden={!active} aria-label="终端设置">
+    <section className="settings-view workspace-view" aria-hidden={!active} data-active={active} aria-label="终端设置">
       <div className="settings-scroll-area">
         <header className="settings-heading">
           <div>
@@ -69,35 +70,33 @@ export function TerminalSettingsView({
                   onChange={(event) => onChange({ lineHeight: Number(event.target.value) })} />
               </SettingRow>
               <SettingRow label="字重">
-                <div className="segmented-control">
-                  {([[400, "常规"], [500, "中等"], [600, "半粗"]] as const).map(([weight, label]) => (
-                    <button data-active={settings.fontWeight === weight} key={weight}
-                      onClick={() => onChange({ fontWeight: weight as TerminalFontWeight })} type="button">{label}</button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  items={([{ value: 400, label: "常规" }, { value: 500, label: "中等" }, { value: 600, label: "半粗" }] as const)}
+                  onChange={(fontWeight) => onChange({ fontWeight: fontWeight as TerminalFontWeight })}
+                  value={settings.fontWeight}
+                />
               </SettingRow>
             </SettingsGroup>
 
             <SettingsGroup title="光标与缓冲">
               <SettingRow label="光标形状">
-                <div className="segmented-control">
-                  {cursorStyles.map((cursor) => (
-                    <button data-active={settings.cursorStyle === cursor.id} key={cursor.id}
-                      onClick={() => onChange({ cursorStyle: cursor.id })} type="button">{cursor.label}</button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  items={cursorStyles.map((cursor) => ({ value: cursor.id, label: cursor.label }))}
+                  onChange={(cursorStyle) => onChange({ cursorStyle })}
+                  value={settings.cursorStyle}
+                />
               </SettingRow>
               <SettingRow label="光标闪烁" description="帮助快速定位当前输入位置。">
                 <button className="switch" aria-label="光标闪烁" aria-checked={settings.cursorBlink} data-active={settings.cursorBlink}
                   onClick={() => onChange({ cursorBlink: !settings.cursorBlink })} role="switch" type="button"><span /></button>
               </SettingRow>
               <SettingRow label="滚动缓冲" description="每个标签保留的最大历史行数。">
-                <div className="segmented-control compact-segmented-control">
-                  {([1_000, 5_000, 10_000, 50_000] as const).map((scrollback) => (
-                    <button data-active={settings.scrollback === scrollback} key={scrollback}
-                      onClick={() => onChange({ scrollback })} type="button">{scrollback / 1_000}k</button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  compact
+                  items={([1_000, 5_000, 10_000, 50_000] as const).map((scrollback) => ({ value: scrollback, label: `${scrollback / 1_000}k` }))}
+                  onChange={(scrollback) => onChange({ scrollback })}
+                  value={settings.scrollback}
+                />
               </SettingRow>
             </SettingsGroup>
 
@@ -143,4 +142,38 @@ function SettingsGroup({ children, title }: { children: React.ReactNode; title: 
 
 function SettingRow({ children, description, label }: { children: React.ReactNode; description?: string; label: string }) {
   return <div className="setting-row"><span><strong>{label}</strong>{description && <small>{description}</small>}</span><div className="setting-control">{children}</div></div>;
+}
+
+function SegmentedControl<T extends string | number>({
+  compact = false,
+  items,
+  onChange,
+  value,
+}: {
+  compact?: boolean;
+  items: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+  value: T;
+}) {
+  const activeIndex = Math.max(0, items.findIndex((item) => item.value === value));
+  const style = {
+    "--segment-count": items.length,
+    "--segment-index": activeIndex,
+  } as CSSProperties;
+
+  return (
+    <div className={`segmented-control${compact ? " compact-segmented-control" : ""}`} style={style}>
+      <span aria-hidden="true" className="segmented-control-indicator" />
+      {items.map((item) => (
+        <button
+          data-active={item.value === value}
+          key={item.value}
+          onClick={() => onChange(item.value)}
+          type="button"
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
 }
