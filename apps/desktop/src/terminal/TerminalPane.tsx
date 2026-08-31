@@ -124,6 +124,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     let resizeFrame: number | undefined;
     let pendingOutput: Uint8Array[] = [];
     let pendingOutputLength = 0;
+    let writeQueue = Promise.resolve();
     const enqueueOutput = (data: Uint8Array) => {
       pendingOutput.push(data);
       pendingOutputLength += data.length;
@@ -155,10 +156,18 @@ export function TerminalPane(props: TerminalPaneProps) {
     resizeObserver.observe(container);
     const inputSubscription = terminal.onData((data) => {
       if (!sessionReadyRef.current) return;
-      void invoke(`write_${commandPrefix}`, { sessionId, data }).catch((error) => {
-        setStatus("error");
-        setErrorMessage(String(error));
-      });
+      writeQueue = writeQueue
+        .then(async () => {
+          if (!disposed && sessionReadyRef.current) {
+            await invoke(`write_${commandPrefix}`, { sessionId, data });
+          }
+        })
+        .catch((error) => {
+          if (!disposed) {
+            setStatus("error");
+            setErrorMessage(String(error));
+          }
+        });
     });
 
     const start = async () => {

@@ -1,5 +1,6 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
+use super::run_blocking;
 use crate::telnet::TelnetManager;
 
 #[tauri::command]
@@ -16,7 +17,7 @@ pub async fn create_telnet(
 ) -> Result<(), String> {
     let cancellation = app.state::<TelnetManager>().begin(&session_id)?;
     let state_app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    run_blocking("Telnet 连接", move || {
         state_app.state::<TelnetManager>().create(
             app,
             session_id,
@@ -30,29 +31,35 @@ pub async fn create_telnet(
         )
     })
     .await
-    .map_err(|error| format!("Telnet 连接任务异常结束：{error}"))?
 }
 
 #[tauri::command]
-pub fn write_telnet(
-    manager: State<'_, TelnetManager>,
-    session_id: String,
-    data: String,
-) -> Result<(), String> {
-    manager.write(&session_id, data.as_bytes())
+pub async fn write_telnet(app: AppHandle, session_id: String, data: String) -> Result<(), String> {
+    run_blocking("Telnet 输入", move || {
+        app.state::<TelnetManager>()
+            .write(&session_id, data.as_bytes())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn resize_telnet(
-    manager: State<'_, TelnetManager>,
+pub async fn resize_telnet(
+    app: AppHandle,
     session_id: String,
     columns: u16,
     rows: u16,
 ) -> Result<(), String> {
-    manager.resize(&session_id, columns, rows)
+    run_blocking("Telnet 尺寸调整", move || {
+        app.state::<TelnetManager>()
+            .resize(&session_id, columns, rows)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn close_telnet(manager: State<'_, TelnetManager>, session_id: String) -> Result<(), String> {
-    manager.close(&session_id)
+pub async fn close_telnet(app: AppHandle, session_id: String) -> Result<(), String> {
+    run_blocking("Telnet 关闭", move || {
+        app.state::<TelnetManager>().close(&session_id)
+    })
+    .await
 }

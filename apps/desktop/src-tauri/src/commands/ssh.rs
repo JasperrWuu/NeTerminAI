@@ -1,12 +1,12 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager};
 
+use super::run_blocking;
 use crate::terminal::TerminalManager;
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn create_ssh(
+pub async fn create_ssh(
     app: AppHandle,
-    manager: State<'_, TerminalManager>,
     session_id: String,
     host: String,
     port: u16,
@@ -15,38 +15,49 @@ pub fn create_ssh(
     columns: u16,
     rows: u16,
 ) -> Result<(), String> {
-    manager.create_ssh(
-        app,
-        session_id,
-        host,
-        port,
-        username,
-        identity_file,
-        columns,
-        rows,
-    )
+    let state_app = app.clone();
+    run_blocking("SSH 启动", move || {
+        state_app.state::<TerminalManager>().create_ssh(
+            app,
+            session_id,
+            host,
+            port,
+            username,
+            identity_file,
+            columns,
+            rows,
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn write_ssh(
-    manager: State<'_, TerminalManager>,
-    session_id: String,
-    data: String,
-) -> Result<(), String> {
-    manager.write(&session_id, data.as_bytes())
+pub async fn write_ssh(app: AppHandle, session_id: String, data: String) -> Result<(), String> {
+    run_blocking("SSH 输入", move || {
+        app.state::<TerminalManager>()
+            .write(&session_id, data.as_bytes())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn resize_ssh(
-    manager: State<'_, TerminalManager>,
+pub async fn resize_ssh(
+    app: AppHandle,
     session_id: String,
     columns: u16,
     rows: u16,
 ) -> Result<(), String> {
-    manager.resize(&session_id, columns, rows)
+    run_blocking("SSH 尺寸调整", move || {
+        app.state::<TerminalManager>()
+            .resize(&session_id, columns, rows)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn close_ssh(manager: State<'_, TerminalManager>, session_id: String) -> Result<(), String> {
-    manager.close(&session_id)
+pub async fn close_ssh(app: AppHandle, session_id: String) -> Result<(), String> {
+    run_blocking("SSH 关闭", move || {
+        app.state::<TerminalManager>().close(&session_id)
+    })
+    .await
 }

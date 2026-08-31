@@ -1,5 +1,6 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
+use super::run_blocking;
 use crate::serial::{SerialFlowControl, SerialManager, SerialParity};
 
 #[tauri::command]
@@ -16,7 +17,7 @@ pub async fn create_serial(
 ) -> Result<(), String> {
     let cancellation = app.state::<SerialManager>().begin(&session_id)?;
     let state_app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    run_blocking("串口连接", move || {
         state_app.state::<SerialManager>().create(
             app,
             session_id,
@@ -30,24 +31,26 @@ pub async fn create_serial(
         )
     })
     .await
-    .map_err(|error| format!("串口连接任务异常结束：{error}"))?
 }
 
 #[tauri::command]
-pub fn write_serial(
-    manager: State<'_, SerialManager>,
-    session_id: String,
-    data: String,
-) -> Result<(), String> {
-    manager.write(&session_id, data.as_bytes())
+pub async fn write_serial(app: AppHandle, session_id: String, data: String) -> Result<(), String> {
+    run_blocking("串口输入", move || {
+        app.state::<SerialManager>()
+            .write(&session_id, data.as_bytes())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn close_serial(manager: State<'_, SerialManager>, session_id: String) -> Result<(), String> {
-    manager.close(&session_id)
+pub async fn close_serial(app: AppHandle, session_id: String) -> Result<(), String> {
+    run_blocking("串口关闭", move || {
+        app.state::<SerialManager>().close(&session_id)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn list_serial_ports() -> Result<Vec<String>, String> {
-    crate::serial::available_ports()
+pub async fn list_serial_ports() -> Result<Vec<String>, String> {
+    run_blocking("串口检测", crate::serial::available_ports).await
 }

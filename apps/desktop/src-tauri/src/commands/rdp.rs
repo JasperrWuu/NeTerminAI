@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use std::{fs, path::PathBuf, process::Command, thread};
 
+use super::run_blocking;
+
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RdpDisplayMode {
@@ -10,7 +12,28 @@ pub enum RdpDisplayMode {
 }
 
 #[tauri::command]
-pub fn open_rdp(
+pub async fn open_rdp(
+    session_id: String,
+    host: String,
+    port: u16,
+    username: String,
+    display_mode: RdpDisplayMode,
+    admin_session: bool,
+) -> Result<(), String> {
+    run_blocking("RDP 启动", move || {
+        open_rdp_blocking(
+            session_id,
+            host,
+            port,
+            username,
+            display_mode,
+            admin_session,
+        )
+    })
+    .await
+}
+
+fn open_rdp_blocking(
     session_id: String,
     host: String,
     port: u16,
