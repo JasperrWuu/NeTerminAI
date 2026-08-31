@@ -1,4 +1,5 @@
 mod commands;
+mod rdp;
 mod serial;
 mod telnet;
 mod terminal;
@@ -9,6 +10,7 @@ pub fn run() {
         .manage(terminal::TerminalManager::default())
         .manage(telnet::TelnetManager::default())
         .manage(serial::SerialManager::default())
+        .manage(rdp::RdpManager::default())
         .invoke_handler(tauri::generate_handler![
             commands::terminal::create_terminal,
             commands::terminal::write_terminal,
@@ -26,7 +28,9 @@ pub fn run() {
             commands::ssh::write_ssh,
             commands::ssh::resize_ssh,
             commands::ssh::close_ssh,
-            commands::rdp::open_rdp,
+            commands::rdp::create_rdp,
+            commands::rdp::resize_rdp,
+            commands::rdp::close_rdp,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run NeTerminAI");

@@ -38,5 +38,24 @@ export interface RdpTab extends WorkspaceTabBase {
   connection: RdpConnection;
 }
 
-// SSH, RDP and tools can extend this union without changing the tab shell.
 export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SshTab | RdpTab | SettingsTab;
+
+export type WorkspaceSplitDirection = "row" | "column";
+export type WorkspaceDropZone = "center" | "left" | "right" | "top" | "bottom";
+
+export interface WorkspacePaneNode {
+  type: "pane";
+  id: string;
+  tabIds: string[];
+  activeTabId: string | null;
+}
+
+export interface WorkspaceSplitNode {
+  type: "split";
+  id: string;
+  direction: WorkspaceSplitDirection;
+  first: WorkspaceLayoutNode;
+  second: WorkspaceLayoutNode;
+}
+
+export type WorkspaceLayoutNode = WorkspacePaneNode | WorkspaceSplitNode;

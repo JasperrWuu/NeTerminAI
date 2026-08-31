@@ -21,7 +21,7 @@ xterm.js → Tauri command → TerminalManager → portable-pty → PowerShell
 PowerShell → PTY reader thread → Tauri event → xterm.js
 ```
 
-PTY 输出以 Base64 编码的原始字节块传输，避免在 Rust 层提前破坏跨数据块的 UTF-8 字符。xterm.js 负责最终的终端字符解析和绘制。
+PTY 输出以 Base64 编码的原始字节块传输。界面层使用流式 UTF-8 解码器保留跨数据块字符边界，在可选的文字着色规则处理后交给 xterm.js 完成终端字符解析和绘制。
 
 ## Telnet 链路
 
@@ -31,11 +31,13 @@ TelnetManager 将连接建立、读取、顺序写入和关闭分离。协议状
 
 ## 工作区标签
 
-顶层标签使用通用 `WorkspaceTab` 联合类型，而不是绑定到 PowerShell 或字符终端。当前已有本地终端、Telnet 与设置视图；后续 SSH、Serial、RDP 与工具视图都可以加入新的标签类型，而无需改写标签外壳。
+标签资源使用通用 `WorkspaceTab` 联合类型，不绑定到 PowerShell 或字符终端。工作区布局是由 `pane` 和 `split` 组成的递归树：叶子分区维护自己的标签顺序和活动标签，分支节点只描述左右或上下等分。拖动标签时先从来源叶子分离，再移动到目标叶子或把目标叶子替换为新的分支，因此任意分区都能继续嵌套拆分。
+
+本地终端、Telnet、串口、SSH、RDP 与设置视图共用这一布局模型。协议生命周期仍然互相独立，分屏只改变视图归属，不重建正在运行的会话。
 
 ## 设置与布局
 
-- `ApplicationSettings` 保存主题、终端字体、光标、缓冲和 ANSI 配色。这些是用户设置，未来可导入、导出或同步。
+- `ApplicationSettings` 保存主题、终端字体、光标、缓冲、ANSI 配色和文字着色规则。这些是用户设置，未来可导入、导出或同步。
 - `WorkbenchPreferences` 保存侧栏开关和宽度。这些是当前设备、当前窗口的布局偏好。
 - 终端外观变更直接更新 xterm.js 渲染选项，不销毁或重建底层 PTY 会话。
 

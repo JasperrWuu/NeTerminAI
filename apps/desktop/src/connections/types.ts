@@ -34,14 +34,11 @@ export interface SshConnection {
   identityFile: string;
 }
 
-export type RdpDisplayMode = "windowed" | "fullscreen" | "multimon";
-
 export interface RdpConnection {
   name: string;
   host: string;
   port: number;
   username: string;
-  displayMode: RdpDisplayMode;
   adminSession: boolean;
 }
 
@@ -100,6 +97,5 @@ export const emptyRdpConnection: RdpConnection = {
   host: "",
   port: 3389,
   username: "",
-  displayMode: "windowed",
   adminSession: false,
 };

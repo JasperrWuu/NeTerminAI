@@ -6,6 +6,8 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { LocalTerminalProfileId } from "./profiles";
+import { resolveTerminalClipboardAction } from "./clipboard";
+import { applyTerminalHighlights, compileTerminalHighlightRules } from "./highlighting";
 import { resolveTerminalTheme } from "./themes";
 import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 
@@ -46,6 +48,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   const sessionReadyRef = useRef(false);
   const ptySessionIdRef = useRef<string | null>(null);
   const activeRef = useRef(active);
+  const highlightRulesRef = useRef(compileTerminalHighlightRules(settings.highlightRules));
   const [status, setStatus] = useState<"starting" | "ready" | "closed" | "error">("starting");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -56,6 +59,10 @@ export function TerminalPane(props: TerminalPaneProps) {
       terminalRef.current.options.theme = resolveTerminalTheme(settings.colorScheme, theme);
     }
   }, [settings.colorScheme, theme]);
+
+  useEffect(() => {
+    highlightRulesRef.current = compileTerminalHighlightRules(settings.highlightRules);
+  }, [settings.highlightRules]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -124,6 +131,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     let resizeFrame: number | undefined;
     let pendingOutput: Uint8Array[] = [];
     let pendingOutputLength = 0;
+    const outputDecoder = new TextDecoder();
     let writeQueue = Promise.resolve();
     const enqueueOutput = (data: Uint8Array) => {
       pendingOutput.push(data);
@@ -139,7 +147,10 @@ export function TerminalPane(props: TerminalPaneProps) {
         }
         pendingOutput = [];
         pendingOutputLength = 0;
-        if (!disposed) terminal.write(combined);
+        if (!disposed) {
+          const text = outputDecoder.decode(combined, { stream: true });
+          terminal.write(applyTerminalHighlights(text, highlightRulesRef.current));
+        }
       });
     };
     const resize = () => {
@@ -154,7 +165,7 @@ export function TerminalPane(props: TerminalPaneProps) {
       if (resizeFrame === undefined) resizeFrame = requestAnimationFrame(resize);
     });
     resizeObserver.observe(container);
-    const inputSubscription = terminal.onData((data) => {
+    const writeInput = (data: string) => {
       if (!sessionReadyRef.current) return;
       writeQueue = writeQueue
         .then(async () => {
@@ -168,6 +179,31 @@ export function TerminalPane(props: TerminalPaneProps) {
             setErrorMessage(String(error));
           }
         });
+    };
+    const inputSubscription = terminal.onData(writeInput);
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") return true;
+      const action = resolveTerminalClipboardAction(event, terminal.hasSelection());
+      if (!action) return true;
+
+      if (action === "copy") {
+        if (!navigator.clipboard?.writeText) return true;
+        event.preventDefault();
+        event.stopPropagation();
+        const selection = terminal.getSelection();
+        if (selection) {
+          void navigator.clipboard.writeText(selection).catch(() => undefined);
+          terminal.clearSelection();
+        }
+      } else {
+        if (!navigator.clipboard?.readText) return true;
+        event.preventDefault();
+        event.stopPropagation();
+        void navigator.clipboard.readText().then((text) => {
+          if (text) terminal.paste(text);
+        }).catch(() => undefined);
+      }
+      return false;
     });
 
     const start = async () => {

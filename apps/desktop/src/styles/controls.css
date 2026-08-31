@@ -1,0 +1,53 @@
+.segmented-control {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  display: flex;
+  isolation: isolate;
+  padding: 2px;
+  position: relative;
+}
+
+.segmented-control-indicator {
+  background: var(--bg-active);
+  border: 1px solid var(--icon-border);
+  border-radius: 5px;
+  bottom: 2px;
+  box-shadow: 0 1px 3px color-mix(in srgb, black 18%, transparent);
+  left: 2px;
+  position: absolute;
+  top: 2px;
+  transform: translateX(calc(var(--segment-index) * 100%));
+  transition: transform var(--motion-selection) var(--ease-in-out);
+  width: calc((100% - 4px) / var(--segment-count));
+  z-index: 0;
+}
+
+.segmented-control button {
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-tertiary);
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  height: 27px;
+  min-width: 0;
+  padding: 0 10px;
+  position: relative;
+  text-overflow: ellipsis;
+  transition:
+    color 120ms ease,
+    transform 120ms var(--ease-out);
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.segmented-control button:active { transform: scale(0.97); }
+.segmented-control button[data-active="true"] { color: var(--text-primary); }
+.compact-segmented-control button { min-width: 37px; padding: 0 7px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .segmented-control-indicator { transition: none; }
+}

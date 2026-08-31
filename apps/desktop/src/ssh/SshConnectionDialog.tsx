@@ -3,10 +3,11 @@ import { FolderPicker } from "../connections/FolderPicker";
 import { emptySshConnection } from "../connections/types";
 import type { ConnectionFolder, SavedSshSession, SshConnection } from "../connections/types";
 
-export function SshConnectionDialog({ folders, initialSession, onCancel, onSubmit }: {
+export function SshConnectionDialog({ folders, initialSession, onCancel, onCreateFolder, onSubmit }: {
   folders: ConnectionFolder[];
   initialSession?: SavedSshSession;
   onCancel: () => void;
+  onCreateFolder: (name: string) => string;
   onSubmit: (connection: SshConnection, save: boolean, folderId: string | null) => void;
 }) {
   const editing = Boolean(initialSession);
@@ -45,7 +46,7 @@ export function SshConnectionDialog({ folders, initialSession, onCancel, onSubmi
         </div>
         <div className="connection-save-options">
           {!editing && <label className="check-row"><input checked={save} onChange={(event) => setSave(event.target.checked)} type="checkbox" /><span><strong>保存会话</strong><small>保存地址和认证方式，不保存密码</small></span></label>}
-          {(editing || save) && <FolderPicker folders={folders} folderId={folderId} onChange={setFolderId} />}
+          {(editing || save) && <FolderPicker folders={folders} folderId={folderId} onChange={setFolderId} onCreateFolder={onCreateFolder} />}
         </div>
         <footer className="connection-dialog-actions"><button className="secondary-button" onClick={onCancel} type="button">取消</button><button className="primary-button" disabled={!valid} type="submit">{editing ? "保存" : "连接"}</button></footer>
       </form>

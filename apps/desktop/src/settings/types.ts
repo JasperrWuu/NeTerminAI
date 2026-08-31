@@ -2,6 +2,16 @@ export type AppearanceTheme = "dark" | "light";
 export type TerminalCursorStyle = "block" | "bar" | "underline";
 export type TerminalColorScheme = "adaptive" | "graphite" | "paper";
 export type TerminalFontWeight = 400 | 500 | 600;
+export type TerminalHighlightMatchMode = "text" | "regex";
+
+export interface TerminalHighlightRule {
+  id: string;
+  enabled: boolean;
+  matchMode: TerminalHighlightMatchMode;
+  pattern: string;
+  color: string;
+  caseSensitive: boolean;
+}
 
 export interface AppearanceSettings {
   theme: AppearanceTheme;
@@ -15,6 +25,7 @@ export interface TerminalSettings {
   cursorBlink: boolean;
   scrollback: number;
   colorScheme: TerminalColorScheme;
+  highlightRules: TerminalHighlightRule[];
 }
 
 export interface ApplicationSettings {

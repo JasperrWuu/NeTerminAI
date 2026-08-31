@@ -15,8 +15,9 @@ import {
 } from "./icons";
 import { usePanelResize } from "./usePanelResize";
 import { TerminalPane } from "../terminal/TerminalPane";
-import { WorkspaceTabs } from "../workspace/WorkspaceTabs";
+import { WorkspaceArea } from "../workspace/WorkspaceArea";
 import { useWorkspaceTabs } from "../workspace/useWorkspaceTabs";
+import type { WorkspaceTab } from "../workspace/types";
 import { TerminalSettingsView } from "../settings/TerminalSettingsView";
 import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../connections/SessionFolderDialog";
@@ -62,6 +63,7 @@ const panelCopy: Record<ActivityId, { title: string; description: string }> = {
 
 export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [activity, setActivity] = useState<ActivityId>("connections");
+  const [tabDragging, setTabDragging] = useState(false);
   const workspaceTabs = useWorkspaceTabs();
   const connectionLibrary = useConnectionLibrary();
   const [telnetDialog, setTelnetDialog] = useState<{
@@ -78,6 +80,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     open: boolean;
     folder?: ConnectionFolder;
   }>({ open: false });
+  const dialogOpen = telnetDialog.open || serialDialog.open || sshDialog.open || rdpDialog.open || folderDialog.open;
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
@@ -96,19 +99,40 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     else setRdpDialog({ open: true, session });
   };
 
+  const getLeftSidebarMaximum = () =>
+    Math.max(
+      180,
+      window.innerWidth -
+        48 -
+        (preferences.rightSidebarOpen ? preferences.rightSidebarWidth + 1 : 0) -
+        360 -
+        1,
+    );
+  const getRightSidebarMaximum = () =>
+    Math.max(
+      240,
+      window.innerWidth -
+        48 -
+        (preferences.leftSidebarOpen ? preferences.leftSidebarWidth + 1 : 0) -
+        360 -
+        1,
+    );
+
   const leftResize = usePanelResize({
     currentWidth: preferences.leftSidebarWidth,
+    cssVariable: "--left-sidebar-width",
     direction: "left",
-    minimum: 220,
-    maximum: 420,
+    minimum: 180,
+    maximum: getLeftSidebarMaximum,
     onResize: preferences.setLeftSidebarWidth,
   });
 
   const rightResize = usePanelResize({
     currentWidth: preferences.rightSidebarWidth,
+    cssVariable: "--right-sidebar-width",
     direction: "right",
-    minimum: 280,
-    maximum: 520,
+    minimum: 240,
+    maximum: getRightSidebarMaximum,
     onResize: preferences.setRightSidebarWidth,
   });
 
@@ -116,6 +140,70 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     "--left-sidebar-width": `${preferences.leftSidebarWidth}px`,
     "--right-sidebar-width": `${preferences.rightSidebarWidth}px`,
   } as CSSProperties;
+
+  const renderWorkspaceTab = (tab: WorkspaceTab, active: boolean) => {
+    if (tab.kind === "localTerminal") {
+      return (
+        <TerminalPane
+          active={active}
+          key={tab.id}
+          profileId={tab.profileId}
+          sessionType="local"
+          settings={settings.terminal}
+          theme={settings.appearance.theme}
+        />
+      );
+    }
+    if (tab.kind === "telnet") {
+      return (
+        <TerminalPane
+          active={active}
+          connection={tab.connection}
+          key={tab.id}
+          sessionType="telnet"
+          settings={settings.terminal}
+          theme={settings.appearance.theme}
+        />
+      );
+    }
+    if (tab.kind === "serial") {
+      return (
+        <TerminalPane
+          active={active}
+          connection={tab.connection}
+          key={tab.id}
+          sessionType="serial"
+          settings={settings.terminal}
+          theme={settings.appearance.theme}
+        />
+      );
+    }
+    if (tab.kind === "ssh") {
+      return (
+        <TerminalPane
+          active={active}
+          connection={tab.connection}
+          key={tab.id}
+          sessionType="ssh"
+          settings={settings.terminal}
+          theme={settings.appearance.theme}
+        />
+      );
+    }
+    if (tab.kind === "rdp") {
+      return <RdpPane active={active && !dialogOpen && !tabDragging} connection={tab.connection} key={tab.id} />;
+    }
+    return (
+      <TerminalSettingsView
+        active={active}
+        appearanceTheme={settings.appearance.theme}
+        key={tab.id}
+        onChange={settings.updateTerminal}
+        onReset={settings.resetTerminal}
+        settings={settings.terminal}
+      />
+    );
+  };
 
   return (
     <div className="workbench" style={layoutStyle}>
@@ -214,8 +302,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             <div
               aria-label="调整左侧栏宽度"
               aria-orientation="vertical"
-              aria-valuemax={420}
-              aria-valuemin={220}
+              aria-valuemax={getLeftSidebarMaximum()}
+              aria-valuemin={180}
               aria-valuenow={Math.round(preferences.leftSidebarWidth)}
               className="resize-handle resize-handle-left"
               onDoubleClick={() => preferences.setLeftSidebarWidth(260)}
@@ -227,85 +315,22 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         )}
 
         <main className="main-area">
-          <WorkspaceTabs
-            activeTabId={workspaceTabs.activeTabId}
-            onActivate={workspaceTabs.activateTab}
-            onClose={workspaceTabs.closeTab}
+          <WorkspaceArea
+            activePaneId={workspaceTabs.activePaneId}
+            layout={workspaceTabs.layout}
+            onActivatePane={workspaceTabs.activatePane}
+            onActivateTab={workspaceTabs.activateTab}
+            onCloseTab={workspaceTabs.closeTab}
             onCreateTerminal={workspaceTabs.createTerminal}
             onCreateTelnet={() => setTelnetDialog({ open: true })}
             onCreateSerial={() => setSerialDialog({ open: true })}
             onCreateSsh={() => setSshDialog({ open: true })}
             onCreateRdp={() => setRdpDialog({ open: true })}
+            onMoveTab={workspaceTabs.moveTab}
+            onDraggingChange={setTabDragging}
+            renderTab={renderWorkspaceTab}
             tabs={workspaceTabs.tabs}
           />
-
-          <div className="workspace-content">
-            {workspaceTabs.tabs.map((tab) =>
-              tab.kind === "localTerminal" ? (
-                <TerminalPane
-                  active={tab.id === workspaceTabs.activeTabId}
-                  key={tab.id}
-                  profileId={tab.profileId}
-                  sessionType="local"
-                  settings={settings.terminal}
-                  theme={settings.appearance.theme}
-                />
-              ) : tab.kind === "telnet" ? (
-                <TerminalPane
-                  active={tab.id === workspaceTabs.activeTabId}
-                  connection={tab.connection}
-                  key={tab.id}
-                  sessionType="telnet"
-                  settings={settings.terminal}
-                  theme={settings.appearance.theme}
-                />
-              ) : tab.kind === "serial" ? (
-                <TerminalPane
-                  active={tab.id === workspaceTabs.activeTabId}
-                  connection={tab.connection}
-                  key={tab.id}
-                  sessionType="serial"
-                  settings={settings.terminal}
-                  theme={settings.appearance.theme}
-                />
-              ) : tab.kind === "ssh" ? (
-                <TerminalPane
-                  active={tab.id === workspaceTabs.activeTabId}
-                  connection={tab.connection}
-                  key={tab.id}
-                  sessionType="ssh"
-                  settings={settings.terminal}
-                  theme={settings.appearance.theme}
-                />
-              ) : tab.kind === "rdp" ? (
-                <RdpPane active={tab.id === workspaceTabs.activeTabId} connection={tab.connection} key={tab.id} />
-              ) : (
-                <TerminalSettingsView
-                  active={tab.id === workspaceTabs.activeTabId}
-                  appearanceTheme={settings.appearance.theme}
-                  key={tab.id}
-                  onChange={settings.updateTerminal}
-                  onReset={settings.resetTerminal}
-                  settings={settings.terminal}
-                />
-              ),
-            )}
-
-            {workspaceTabs.tabs.length === 0 && (
-              <section className="empty-workspace">
-                <img className="welcome-mark" src="/brand/neterminai-logo.png" alt="" />
-                <h1>打开一个新标签</h1>
-                <p>创建本地终端，之后也可以在这里打开远程连接与工具。</p>
-                <button
-                  className="primary-button"
-                  onClick={() => workspaceTabs.createTerminal("powershell")}
-                  type="button"
-                >
-                  新建 PowerShell
-                </button>
-              </section>
-            )}
-          </div>
         </main>
 
         {preferences.rightSidebarOpen && (
@@ -313,8 +338,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             <div
               aria-label="调整 AI 侧栏宽度"
               aria-orientation="vertical"
-              aria-valuemax={520}
-              aria-valuemin={280}
+              aria-valuemax={getRightSidebarMaximum()}
+              aria-valuemin={240}
               aria-valuenow={Math.round(preferences.rightSidebarWidth)}
               className="resize-handle resize-handle-right"
               onDoubleClick={() => preferences.setRightSidebarWidth(320)}
@@ -348,6 +373,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           folders={connectionLibrary.folders}
           initialSession={telnetDialog.session}
           onCancel={closeTelnetDialog}
+          onCreateFolder={connectionLibrary.createFolder}
           onSubmit={(connection, save, savesPassword, folderId) => {
             if (save) {
               connectionLibrary.saveTelnet(connection, savesPassword, folderId, telnetDialog.session?.id);
@@ -362,6 +388,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           folders={connectionLibrary.folders}
           initialSession={serialDialog.session}
           onCancel={closeSerialDialog}
+          onCreateFolder={connectionLibrary.createFolder}
           onSubmit={(connection, save, folderId) => {
             if (save) connectionLibrary.saveSerial(connection, folderId, serialDialog.session?.id);
             if (!serialDialog.session) workspaceTabs.openSerial(connection);
@@ -374,6 +401,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           folders={connectionLibrary.folders}
           initialSession={sshDialog.session}
           onCancel={closeSshDialog}
+          onCreateFolder={connectionLibrary.createFolder}
           onSubmit={(connection, save, folderId) => {
             if (save) connectionLibrary.saveSsh(connection, folderId, sshDialog.session?.id);
             if (!sshDialog.session) workspaceTabs.openSsh(connection);
@@ -386,6 +414,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           folders={connectionLibrary.folders}
           initialSession={rdpDialog.session}
           onCancel={closeRdpDialog}
+          onCreateFolder={connectionLibrary.createFolder}
           onSubmit={(connection, save, folderId) => {
             if (save) connectionLibrary.saveRdp(connection, folderId, rdpDialog.session?.id);
             if (!rdpDialog.session) workspaceTabs.openRdp(connection);

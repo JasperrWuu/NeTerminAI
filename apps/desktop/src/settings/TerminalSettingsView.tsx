@@ -3,10 +3,12 @@ import type {
   TerminalColorScheme,
   TerminalCursorStyle,
   TerminalFontWeight,
+  TerminalHighlightRule,
   TerminalSettings,
 } from "./types";
-import type { CSSProperties } from "react";
 import { resolveTerminalTheme } from "../terminal/themes";
+import { SegmentedControl } from "../ui/SegmentedControl";
+import { CloseIcon } from "../workbench/icons";
 
 interface TerminalSettingsViewProps {
   active: boolean;
@@ -129,6 +131,13 @@ export function TerminalSettingsView({
                 </pre>
               </div>
             </SettingsGroup>
+
+            <SettingsGroup title="文字着色">
+              <HighlightRulesEditor
+                onChange={(highlightRules) => onChange({ highlightRules })}
+                rules={settings.highlightRules}
+              />
+            </SettingsGroup>
           </div>
         </div>
       </div>
@@ -144,36 +153,137 @@ function SettingRow({ children, description, label }: { children: React.ReactNod
   return <div className="setting-row"><span><strong>{label}</strong>{description && <small>{description}</small>}</span><div className="setting-control">{children}</div></div>;
 }
 
-function SegmentedControl<T extends string | number>({
-  compact = false,
-  items,
+function HighlightRulesEditor({
   onChange,
-  value,
+  rules,
 }: {
-  compact?: boolean;
-  items: readonly { value: T; label: string }[];
-  onChange: (value: T) => void;
-  value: T;
+  onChange: (rules: TerminalHighlightRule[]) => void;
+  rules: TerminalHighlightRule[];
 }) {
-  const activeIndex = Math.max(0, items.findIndex((item) => item.value === value));
-  const style = {
-    "--segment-count": items.length,
-    "--segment-index": activeIndex,
-  } as CSSProperties;
+  const updateRule = (ruleId: string, patch: Partial<TerminalHighlightRule>) => {
+    onChange(rules.map((rule) => rule.id === ruleId ? { ...rule, ...patch } : rule));
+  };
+
+  const addRule = () => {
+    onChange([...rules, {
+      id: crypto.randomUUID(),
+      enabled: true,
+      matchMode: "text",
+      pattern: "",
+      color: "#FFB86C",
+      caseSensitive: false,
+    }]);
+  };
 
   return (
-    <div className={`segmented-control${compact ? " compact-segmented-control" : ""}`} style={style}>
-      <span aria-hidden="true" className="segmented-control-indicator" />
-      {items.map((item) => (
-        <button
-          data-active={item.value === value}
-          key={item.value}
-          onClick={() => onChange(item.value)}
-          type="button"
-        >
-          {item.label}
-        </button>
-      ))}
+    <div className="highlight-rules-editor">
+      <div className="highlight-rules-intro">
+        <div>
+          <strong>匹配终端内容</strong>
+          <small>按规则顺序匹配纯文本或正则表达式，并覆盖匹配文字的前景色。</small>
+        </div>
+        <button className="highlight-add-button" onClick={addRule} type="button">添加规则</button>
+      </div>
+
+      {rules.length === 0 ? (
+        <div className="highlight-empty">尚未添加着色规则</div>
+      ) : (
+        <div className="highlight-rule-list">
+          {rules.map((rule, index) => {
+            const regexValid = rule.matchMode !== "regex" || isValidRegex(rule.pattern);
+            const colorValid = isValidHexColor(rule.color);
+            return (
+              <section className="highlight-rule" data-enabled={rule.enabled} key={rule.id}>
+                <header>
+                  <button
+                    aria-checked={rule.enabled}
+                    aria-label={`启用规则 ${index + 1}`}
+                    className="switch compact-switch"
+                    data-active={rule.enabled}
+                    onClick={() => updateRule(rule.id, { enabled: !rule.enabled })}
+                    role="switch"
+                    type="button"
+                  ><span /></button>
+                  <strong>规则 {index + 1}</strong>
+                  <span className="highlight-rule-spacer" />
+                  <button
+                    aria-label={`删除规则 ${index + 1}`}
+                    className="highlight-remove-button"
+                    onClick={() => onChange(rules.filter((item) => item.id !== rule.id))}
+                    type="button"
+                  ><CloseIcon /></button>
+                </header>
+                <div className="highlight-rule-grid">
+                  <label className="highlight-match-mode">
+                    <span>匹配方式</span>
+                    <SegmentedControl
+                      compact
+                      items={[{ value: "text", label: "文本" }, { value: "regex", label: "正则" }] as const}
+                      onChange={(matchMode) => updateRule(rule.id, { matchMode })}
+                      value={rule.matchMode}
+                    />
+                  </label>
+                  <label className="highlight-pattern-field">
+                    <span>{rule.matchMode === "text" ? "匹配文本" : "正则表达式"}</span>
+                    <input
+                      aria-invalid={!regexValid}
+                      className="settings-text-input"
+                      onChange={(event) => updateRule(rule.id, { pattern: event.target.value })}
+                      placeholder={rule.matchMode === "text" ? "例如 ERROR" : "例如 ERROR|FAILED"}
+                      spellCheck={false}
+                      value={rule.pattern}
+                    />
+                    {!regexValid && <small className="field-error">正则表达式格式无效</small>}
+                  </label>
+                  <label className="highlight-color-field">
+                    <span>文字颜色</span>
+                    <div className="highlight-color-control" data-invalid={!colorValid}>
+                      <input
+                        aria-label="十六进制颜色"
+                        maxLength={7}
+                        onChange={(event) => updateRule(rule.id, { color: event.target.value.toUpperCase() })}
+                        placeholder="#FFFFFF"
+                        spellCheck={false}
+                        type="text"
+                        value={rule.color}
+                      />
+                      <input
+                        aria-label="打开调色盘"
+                        onChange={(event) => updateRule(rule.id, { color: event.target.value.toUpperCase() })}
+                        type="color"
+                        value={colorValid ? rule.color : "#FFFFFF"}
+                      />
+                    </div>
+                    {!colorValid && <small className="field-error">请输入六位十六进制颜色</small>}
+                  </label>
+                  <label className="highlight-case-option">
+                    <input
+                      checked={rule.caseSensitive}
+                      onChange={(event) => updateRule(rule.id, { caseSensitive: event.target.checked })}
+                      type="checkbox"
+                    />
+                    <span>区分大小写</span>
+                  </label>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
+}
+
+function isValidHexColor(value: string) {
+  return /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function isValidRegex(value: string) {
+  if (!value) return true;
+  try {
+    new RegExp(value);
+    return true;
+  } catch {
+    return false;
+  }
 }

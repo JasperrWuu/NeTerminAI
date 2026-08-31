@@ -1920,6 +1920,7 @@ dependencies = [
  "serialport",
  "tauri",
  "tauri-build",
+ "windows",
 ]
 
 [[package]]

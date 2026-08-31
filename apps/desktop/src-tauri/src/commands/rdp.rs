@@ -1,140 +1,113 @@
-use serde::Deserialize;
-use std::{fs, path::PathBuf, process::Command, thread};
+use tauri::{AppHandle, Manager, State};
+
+use crate::rdp::{RdpBounds, RdpManager};
 
 use super::run_blocking;
 
-#[derive(Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RdpDisplayMode {
-    Windowed,
-    Fullscreen,
-    Multimon,
-}
-
 #[tauri::command]
-pub async fn open_rdp(
+#[allow(clippy::too_many_arguments)]
+pub async fn create_rdp(
+    app: AppHandle,
+    state: State<'_, RdpManager>,
     session_id: String,
     host: String,
     port: u16,
     username: String,
-    display_mode: RdpDisplayMode,
     admin_session: bool,
+    bounds: RdpBounds,
 ) -> Result<(), String> {
-    run_blocking("RDP 启动", move || {
-        open_rdp_blocking(
-            session_id,
-            host,
-            port,
-            username,
-            display_mode,
-            admin_session,
-        )
+    let manager = state.inner().clone();
+    on_main_thread(app, "RDP 创建", move |app| {
+        #[cfg(windows)]
+        {
+            let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+            let parent = window
+                .hwnd()
+                .map_err(|error| format!("无法读取主窗口：{error}"))?;
+            let scale = window
+                .scale_factor()
+                .map_err(|error| format!("无法读取窗口缩放：{error}"))?;
+            manager.create(
+                parent,
+                session_id,
+                &host,
+                port,
+                &username,
+                admin_session,
+                bounds.physical(scale),
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (app, session_id, host, port, username, admin_session, bounds);
+            manager.unsupported()
+        }
     })
     .await
 }
 
-fn open_rdp_blocking(
+#[tauri::command]
+pub async fn resize_rdp(
+    app: AppHandle,
+    state: State<'_, RdpManager>,
     session_id: String,
-    host: String,
-    port: u16,
-    username: String,
-    display_mode: RdpDisplayMode,
-    admin_session: bool,
+    bounds: RdpBounds,
+    visible: bool,
 ) -> Result<(), String> {
-    if session_id.is_empty()
-        || !session_id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || character == '-')
-    {
-        return Err("RDP 会话标识无效".to_owned());
-    }
-    if host.trim().is_empty() || port == 0 {
-        return Err("RDP 主机地址或端口无效".to_owned());
-    }
-    validate_rdp_field("主机地址", &host)?;
-    validate_rdp_field("账号", &username)?;
-    let config_path = write_rdp_file(&session_id, &host, port, &username)?;
-    let mut command = Command::new("mstsc.exe");
-    command.arg(&config_path).arg("/prompt");
-    match display_mode {
-        RdpDisplayMode::Windowed => {}
-        RdpDisplayMode::Fullscreen => {
-            command.arg("/f");
+    let manager = state.inner().clone();
+    on_main_thread(app, "RDP 调整", move |app| {
+        #[cfg(windows)]
+        {
+            let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+            let scale = window
+                .scale_factor()
+                .map_err(|error| format!("无法读取窗口缩放：{error}"))?;
+            manager.resize(&session_id, bounds.physical(scale), visible)
         }
-        RdpDisplayMode::Multimon => {
-            command.arg("/multimon");
+        #[cfg(not(windows))]
+        {
+            let _ = (app, session_id, bounds, visible);
+            manager.unsupported()
         }
-    }
-    if admin_session {
-        command.arg("/admin");
-    }
-
-    match command.spawn() {
-        Ok(mut child) => {
-            thread::spawn(move || {
-                let _ = child.wait();
-                let _ = fs::remove_file(config_path);
-            });
-            Ok(())
-        }
-        Err(error) => {
-            let _ = fs::remove_file(config_path);
-            Err(format!("无法启动 Windows 远程桌面：{error}"))
-        }
-    }
+    })
+    .await
 }
 
-fn validate_rdp_field(label: &str, value: &str) -> Result<(), String> {
-    if value.contains(['\r', '\n']) {
-        return Err(format!("{label}包含无效换行符"));
-    }
-    Ok(())
+#[tauri::command]
+pub async fn close_rdp(
+    app: AppHandle,
+    state: State<'_, RdpManager>,
+    session_id: String,
+) -> Result<(), String> {
+    let manager = state.inner().clone();
+    on_main_thread(app, "RDP 关闭", move |_app| {
+        #[cfg(windows)]
+        {
+            manager.close(&session_id)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = session_id;
+            manager.unsupported()
+        }
+    })
+    .await
 }
 
-fn write_rdp_file(
-    session_id: &str,
-    host: &str,
-    port: u16,
-    username: &str,
-) -> Result<PathBuf, String> {
-    let directory = std::env::temp_dir().join("NeTerminAI").join("rdp");
-    fs::create_dir_all(&directory).map_err(|error| format!("无法准备 RDP 临时目录：{error}"))?;
-    let path = directory.join(format!("{session_id}.rdp"));
-    let config = format!(
-        "full address:s:{host}:{port}\r\nusername:s:{username}\r\nprompt for credentials:i:1\r\nauthentication level:i:2\r\n"
-    );
-    let mut bytes = vec![0xff, 0xfe];
-    bytes.extend(config.encode_utf16().flat_map(u16::to_le_bytes));
-    fs::write(&path, bytes).map_err(|error| format!("无法创建 RDP 配置：{error}"))?;
-    Ok(path)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_rdp_configuration_injection() {
-        assert!(validate_rdp_field("主机地址", "server\r\nredirectclipboard:i:1").is_err());
-        assert!(validate_rdp_field("账号", "DOMAIN\\user").is_ok());
-    }
-
-    #[test]
-    fn writes_utf16_rdp_configuration_without_a_password() {
-        let path = write_rdp_file("rdp-test", "server.example", 3390, "DOMAIN\\user")
-            .expect("write config");
-        let bytes = fs::read(&path).expect("read config");
-        let (chunks, remainder) = bytes[2..].as_chunks::<2>();
-        assert!(remainder.is_empty());
-        let words = chunks
-            .iter()
-            .map(|chunk| u16::from_le_bytes(*chunk))
-            .collect::<Vec<_>>();
-        let config = String::from_utf16(&words).expect("decode config");
-
-        assert!(config.contains("full address:s:server.example:3390"));
-        assert!(config.contains("username:s:DOMAIN\\user"));
-        assert!(!config.to_lowercase().contains("password"));
-        let _ = fs::remove_file(path);
-    }
+async fn on_main_thread<F>(app: AppHandle, label: &'static str, operation: F) -> Result<(), String>
+where
+    F: FnOnce(AppHandle) -> Result<(), String> + Send + 'static,
+{
+    run_blocking(label, move || {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let task_app = app.clone();
+        app.run_on_main_thread(move || {
+            let _ = sender.send(operation(task_app));
+        })
+        .map_err(|error| format!("无法调度{label}：{error}"))?;
+        receiver
+            .recv()
+            .map_err(|_| format!("{label}没有返回结果"))?
+    })
+    .await
 }

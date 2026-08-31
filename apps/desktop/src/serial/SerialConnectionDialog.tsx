@@ -12,15 +12,17 @@ import type {
   SerialParity,
   SerialStopBits,
 } from "../connections/types";
+import { SegmentedControl } from "../ui/SegmentedControl";
 
 interface SerialConnectionDialogProps {
   folders: ConnectionFolder[];
   initialSession?: SavedSerialSession;
   onCancel: () => void;
+  onCreateFolder: (name: string) => string;
   onSubmit: (connection: SerialConnection, save: boolean, folderId: string | null) => void;
 }
 
-export function SerialConnectionDialog({ folders, initialSession, onCancel, onSubmit }: SerialConnectionDialogProps) {
+export function SerialConnectionDialog({ folders, initialSession, onCancel, onCreateFolder, onSubmit }: SerialConnectionDialogProps) {
   const editing = Boolean(initialSession);
   const [connection, setConnection] = useState<SerialConnection>(() => initialSession ? { ...initialSession } : { ...emptySerialConnection });
   const [save, setSave] = useState(editing);
@@ -73,15 +75,15 @@ export function SerialConnectionDialog({ folders, initialSession, onCancel, onSu
             <small aria-live="polite" className="field-hint">{portsLoading ? "正在读取设备…" : ports.length > 0 ? `已检测到 ${ports.join("、")}` : "未检测到设备，也可手动输入端口"}</small>
           </div>
           <label className="form-field"><span>波特率</span><input inputMode="numeric" min={1} onChange={(event) => setField("baudRate", Number(event.target.value))} required type="number" value={connection.baudRate} /></label>
-          <OptionField label="数据位">{[5, 6, 7, 8].map((value) => <OptionButton key={value} active={connection.dataBits === value} label={String(value)} onClick={() => setField("dataBits", value as SerialDataBits)} />)}</OptionField>
-          <OptionField label="停止位">{[1, 2].map((value) => <OptionButton key={value} active={connection.stopBits === value} label={String(value)} onClick={() => setField("stopBits", value as SerialStopBits)} />)}</OptionField>
-          <OptionField label="奇偶校验" wide>{([['none', '无'], ['odd', '奇'], ['even', '偶']] as const).map(([value, label]) => <OptionButton key={value} active={connection.parity === value} label={label} onClick={() => setField("parity", value as SerialParity)} />)}</OptionField>
-          <OptionField label="流控制" wide>{([['none', '无'], ['software', '软件'], ['hardware', '硬件']] as const).map(([value, label]) => <OptionButton key={value} active={connection.flowControl === value} label={label} onClick={() => setField("flowControl", value as SerialFlowControl)} />)}</OptionField>
+          <OptionField label="数据位"><SegmentedControl compact items={[5, 6, 7, 8].map((value) => ({ value: value as SerialDataBits, label: String(value) }))} onChange={(value) => setField("dataBits", value)} value={connection.dataBits} /></OptionField>
+          <OptionField label="停止位"><SegmentedControl compact items={[1, 2].map((value) => ({ value: value as SerialStopBits, label: String(value) }))} onChange={(value) => setField("stopBits", value)} value={connection.stopBits} /></OptionField>
+          <OptionField label="奇偶校验" wide><SegmentedControl items={([['none', '无'], ['odd', '奇'], ['even', '偶']] as const).map(([value, label]) => ({ value: value as SerialParity, label }))} onChange={(value) => setField("parity", value)} value={connection.parity} /></OptionField>
+          <OptionField label="流控制" wide><SegmentedControl items={([['none', '无'], ['software', '软件'], ['hardware', '硬件']] as const).map(([value, label]) => ({ value: value as SerialFlowControl, label }))} onChange={(value) => setField("flowControl", value)} value={connection.flowControl} /></OptionField>
         </div>
 
         <div className="connection-save-options">
           {!editing && <label className="check-row"><input checked={save} onChange={(event) => setSave(event.target.checked)} type="checkbox" /><span><strong>保存会话</strong><small>保留串口参数，下次双击即可连接</small></span></label>}
-          {(editing || save) && <FolderPicker folders={folders} folderId={folderId} onChange={setFolderId} />}
+          {(editing || save) && <FolderPicker folders={folders} folderId={folderId} onChange={setFolderId} onCreateFolder={onCreateFolder} />}
         </div>
 
         <footer className="connection-dialog-actions">
@@ -94,9 +96,5 @@ export function SerialConnectionDialog({ folders, initialSession, onCancel, onSu
 }
 
 function OptionField({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
-  return <fieldset className={`form-field option-field ${wide ? "form-field-wide" : ""}`}><legend>{label}</legend><div className="compact-option-group">{children}</div></fieldset>;
-}
-
-function OptionButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return <button aria-pressed={active} data-active={active} onClick={onClick} type="button">{label}</button>;
+  return <fieldset className={`form-field option-field ${wide ? "form-field-wide" : ""}`}><legend>{label}</legend>{children}</fieldset>;
 }

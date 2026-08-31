@@ -28,7 +28,8 @@ export function ConnectionIcon(props: IconProps) {
 export function WorkspaceIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
-      <path d="M4.5 6.5h5l1.7 2h8.3v9.5a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18V6.5Z" />
+      <rect height="16" rx="2.5" width="17" x="3.5" y="4" />
+      <path d="M9 4v16M9 10h11.5" />
     </IconFrame>
   );
 }
@@ -36,7 +37,7 @@ export function WorkspaceIcon(props: IconProps) {
 export function ToolsIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
-      <path d="m14.5 6 3.5 3.5M13 7.5l3.5 3.5M5 19l4.5-1 9-9a2.12 2.12 0 0 0-3-3l-9 9L5 19Z" />
+      <path d="M14.7 5.2a4.4 4.4 0 0 0-5.2 5.6L4.8 15.5a2 2 0 1 0 2.8 2.8l4.7-4.7a4.4 4.4 0 0 0 5.6-5.2l-2.7 2.7-2.4-.6-.7-2.5 2.6-2.8Z" />
     </IconFrame>
   );
 }
@@ -45,7 +46,7 @@ export function SettingsIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
       <circle cx="12" cy="12" r="3" />
-      <path d="M19 13.5v-3l-2-.6a6.8 6.8 0 0 0-.6-1.4l1-1.8-2.1-2.1-1.8 1a6.8 6.8 0 0 0-1.5-.6l-.5-2h-3l-.6 2a6.8 6.8 0 0 0-1.4.6l-1.8-1-2.1 2.1 1 1.8A6.8 6.8 0 0 0 3 10l-2 .5v3l2 .6c.1.5.3 1 .6 1.4l-1 1.8 2.1 2.1 1.8-1c.4.3.9.5 1.4.6l.6 2h3l.5-2c.5-.1 1-.3 1.5-.6l1.8 1 2.1-2.1-1-1.8c.3-.4.5-.9.6-1.4l2-.6Z" transform="translate(2 0) scale(.83)" />
+      <path d="M12.2 2.8h-.4a1.8 1.8 0 0 0-1.8 1.8v.2a1.8 1.8 0 0 1-.9 1.5l-.4.2a1.8 1.8 0 0 1-1.8 0l-.2-.1a1.8 1.8 0 0 0-2.4.7l-.2.3a1.8 1.8 0 0 0 .6 2.4l.2.1a1.8 1.8 0 0 1 .9 1.6v.5a1.8 1.8 0 0 1-.9 1.6l-.2.1a1.8 1.8 0 0 0-.6 2.4l.2.3a1.8 1.8 0 0 0 2.4.7l.2-.1a1.8 1.8 0 0 1 1.8 0l.4.2a1.8 1.8 0 0 1 .9 1.5v.2a1.8 1.8 0 0 0 1.8 1.8h.4a1.8 1.8 0 0 0 1.8-1.8v-.2a1.8 1.8 0 0 1 .9-1.5l.4-.2a1.8 1.8 0 0 1 1.8 0l.2.1a1.8 1.8 0 0 0 2.4-.7l.2-.3a1.8 1.8 0 0 0-.6-2.4l-.2-.1a1.8 1.8 0 0 1-.9-1.6v-.5a1.8 1.8 0 0 1 .9-1.6l.2-.1a1.8 1.8 0 0 0 .6-2.4l-.2-.3a1.8 1.8 0 0 0-2.4-.7l-.2.1a1.8 1.8 0 0 1-1.8 0l-.4-.2a1.8 1.8 0 0 1-.9-1.5v-.2a1.8 1.8 0 0 0-1.8-1.8Z" />
     </IconFrame>
   );
 }

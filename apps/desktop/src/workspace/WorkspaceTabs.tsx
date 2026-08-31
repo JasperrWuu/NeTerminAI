@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { localTerminalProfiles } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
+import { motion, prefersReducedMotion } from "../ui/motion";
 import type { WorkspaceTab } from "./types";
 
 interface WorkspaceTabsProps {
+  paneId: string;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
-  onActivate: (tabId: string) => void;
-  onClose: (tabId: string) => void;
+  onActivate: (paneId: string, tabId: string) => void;
+  onClose: (paneId: string, tabId: string) => void;
+  onTabPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, paneId: string, tab: WorkspaceTab) => void;
   onCreateTerminal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
   onCreateSerial: () => void;
@@ -16,6 +20,7 @@ interface WorkspaceTabsProps {
 }
 
 export function WorkspaceTabs({
+  paneId,
   tabs,
   activeTabId,
   onActivate,
@@ -25,6 +30,7 @@ export function WorkspaceTabs({
   onCreateSerial,
   onCreateSsh,
   onCreateRdp,
+  onTabPointerDown,
 }: WorkspaceTabsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -49,11 +55,10 @@ export function WorkspaceTabs({
     indicator.style.transform = nextTransform;
     indicator.dataset.visible = "true";
 
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (animated && !reduceMotion && currentTransform !== "none") {
+    if (animated && !prefersReducedMotion() && currentTransform !== "none") {
       indicator.animate(
         [{ transform: currentTransform }, { transform: nextTransform }],
-        { duration: 220, easing: "cubic-bezier(0.77, 0, 0.175, 1)" },
+        { duration: motion.duration.standard, easing: motion.easing.inOut },
       );
     }
   }, [activeTabId]);
@@ -100,19 +105,18 @@ export function WorkspaceTabs({
             <button
               aria-selected={activeTabId === tab.id}
               className="tab-select"
-              onClick={() => onActivate(tab.id)}
+              onClick={() => onActivate(paneId, tab.id)}
+              onPointerDown={(event) => onTabPointerDown(event, paneId, tab)}
               role="tab"
               type="button"
             >
-              <span className={`${tab.kind}-tab-icon`}>
-                {workspaceTabIcon(tab.kind)}
-              </span>
+              <WorkspaceTabIcon kind={tab.kind} />
               <span className="tab-title">{tab.title}</span>
             </button>
             <button
               aria-label={`关闭 ${tab.title}`}
               className="tab-close"
-              onClick={() => onClose(tab.id)}
+              onClick={() => onClose(paneId, tab.id)}
               type="button"
             >
               ×
@@ -199,14 +203,20 @@ export function WorkspaceTabs({
   );
 }
 
-function workspaceTabIcon(kind: WorkspaceTab["kind"]) {
-  const icons: Record<WorkspaceTab["kind"], string> = {
-    localTerminal: "›_",
-    telnet: "TN",
-    serial: "COM",
-    ssh: "SSH",
-    rdp: "RDP",
-    settings: "Aa",
-  };
-  return icons[kind];
+function WorkspaceTabIcon({ kind }: { kind: WorkspaceTab["kind"] }) {
+  return (
+    <span className={`tab-glyph ${kind}-tab-icon`} aria-hidden="true">
+      {kind === "localTerminal" || kind === "telnet" ? (
+        <svg viewBox="0 0 20 20"><path d="m4.5 6 3.5 4-3.5 4M10 14h5.5" /></svg>
+      ) : kind === "serial" ? (
+        <svg viewBox="0 0 20 20"><path d="M6 5.5h8v4a4 4 0 0 1-8 0v-4ZM8 3.5v2m4-2v2M10 13.5v3" /></svg>
+      ) : kind === "ssh" ? (
+        <svg viewBox="0 0 20 20"><rect x="4.5" y="8" width="11" height="8" rx="2" /><path d="M7 8V6.5a3 3 0 0 1 6 0V8" /></svg>
+      ) : kind === "rdp" ? (
+        <svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="10" rx="2" /><path d="M7 17h6m-3-3v3" /></svg>
+      ) : (
+        <svg viewBox="0 0 20 20"><path d="M4 6h8m3 0h1M4 10h2m3 0h7M4 14h6m3 0h3" /><circle cx="13.5" cy="6" r="1.5" /><circle cx="7.5" cy="10" r="1.5" /><circle cx="11.5" cy="14" r="1.5" /></svg>
+      )}
+    </span>
+  );
 }

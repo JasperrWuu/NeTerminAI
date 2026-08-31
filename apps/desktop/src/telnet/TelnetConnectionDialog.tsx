@@ -7,10 +7,11 @@ interface TelnetConnectionDialogProps {
   folders: ConnectionFolder[];
   initialSession?: SavedTelnetSession;
   onCancel: () => void;
+  onCreateFolder: (name: string) => string;
   onSubmit: (connection: TelnetConnection, save: boolean, savesPassword: boolean, folderId: string | null) => void;
 }
 
-export function TelnetConnectionDialog({ folders, initialSession, onCancel, onSubmit }: TelnetConnectionDialogProps) {
+export function TelnetConnectionDialog({ folders, initialSession, onCancel, onCreateFolder, onSubmit }: TelnetConnectionDialogProps) {
   const editing = Boolean(initialSession);
   const [connection, setConnection] = useState<TelnetConnection>(() => initialSession ? { ...initialSession } : { ...emptyTelnetConnection });
   const [save, setSave] = useState(editing);
@@ -54,7 +55,7 @@ export function TelnetConnectionDialog({ folders, initialSession, onCancel, onSu
 
         <div className="connection-save-options">
           {!editing && <label className="check-row"><input checked={save} onChange={(event) => setSave(event.target.checked)} type="checkbox" /><span><strong>保存会话</strong><small>下次可从连接侧栏快速打开</small></span></label>}
-          {(editing || save) && <><FolderPicker folders={folders} folderId={folderId} onChange={setFolderId} /><label className="check-row password-save-option"><input checked={savesPassword} onChange={(event) => setSavesPassword(event.target.checked)} type="checkbox" /><span><strong>同时保存密码</strong><small>当前版本将密码保存在本机应用数据中</small></span></label></>}
+          {(editing || save) && <><FolderPicker folders={folders} folderId={folderId} onChange={setFolderId} onCreateFolder={onCreateFolder} /><label className="check-row password-save-option"><input checked={savesPassword} onChange={(event) => setSavesPassword(event.target.checked)} type="checkbox" /><span><strong>同时保存密码</strong><small>当前版本将密码保存在本机应用数据中</small></span></label></>}
         </div>
 
         <footer className="connection-dialog-actions">

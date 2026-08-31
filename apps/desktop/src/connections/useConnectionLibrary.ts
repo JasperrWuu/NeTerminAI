@@ -47,7 +47,9 @@ function normalizeSession(session: SavedConnectionSession): SavedConnectionSessi
     return { ...session, folderId: session.folderId ?? null, port: session.port || 22, identityFile: session.identityFile ?? "" };
   }
   if (session.kind === "rdp") {
-    return { ...session, folderId: session.folderId ?? null, port: session.port || 3389, displayMode: session.displayMode || "windowed", adminSession: session.adminSession ?? false };
+    const connection = { ...session } as SavedRdpSession & { displayMode?: unknown };
+    delete connection.displayMode;
+    return { ...connection, folderId: session.folderId ?? null, port: session.port || 3389, adminSession: session.adminSession ?? false };
   }
   return null;
 }
@@ -190,6 +192,7 @@ export function useConnectionLibrary() {
   const createFolder = (name: string) => {
     const folder: ConnectionFolder = { id: crypto.randomUUID(), name: name.trim() };
     setLibrary((current) => ({ ...current, folders: [...current.folders, folder] }));
+    return folder.id;
   };
 
   const renameFolder = (folderId: string, name: string) => {

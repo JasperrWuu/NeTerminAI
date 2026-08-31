@@ -12,7 +12,6 @@
   --protocol-rdp: #7652ad;
 }
 
-.telnet-tab-icon,
 .telnet-profile-icon {
   color: var(--protocol-telnet);
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -21,7 +20,6 @@
   letter-spacing: -0.03em;
 }
 
-.serial-tab-icon,
 .serial-profile-icon {
   color: var(--protocol-serial);
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -30,7 +28,6 @@
   letter-spacing: -0.04em;
 }
 
-.ssh-tab-icon,
 .ssh-profile-icon {
   color: var(--protocol-ssh);
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -39,7 +36,6 @@
   letter-spacing: -0.04em;
 }
 
-.rdp-tab-icon,
 .rdp-profile-icon {
   color: var(--protocol-rdp);
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -48,29 +44,30 @@
   letter-spacing: -0.05em;
 }
 
-.telnet-tab-icon,
 .telnet-profile-icon {
   background: color-mix(in srgb, var(--protocol-telnet) 16%, transparent);
   border-color: color-mix(in srgb, var(--protocol-telnet) 34%, transparent);
 }
 
-.serial-tab-icon,
 .serial-profile-icon {
   background: color-mix(in srgb, var(--protocol-serial) 16%, transparent);
   border-color: color-mix(in srgb, var(--protocol-serial) 34%, transparent);
 }
 
-.ssh-tab-icon,
 .ssh-profile-icon {
   background: color-mix(in srgb, var(--protocol-ssh) 16%, transparent);
   border-color: color-mix(in srgb, var(--protocol-ssh) 34%, transparent);
 }
 
-.rdp-tab-icon,
 .rdp-profile-icon {
   background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent);
   border-color: color-mix(in srgb, var(--protocol-rdp) 34%, transparent);
 }
+
+.telnet-tab-icon { color: var(--protocol-telnet); }
+.serial-tab-icon { color: var(--protocol-serial); }
+.ssh-tab-icon { color: var(--protocol-ssh); }
+.rdp-tab-icon { color: var(--protocol-rdp); }
 
 .menu-section-label {
   border-top: 1px solid var(--border-subtle);
@@ -550,37 +547,8 @@
   padding: 0;
 }
 
-.compact-option-group {
-  background: var(--bg-hover);
-  border: 1px solid var(--border-subtle);
-  border-radius: 9px;
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-}
-
-.compact-option-group button {
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-tertiary);
-  flex: 1;
-  font-size: 10px;
-  height: 28px;
-  min-width: 0;
-  transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease, transform var(--motion-fast) ease-out;
-}
-
-.compact-option-group button:hover {
-  color: var(--text-primary);
-}
-
-.compact-option-group button[data-active="true"] {
-  background: var(--bg-elevated);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.13);
-  color: var(--text-primary);
-  font-weight: 620;
-}
+.option-field .segmented-control { width: 100%; }
+.option-field .segmented-control button { font-size: 10px; height: 28px; }
 
 .form-field input {
   background: var(--bg-hover);
@@ -592,6 +560,17 @@
   outline: 0;
   padding: 0 10px;
   width: 100%;
+}
+
+.form-field input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.form-field input[type="number"]::-webkit-inner-spin-button,
+.form-field input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
 }
 
 .form-field input:hover {
@@ -664,13 +643,60 @@
   bottom: calc(100% + 7px);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.16);
   left: 0;
-  max-height: 190px;
-  overflow-y: auto;
   padding: 5px;
   position: absolute;
   transform-origin: bottom center;
   width: 100%;
   z-index: 110;
+}
+
+.folder-picker-options {
+  max-height: 146px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.folder-picker-create {
+  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-top: 5px;
+  padding: 7px 3px 2px;
+}
+
+.folder-picker-create input {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  height: 31px;
+  min-width: 0;
+  outline: none;
+  padding: 0 9px;
+}
+
+.folder-picker-create input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.folder-picker-create button {
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  border-radius: 7px;
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 620;
+  height: 31px;
+  padding: 0 10px;
+}
+
+.folder-picker-create button:disabled {
+  color: var(--text-tertiary);
+  opacity: 0.55;
 }
 
 .folder-picker-option {
@@ -784,12 +810,70 @@
 }
 
 .rdp-pane {
-  align-items: center;
-  justify-content: center;
-  padding: 36px;
+  background: var(--bg-canvas);
+  flex-direction: column;
+  padding: 0;
 }
 
 .rdp-pane[data-active="true"] { display: flex; }
+
+.rdp-session-toolbar {
+  align-items: center;
+  background: var(--bg-panel-solid);
+  border-bottom: 1px solid var(--separator);
+  display: flex;
+  flex: 0 0 38px;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.rdp-session-badge {
+  align-items: center;
+  background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--protocol-rdp) 34%, transparent);
+  border-radius: 6px;
+  color: var(--protocol-rdp);
+  display: flex;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 8px;
+  font-weight: 780;
+  height: 22px;
+  justify-content: center;
+  width: 30px;
+}
+
+.rdp-session-title { color: var(--text-primary); font-size: 11px; font-weight: 620; }
+.rdp-session-address { color: var(--text-tertiary); font-size: 10px; }
+.rdp-session-spacer { flex: 1; }
+.rdp-session-state {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  font-size: 9px;
+  gap: 6px;
+}
+.rdp-session-state i {
+  background: var(--accent);
+  border-radius: 50%;
+  height: 5px;
+  width: 5px;
+}
+.rdp-session-state[data-status="connecting"] i { background: var(--warning); }
+.rdp-session-state[data-status="error"] { color: #d75c4a; }
+.rdp-session-state[data-status="error"] i { background: #d75c4a; }
+
+.rdp-native-viewport {
+  align-items: center;
+  background: #090a0c;
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+:root[data-theme="light"] .rdp-native-viewport { background: #e9e5dc; }
 
 .rdp-status-card {
   align-items: flex-start;

@@ -8,6 +8,7 @@
   --radius-md: 10px;
   --radius-lg: 16px;
   --motion-fast: 120ms;
+  --motion-selection: 180ms;
   --motion-standard: 220ms;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -460,31 +461,43 @@ button:focus-visible,
 }
 
 .resize-handle {
-  background: var(--separator);
+  background: transparent;
   cursor: col-resize;
   flex: 0 0 1px;
   position: relative;
+  touch-action: none;
   z-index: 3;
 }
 
 .resize-handle::after {
-  background: transparent;
   content: "";
-  inset: 0 -3px;
+  inset: 0 -5px;
   position: absolute;
-  transition: background var(--motion-fast) ease;
 }
 
-.resize-handle:hover::after,
-.resize-handle:focus-visible::after,
-.is-resizing .resize-handle::after {
+.resize-handle::before {
+  background: var(--separator);
+  content: "";
+  inset: 0;
+  position: absolute;
+  transition:
+    background-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease;
+}
+
+.resize-handle:hover::before,
+.resize-handle:focus-visible::before,
+.is-resizing .resize-handle::before {
   background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 .is-resizing {
   cursor: col-resize;
   user-select: none;
 }
+
+.is-resizing * { cursor: col-resize !important; }
 
 .main-area {
   background: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
@@ -495,6 +508,85 @@ button:focus-visible,
   min-width: 280px;
   overflow: hidden;
 }
+
+.workspace-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-split {
+  background: var(--separator);
+  display: flex;
+  flex: 1;
+  gap: 1px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.workspace-split[data-direction="row"] { flex-direction: row; }
+.workspace-split[data-direction="column"] { flex-direction: column; }
+.workspace-split > * { flex: 1 1 0; }
+
+.workspace-pane {
+  background: var(--bg-canvas);
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-pane::after {
+  border: 1px solid transparent;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: border-color var(--motion-fast) ease;
+  z-index: 25;
+}
+
+.workspace-pane[data-active="true"]::after {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.workspace-pane-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.workspace-view-layer {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 5;
+}
+
+.workspace-tab-slot {
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+
+.workspace-tab-slot[data-active="true"] {
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.workspace-tab-slot > .workspace-view { inset: 0; }
 
 .tabbar {
   align-items: center;
@@ -565,6 +657,7 @@ button:focus-visible,
   min-width: 0;
   padding: 0 4px 0 8px;
   text-align: left;
+  touch-action: none;
   transition:
     color 140ms ease,
     transform var(--motion-fast) var(--ease-out);
@@ -712,25 +805,110 @@ button:focus-visible,
   width: 30px;
 }
 
-.tab-select > span:first-child {
+.tab-glyph {
   align-items: center;
-  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);
-  border-radius: 6px;
+  color: var(--accent-strong);
   display: flex;
-  flex: 0 0 30px;
-  height: 22px;
+  flex: 0 0 18px;
+  height: 18px;
   justify-content: center;
-  width: 30px;
+  width: 18px;
 }
 
-.localTerminal-tab-icon,
-.settings-tab-icon {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 10px;
-  font-weight: 720;
+.tab-glyph svg {
+  fill: none;
+  height: 18px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+  width: 18px;
 }
+
+.tab[data-dragging="true"] { opacity: 0.36; }
+.is-dragging-tab { cursor: grabbing; user-select: none; }
+
+.tab-drag-preview {
+  align-items: center;
+  background: color-mix(in srgb, var(--bg-panel-solid) 94%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  box-shadow: var(--shadow-panel);
+  color: var(--text-primary);
+  display: flex;
+  font-size: 11px;
+  font-weight: 580;
+  gap: 8px;
+  height: 34px;
+  left: 0;
+  max-width: 220px;
+  overflow: hidden;
+  padding: 0 12px;
+  pointer-events: none;
+  position: fixed;
+  text-overflow: ellipsis;
+  top: 0;
+  white-space: nowrap;
+  will-change: transform;
+  z-index: 250;
+}
+
+.tab-drag-dot {
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  flex: 0 0 6px;
+  height: 6px;
+  width: 6px;
+}
+
+.workspace-drop-overlay {
+  background: color-mix(in srgb, var(--bg-canvas) 42%, transparent);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 24;
+}
+
+.workspace-drop-preview {
+  align-items: center;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 78%, transparent);
+  border-radius: 10px;
+  display: flex;
+  justify-content: center;
+  position: absolute;
+}
+
+.workspace-drop-preview span {
+  background: color-mix(in srgb, var(--bg-panel-solid) 90%, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 620;
+  padding: 5px 9px;
+}
+
+.workspace-drop-preview[data-zone="center"] { inset: 8px; }
+.workspace-drop-preview[data-zone="left"] { inset: 8px calc(50% + 4px) 8px 8px; }
+.workspace-drop-preview[data-zone="right"] { inset: 8px 8px 8px calc(50% + 4px); }
+.workspace-drop-preview[data-zone="top"] { inset: 8px 8px calc(50% + 4px); }
+.workspace-drop-preview[data-zone="bottom"] { inset: calc(50% + 4px) 8px 8px; }
+
+.empty-pane {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: center;
+}
+
+.empty-pane span { font-size: 13px; font-weight: 590; }
+.empty-pane small { color: var(--text-tertiary); font-size: 10px; }
 
 .tabbar-spacer {
   flex: 1;

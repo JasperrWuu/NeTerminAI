@@ -20,6 +20,7 @@ export const defaultApplicationSettings: ApplicationSettings = {
     cursorBlink: true,
     scrollback: 10_000,
     colorScheme: "adaptive",
+    highlightRules: [],
   },
 };
 
@@ -37,6 +38,9 @@ function readSettings(): ApplicationSettings {
       terminal: {
         ...defaultApplicationSettings.terminal,
         ...parsed.terminal,
+        highlightRules: Array.isArray(parsed.terminal?.highlightRules)
+          ? parsed.terminal.highlightRules
+          : [],
       },
     };
     if (settings.terminal.colorScheme === "paper") settings.appearance.theme = "light";
