@@ -175,8 +175,21 @@ export function useWorkspaceTabs() {
       const sourcePane = findPane(current.layout, sourcePaneId);
       const targetPane = findPane(current.layout, targetPaneId);
       if (!sourcePane?.tabIds.includes(tabId) || !targetPane) return current;
-      if (sourcePaneId === targetPaneId && (zone === "center" || sourcePane.tabIds.length === 1)) {
-        return current;
+      if (sourcePaneId === targetPaneId && zone === "center") return current;
+
+      const direction = zone === "left" || zone === "right" ? "row" : "column";
+      const placeFirst = zone === "left" || zone === "top";
+
+      if (sourcePaneId === targetPaneId && sourcePane.tabIds.length === 1) {
+        const emptyPane = createPane();
+        const layout = replacePane(current.layout, targetPaneId, (pane) => ({
+          type: "split",
+          id: crypto.randomUUID(),
+          direction,
+          first: placeFirst ? pane : emptyPane,
+          second: placeFirst ? emptyPane : pane,
+        }));
+        return { ...current, layout, activePaneId: sourcePane.id };
       }
 
       const detached = removeTabFromPane(current.layout, sourcePaneId, tabId);
@@ -197,8 +210,6 @@ export function useWorkspaceTabs() {
       }
 
       const newPane = createPane(tabId);
-      const direction = zone === "left" || zone === "right" ? "row" : "column";
-      const placeFirst = zone === "left" || zone === "top";
       const layout = replacePane(detached, targetPaneId, (pane) => ({
         type: "split",
         id: crypto.randomUUID(),

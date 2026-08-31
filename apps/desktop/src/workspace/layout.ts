@@ -1,4 +1,49 @@
-import type { WorkspaceLayoutNode, WorkspacePaneNode } from "./types";
+import type { WorkspaceDropZone, WorkspaceLayoutNode, WorkspacePaneNode } from "./types";
+
+interface DropBounds {
+  bottom: number;
+  height: number;
+  left: number;
+  right: number;
+  top: number;
+  width: number;
+}
+
+export function resolveWorkspaceDropZone(
+  bounds: DropBounds,
+  clientX: number,
+  clientY: number,
+  overTabBar = false,
+): WorkspaceDropZone {
+  const x = Math.min(1, Math.max(0, (clientX - bounds.left) / Math.max(bounds.width, 1)));
+  const y = Math.min(1, Math.max(0, (clientY - bounds.top) / Math.max(bounds.height, 1)));
+
+  // The tab strip is for selecting or moving tabs between existing groups.
+  // Split intent begins only after the pointer enters the terminal surface,
+  // which avoids accidental splits while the user is still grabbing a tab.
+  if (overTabBar) return "center";
+
+  const horizontalThreshold = 0.3;
+  const verticalThreshold = 0.25;
+  const horizontal = x <= horizontalThreshold
+    ? { score: x / horizontalThreshold, zone: "left" as const }
+    : x >= 1 - horizontalThreshold
+      ? { score: (1 - x) / horizontalThreshold, zone: "right" as const }
+      : null;
+  const vertical = y <= verticalThreshold
+    ? { score: y / verticalThreshold, zone: "top" as const }
+    : y >= 1 - verticalThreshold
+      ? { score: (1 - y) / verticalThreshold, zone: "bottom" as const }
+      : null;
+
+  if (horizontal && vertical) {
+    const paneFavorsHorizontal = bounds.width >= bounds.height;
+    const horizontalScore = horizontal.score * (paneFavorsHorizontal ? 0.86 : 1);
+    const verticalScore = vertical.score * (paneFavorsHorizontal ? 1 : 0.86);
+    return horizontalScore <= verticalScore ? horizontal.zone : vertical.zone;
+  }
+  return horizontal?.zone ?? vertical?.zone ?? "center";
+}
 
 export function findPane(node: WorkspaceLayoutNode, paneId: string): WorkspacePaneNode | null {
   if (node.type === "pane") return node.id === paneId ? node : null;

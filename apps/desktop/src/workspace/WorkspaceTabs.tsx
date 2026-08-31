@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { localTerminalProfiles } from "../terminal/profiles";
-import type { LocalTerminalProfileId } from "../terminal/profiles";
 import { motion, prefersReducedMotion } from "../ui/motion";
 import type { WorkspaceTab } from "./types";
 
@@ -12,11 +10,6 @@ interface WorkspaceTabsProps {
   onActivate: (paneId: string, tabId: string) => void;
   onClose: (paneId: string, tabId: string) => void;
   onTabPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, paneId: string, tab: WorkspaceTab) => void;
-  onCreateTerminal: (profileId: LocalTerminalProfileId) => void;
-  onCreateTelnet: () => void;
-  onCreateSerial: () => void;
-  onCreateSsh: () => void;
-  onCreateRdp: () => void;
 }
 
 export function WorkspaceTabs({
@@ -25,15 +18,8 @@ export function WorkspaceTabs({
   activeTabId,
   onActivate,
   onClose,
-  onCreateTerminal,
-  onCreateTelnet,
-  onCreateSerial,
-  onCreateSsh,
-  onCreateRdp,
   onTabPointerDown,
 }: WorkspaceTabsProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
   const activeIndicatorRef = useRef<HTMLDivElement>(null);
@@ -75,19 +61,6 @@ export function WorkspaceTabs({
     return () => observer.disconnect();
   }, [positionActiveIndicator]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const closeMenu = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", closeMenu);
-    return () => window.removeEventListener("pointerdown", closeMenu);
-  }, [menuOpen]);
-
   return (
     <div className="tabbar">
       <div className="tab-list" ref={tabListRef} role="tablist" aria-label="工作区标签">
@@ -119,86 +92,13 @@ export function WorkspaceTabs({
               onClick={() => onClose(paneId, tab.id)}
               type="button"
             >
-              ×
+              <svg aria-hidden="true" viewBox="0 0 16 16">
+                <path d="m4.5 4.5 7 7m0-7-7 7" />
+              </svg>
             </button>
           </div>
         ))}
       </div>
-
-      <div className="new-tab-control" ref={menuRef}>
-        <button
-          aria-label="新建 PowerShell 终端"
-          className="new-tab-button"
-          onClick={() => onCreateTerminal("powershell")}
-          type="button"
-        >
-          +
-        </button>
-        <button
-          aria-expanded={menuOpen}
-          aria-haspopup="menu"
-          aria-label="选择新标签类型"
-          className="new-tab-menu-button"
-          onClick={() => setMenuOpen((open) => !open)}
-          type="button"
-        >
-          ‹
-        </button>
-
-        {menuOpen && (
-          <div className="terminal-profile-menu" role="menu">
-            <div className="terminal-profile-menu-label">本地终端</div>
-            {localTerminalProfiles.map((profile) => (
-              <button
-                className="terminal-profile-option"
-                key={profile.id}
-                onClick={() => {
-                  onCreateTerminal(profile.id);
-                  setMenuOpen(false);
-                }}
-                role="menuitem"
-                type="button"
-              >
-                <span className="profile-icon">{profile.shortName}</span>
-                <span>{profile.name}</span>
-              </button>
-            ))}
-            <div className="terminal-profile-menu-label menu-section-label">远程连接</div>
-            <button
-              className="terminal-profile-option"
-              onClick={() => {
-                onCreateTelnet();
-                setMenuOpen(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              <span className="profile-icon telnet-profile-icon">TN</span>
-              <span>Telnet</span>
-            </button>
-            <button className="terminal-profile-option" onClick={() => { onCreateSsh(); setMenuOpen(false); }} role="menuitem" type="button">
-              <span className="profile-icon ssh-profile-icon">SSH</span><span>SSH</span>
-            </button>
-            <button
-              className="terminal-profile-option"
-              onClick={() => {
-                onCreateSerial();
-                setMenuOpen(false);
-              }}
-              role="menuitem"
-              type="button"
-            >
-              <span className="profile-icon serial-profile-icon">COM</span>
-              <span>串口</span>
-            </button>
-            <button className="terminal-profile-option" onClick={() => { onCreateRdp(); setMenuOpen(false); }} role="menuitem" type="button">
-              <span className="profile-icon rdp-profile-icon">RDP</span><span>远程桌面</span>
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="tabbar-spacer" />
     </div>
   );
 }

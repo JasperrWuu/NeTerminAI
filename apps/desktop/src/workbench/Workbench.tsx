@@ -321,11 +321,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             onActivatePane={workspaceTabs.activatePane}
             onActivateTab={workspaceTabs.activateTab}
             onCloseTab={workspaceTabs.closeTab}
-            onCreateTerminal={workspaceTabs.createTerminal}
-            onCreateTelnet={() => setTelnetDialog({ open: true })}
-            onCreateSerial={() => setSerialDialog({ open: true })}
-            onCreateSsh={() => setSshDialog({ open: true })}
-            onCreateRdp={() => setRdpDialog({ open: true })}
             onMoveTab={workspaceTabs.moveTab}
             onDraggingChange={setTabDragging}
             renderTab={renderWorkspaceTab}

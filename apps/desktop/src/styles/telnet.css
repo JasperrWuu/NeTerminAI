@@ -69,12 +69,6 @@
 .ssh-tab-icon { color: var(--protocol-ssh); }
 .rdp-tab-icon { color: var(--protocol-rdp); }
 
-.menu-section-label {
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 5px;
-  padding-top: 10px;
-}
-
 .remote-group-label {
   align-items: center;
   border-top: 1px solid var(--border-subtle);

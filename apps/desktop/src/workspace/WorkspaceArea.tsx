@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import type { LocalTerminalProfileId } from "../terminal/profiles";
 import { WorkspaceTabs } from "./WorkspaceTabs";
+import { resolveWorkspaceDropZone } from "./layout";
 import type {
   WorkspaceDropZone,
   WorkspaceLayoutNode,
@@ -18,11 +18,6 @@ interface WorkspaceAreaProps {
   onCloseTab: (paneId: string, tabId: string) => void;
   onMoveTab: (tabId: string, sourcePaneId: string, targetPaneId: string, zone: WorkspaceDropZone) => void;
   onDraggingChange?: (dragging: boolean) => void;
-  onCreateTerminal: (profileId: LocalTerminalProfileId) => void;
-  onCreateTelnet: () => void;
-  onCreateSerial: () => void;
-  onCreateSsh: () => void;
-  onCreateRdp: () => void;
   renderTab: (tab: WorkspaceTab, active: boolean, paneId: string) => ReactNode;
 }
 
@@ -106,9 +101,9 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
 
     const finish = (pointerEvent: PointerEvent, commit: boolean) => {
       const wasDragging = dragging;
-      element.removeEventListener("pointermove", move);
-      element.removeEventListener("pointerup", pointerUp);
-      element.removeEventListener("pointercancel", pointerCancel);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", pointerUp);
+      window.removeEventListener("pointercancel", pointerCancel);
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
       tabElement?.removeAttribute("data-dragging");
       document.body.classList.remove("is-dragging-tab");
@@ -130,9 +125,9 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
 
     const pointerUp = (pointerEvent: PointerEvent) => finish(pointerEvent, true);
     const pointerCancel = (pointerEvent: PointerEvent) => finish(pointerEvent, false);
-    element.addEventListener("pointermove", move);
-    element.addEventListener("pointerup", pointerUp);
-    element.addEventListener("pointercancel", pointerCancel);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", pointerUp);
+    window.addEventListener("pointercancel", pointerCancel);
   }, [props, updateDropTarget]);
 
   const tabsById = new Map(props.tabs.map((tab) => [tab.id, tab]));
@@ -267,11 +262,6 @@ function WorkspacePane({ node, ...props }: Omit<LayoutNodeProps, "node"> & { nod
         activeTabId={node.activeTabId}
         onActivate={props.onActivateTab}
         onClose={props.onCloseTab}
-        onCreateRdp={props.onCreateRdp}
-        onCreateSerial={props.onCreateSerial}
-        onCreateSsh={props.onCreateSsh}
-        onCreateTelnet={props.onCreateTelnet}
-        onCreateTerminal={props.onCreateTerminal}
         onTabPointerDown={props.onTabPointerDown}
         paneId={node.id}
         tabs={tabs}
@@ -280,7 +270,7 @@ function WorkspacePane({ node, ...props }: Omit<LayoutNodeProps, "node"> & { nod
         {tabs.length === 0 && (
           <div className="empty-pane">
             <span>空白分区</span>
-            <small>从其他标签拖入，或新建一个终端</small>
+            <small>将其他会话标签拖到这里</small>
           </div>
         )}
       </div>
@@ -324,24 +314,26 @@ function sameBounds(current: Record<string, PaneBounds>, next: Record<string, Pa
 }
 
 function resolveDropTarget(clientX: number, clientY: number): DropTarget | null {
-  const element = document.elementFromPoint(clientX, clientY);
-  const pane = element?.closest<HTMLElement>("[data-workspace-pane-id]");
+  const pane = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-workspace-pane-id]"),
+  ).find((candidate) => {
+    const bounds = candidate.getBoundingClientRect();
+    return clientX >= bounds.left && clientX <= bounds.right
+      && clientY >= bounds.top && clientY <= bounds.bottom;
+  });
   if (!pane) return null;
   const bounds = pane.getBoundingClientRect();
-  const horizontalEdge = Math.min(96, Math.max(48, bounds.width * 0.24));
-  const verticalEdge = Math.min(96, Math.max(48, bounds.height * 0.24));
-  const distances = [
-    ["left", clientX - bounds.left, horizontalEdge],
-    ["right", bounds.right - clientX, horizontalEdge],
-    ["top", clientY - bounds.top, verticalEdge],
-    ["bottom", bounds.bottom - clientY, verticalEdge],
-  ] as const;
-  const edge = distances
-    .filter(([, distance, threshold]) => distance <= threshold)
-    .sort((left, right) => left[1] / left[2] - right[1] / right[2])[0];
+  const tabBarBounds = pane.querySelector<HTMLElement>(".tabbar")?.getBoundingClientRect();
+  const overTabBar = Boolean(
+    tabBarBounds
+      && clientX >= tabBarBounds.left
+      && clientX <= tabBarBounds.right
+      && clientY >= tabBarBounds.top
+      && clientY <= tabBarBounds.bottom,
+  );
   return {
     paneId: pane.dataset.workspacePaneId ?? "",
-    zone: edge?.[0] ?? "center",
+    zone: resolveWorkspaceDropZone(bounds, clientX, clientY, overTabBar),
   };
 }
 
