@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Manager, State};
 
-use crate::telnet::{TelnetLoginMode, TelnetManager};
+use crate::telnet::TelnetManager;
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -11,7 +11,6 @@ pub async fn create_telnet(
     port: u16,
     username: String,
     password: String,
-    login_mode: TelnetLoginMode,
     columns: u16,
     rows: u16,
 ) -> Result<(), String> {
@@ -25,7 +24,6 @@ pub async fn create_telnet(
             port,
             username,
             password,
-            login_mode,
             columns,
             rows,
             cancellation,

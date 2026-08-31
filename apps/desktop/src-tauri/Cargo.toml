@@ -16,4 +16,5 @@ tauri-build = { version = "2", features = [] }
 base64 = "0.22"
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }
+serialport = { version = "4.10", default-features = false }
 tauri = { version = "2", features = [] }

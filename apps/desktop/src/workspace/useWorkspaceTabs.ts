@@ -3,7 +3,7 @@ import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import type { LocalTerminalTab, WorkspaceTab } from "./types";
 import type { SettingsSection } from "./types";
-import type { TelnetConnection } from "../telnet/types";
+import type { SerialConnection, TelnetConnection } from "../connections/types";
 
 function createLocalTerminalTab(
   id: string,
@@ -74,6 +74,19 @@ export function useWorkspaceTabs() {
     }));
   };
 
+  const openSerial = (connection: SerialConnection) => {
+    const tabId = crypto.randomUUID();
+    setWorkspace((current) => ({
+      tabs: [...current.tabs, {
+        id: tabId,
+        kind: "serial",
+        connection,
+        title: connection.name.trim() || connection.portName,
+      }],
+      activeTabId: tabId,
+    }));
+  };
+
   const closeTab = (tabId: string) => {
     setWorkspace((current) => {
       const closedIndex = current.tabs.findIndex((tab) => tab.id === tabId);
@@ -95,6 +108,7 @@ export function useWorkspaceTabs() {
       setWorkspace((current) => ({ ...current, activeTabId })),
     createTerminal,
     openTelnet,
+    openSerial,
     openSettings,
     closeTab,
   };

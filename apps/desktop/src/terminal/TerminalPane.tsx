@@ -7,7 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalTheme } from "./themes";
-import type { TelnetConnection } from "../telnet/types";
+import type { SerialConnection, TelnetConnection } from "../connections/types";
 
 interface TerminalPaneCommonProps {
   active: boolean;
@@ -18,6 +18,7 @@ interface TerminalPaneCommonProps {
 type TerminalPaneProps = TerminalPaneCommonProps & (
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
   | { sessionType: "telnet"; connection: TelnetConnection }
+  | { sessionType: "serial"; connection: SerialConnection }
 );
 
 interface TerminalOutput { sessionId: string; data: string; }
@@ -33,14 +34,18 @@ function decodeBase64(value: string) {
 export function TerminalPane(props: TerminalPaneProps) {
   const { active, settings, theme } = props;
   const isTelnet = props.sessionType === "telnet";
-  const connection = isTelnet ? props.connection : null;
-  const remoteHost = connection?.host ?? "";
-  const remotePort = connection?.port ?? 23;
-  const remoteUsername = connection?.loginMode === "passwordOnly" ? "" : (connection?.username ?? "");
-  const remotePassword = connection?.password ?? "";
+  const isSerial = props.sessionType === "serial";
+  const telnetConnection = isTelnet ? props.connection : null;
+  const serialConnection = isSerial ? props.connection : null;
+  const remoteHost = telnetConnection?.host ?? "";
+  const remotePort = telnetConnection?.port ?? 23;
+  const remoteUsername = telnetConnection?.username ?? "";
+  const remotePassword = telnetConnection?.password ?? "";
+  const serialPortName = serialConnection?.portName ?? "";
   const profileId = props.sessionType === "local" ? props.profileId : null;
-  const commandPrefix = isTelnet ? "telnet" : "terminal";
-  const eventPrefix = isTelnet ? "telnet" : "terminal";
+  const commandPrefix = isTelnet ? "telnet" : isSerial ? "serial" : "terminal";
+  const eventPrefix = commandPrefix;
+  const supportsResize = !isSerial;
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -73,11 +78,11 @@ export function TerminalPane(props: TerminalPaneProps) {
     if (active) {
       fitAddon.fit();
       const sessionId = ptySessionIdRef.current;
-      if (sessionReadyRef.current && sessionId) {
+      if (supportsResize && sessionReadyRef.current && sessionId) {
         void invoke(`resize_${commandPrefix}`, { sessionId, columns: terminal.cols, rows: terminal.rows });
       }
     }
-  }, [active, settings]);
+  }, [active, commandPrefix, settings, supportsResize]);
 
   useEffect(() => {
     if (!active) return;
@@ -88,12 +93,12 @@ export function TerminalPane(props: TerminalPaneProps) {
       fitAddon.fit();
       terminal.focus();
       const sessionId = ptySessionIdRef.current;
-      if (sessionReadyRef.current && sessionId) {
+      if (supportsResize && sessionReadyRef.current && sessionId) {
         void invoke(`resize_${commandPrefix}`, { sessionId, columns: terminal.cols, rows: terminal.rows });
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [active]);
+  }, [active, commandPrefix, supportsResize]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -146,7 +151,7 @@ export function TerminalPane(props: TerminalPaneProps) {
       resizeFrame = undefined;
       if (disposed || !activeRef.current) return;
       fitAddon.fit();
-      if (sessionReadyRef.current) {
+      if (supportsResize && sessionReadyRef.current) {
         void invoke(`resize_${commandPrefix}`, { sessionId, columns: terminal.cols, rows: terminal.rows });
       }
     };
@@ -175,16 +180,23 @@ export function TerminalPane(props: TerminalPaneProps) {
             setStatus("closed");
           }
         });
-        const createArguments = isTelnet
-          ? {
+        const createArguments = isTelnet ? {
               sessionId,
               host: remoteHost,
               port: remotePort,
               username: remoteUsername,
               password: remotePassword,
-              loginMode: connection?.loginMode ?? "usernamePassword",
               columns: terminal.cols,
               rows: terminal.rows,
+            }
+          : isSerial ? {
+              sessionId,
+              portName: serialPortName,
+              baudRate: serialConnection?.baudRate ?? 9600,
+              dataBits: serialConnection?.dataBits ?? 8,
+              stopBits: serialConnection?.stopBits ?? 1,
+              parity: serialConnection?.parity ?? "none",
+              flowControl: serialConnection?.flowControl ?? "none",
             }
           : { sessionId, profile: profileId, columns: terminal.cols, rows: terminal.rows };
         await invoke(`create_${commandPrefix}`, createArguments);
@@ -226,26 +238,34 @@ export function TerminalPane(props: TerminalPaneProps) {
     commandPrefix,
     eventPrefix,
     isTelnet,
+    isSerial,
     profileId,
     remoteHost,
     remotePassword,
     remotePort,
     remoteUsername,
+    serialConnection?.baudRate,
+    serialConnection?.dataBits,
+    serialConnection?.flowControl,
+    serialConnection?.parity,
+    serialConnection?.stopBits,
+    serialPortName,
+    supportsResize,
   ]);
 
   return (
     <section
       className="terminal-pane workspace-view"
-      aria-label={isTelnet ? `Telnet ${remoteHost}` : "本地终端"}
+      aria-label={isTelnet ? `Telnet ${remoteHost}` : isSerial ? `串口 ${serialPortName}` : "本地终端"}
       aria-hidden={!active}
       data-active={active}
     >
       <div className="terminal-container" onPointerDown={() => terminalRef.current?.focus()} ref={containerRef} />
       {status !== "ready" && (
         <div className="terminal-state" data-status={status}>
-          {status === "starting" && (isTelnet ? `正在连接 ${remoteHost}:${remotePort}…` : "正在启动终端…")}
-          {status === "closed" && (isTelnet ? "Telnet 连接已关闭" : "终端已关闭")}
-          {status === "error" && (errorMessage || (isTelnet ? "Telnet 连接失败" : "终端启动失败"))}
+          {status === "starting" && (isTelnet ? `正在连接 ${remoteHost}:${remotePort}…` : isSerial ? `正在打开 ${serialPortName}…` : "正在启动终端…")}
+          {status === "closed" && (isTelnet ? "Telnet 连接已关闭" : isSerial ? "串口连接已关闭" : "终端已关闭")}
+          {status === "error" && (errorMessage || (isTelnet ? "Telnet 连接失败" : isSerial ? "串口连接失败" : "终端启动失败"))}
         </div>
       )}
     </section>

@@ -21,8 +21,9 @@ import { TerminalSettingsView } from "../settings/TerminalSettingsView";
 import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../telnet/SessionFolderDialog";
 import { ConnectionsSidebar } from "../telnet/ConnectionsSidebar";
-import type { SavedTelnetSession, TelnetSessionFolder } from "../telnet/types";
-import { useTelnetSessions } from "../telnet/useTelnetSessions";
+import { SerialConnectionDialog } from "../serial/SerialConnectionDialog";
+import type { ConnectionFolder, SavedConnectionSession, SavedSerialSession, SavedTelnetSession } from "../connections/types";
+import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 
 interface WorkbenchProps {
   preferences: WorkbenchPreferencesController;
@@ -59,17 +60,30 @@ const panelCopy: Record<ActivityId, { title: string; description: string }> = {
 export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [activity, setActivity] = useState<ActivityId>("connections");
   const workspaceTabs = useWorkspaceTabs();
-  const telnetSessions = useTelnetSessions();
+  const connectionLibrary = useConnectionLibrary();
   const [telnetDialog, setTelnetDialog] = useState<{
     open: boolean;
     session?: SavedTelnetSession;
   }>({ open: false });
+  const [serialDialog, setSerialDialog] = useState<{
+    open: boolean;
+    session?: SavedSerialSession;
+  }>({ open: false });
   const [folderDialog, setFolderDialog] = useState<{
     open: boolean;
-    folder?: TelnetSessionFolder;
+    folder?: ConnectionFolder;
   }>({ open: false });
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
+  const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
+  const openSavedConnection = (session: SavedConnectionSession) => {
+    if (session.kind === "telnet") workspaceTabs.openTelnet(session);
+    else workspaceTabs.openSerial(session);
+  };
+  const editSavedConnection = (session: SavedConnectionSession) => {
+    if (session.kind === "telnet") setTelnetDialog({ open: true, session });
+    else setSerialDialog({ open: true, session });
+  };
 
   const leftResize = usePanelResize({
     currentWidth: preferences.leftSidebarWidth,
@@ -167,15 +181,16 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
               <div className="activity-panel-content" key={activity}>
                 {activity === "connections" ? (
                   <ConnectionsSidebar
-                    folders={telnetSessions.folders}
-                    sessions={telnetSessions.sessions}
-                    onConnect={workspaceTabs.openTelnet}
+                    folders={connectionLibrary.folders}
+                    sessions={connectionLibrary.sessions}
+                    onConnect={openSavedConnection}
                     onCreateFolder={() => setFolderDialog({ open: true })}
                     onCreateLocal={workspaceTabs.createTerminal}
                     onCreateTelnet={() => setTelnetDialog({ open: true })}
-                    onEdit={(session) => setTelnetDialog({ open: true, session })}
-                    onRemoveFolder={telnetSessions.removeFolder}
-                    onRemoveSession={telnetSessions.removeSession}
+                    onCreateSerial={() => setSerialDialog({ open: true })}
+                    onEdit={editSavedConnection}
+                    onRemoveFolder={connectionLibrary.removeFolder}
+                    onRemoveSession={connectionLibrary.removeSession}
                     onRenameFolder={(folder) => setFolderDialog({ open: true, folder })}
                   />
                 ) : (
@@ -205,6 +220,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             onClose={workspaceTabs.closeTab}
             onCreateTerminal={workspaceTabs.createTerminal}
             onCreateTelnet={() => setTelnetDialog({ open: true })}
+            onCreateSerial={() => setSerialDialog({ open: true })}
             tabs={workspaceTabs.tabs}
           />
 
@@ -225,6 +241,15 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                   connection={tab.connection}
                   key={tab.id}
                   sessionType="telnet"
+                  settings={settings.terminal}
+                  theme={settings.appearance.theme}
+                />
+              ) : tab.kind === "serial" ? (
+                <TerminalPane
+                  active={tab.id === workspaceTabs.activeTabId}
+                  connection={tab.connection}
+                  key={tab.id}
+                  sessionType="serial"
                   settings={settings.terminal}
                   theme={settings.appearance.theme}
                 />
@@ -294,15 +319,27 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
 
       {telnetDialog.open && (
         <TelnetConnectionDialog
-          folders={telnetSessions.folders}
+          folders={connectionLibrary.folders}
           initialSession={telnetDialog.session}
           onCancel={closeTelnetDialog}
           onSubmit={(connection, save, savesPassword, folderId) => {
             if (save) {
-              telnetSessions.saveSession(connection, savesPassword, folderId, telnetDialog.session?.id);
+              connectionLibrary.saveTelnet(connection, savesPassword, folderId, telnetDialog.session?.id);
             }
             if (!telnetDialog.session) workspaceTabs.openTelnet(connection);
             closeTelnetDialog();
+          }}
+        />
+      )}
+      {serialDialog.open && (
+        <SerialConnectionDialog
+          folders={connectionLibrary.folders}
+          initialSession={serialDialog.session}
+          onCancel={closeSerialDialog}
+          onSubmit={(connection, save, folderId) => {
+            if (save) connectionLibrary.saveSerial(connection, folderId, serialDialog.session?.id);
+            if (!serialDialog.session) workspaceTabs.openSerial(connection);
+            closeSerialDialog();
           }}
         />
       )}
@@ -311,8 +348,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           folder={folderDialog.folder}
           onCancel={() => setFolderDialog({ open: false })}
           onSave={(name) => {
-            if (folderDialog.folder) telnetSessions.renameFolder(folderDialog.folder.id, name);
-            else telnetSessions.createFolder(name);
+            if (folderDialog.folder) connectionLibrary.renameFolder(folderDialog.folder.id, name);
+            else connectionLibrary.createFolder(name);
             setFolderDialog({ open: false });
           }}
         />

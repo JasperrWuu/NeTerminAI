@@ -12,7 +12,7 @@ use std::{
 };
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 const IAC: u8 = 255;
@@ -50,21 +50,12 @@ struct TelnetSession {
 struct LoginCredentials {
     username: String,
     password: String,
-    login_mode: TelnetLoginMode,
 }
 
 struct TerminalGeometry {
     columns: u16,
     rows: u16,
     window_size_enabled: Arc<AtomicBool>,
-}
-
-#[derive(Clone, Copy, Deserialize)]
-pub enum TelnetLoginMode {
-    #[serde(rename = "usernamePassword")]
-    UsernamePassword,
-    #[serde(rename = "passwordOnly")]
-    PasswordOnly,
 }
 
 enum WriterMessage {
@@ -112,7 +103,6 @@ impl TelnetManager {
         port: u16,
         username: String,
         password: String,
-        login_mode: TelnetLoginMode,
         columns: u16,
         rows: u16,
         cancellation: Arc<AtomicBool>,
@@ -180,7 +170,6 @@ impl TelnetManager {
             LoginCredentials {
                 username,
                 password,
-                login_mode,
             },
             TerminalGeometry {
                 columns,
@@ -332,8 +321,7 @@ fn spawn_reader(
             geometry.window_size_enabled,
         );
         let mut prompt = String::new();
-        let mut username_sent = matches!(credentials.login_mode, TelnetLoginMode::PasswordOnly)
-            || credentials.username.is_empty();
+        let mut username_sent = credentials.username.is_empty();
         let mut password_sent = credentials.password.is_empty();
 
         loop {

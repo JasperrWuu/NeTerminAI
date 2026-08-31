@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { localTerminalProfiles } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
-import type { SavedTelnetSession, TelnetSessionFolder } from "./types";
+import type { ConnectionFolder, SavedConnectionSession } from "../connections/types";
 import { ChevronIcon, CloseIcon, EditIcon, FolderIcon, PlusIcon } from "../workbench/icons";
 
 interface ConnectionsSidebarProps {
-  folders: TelnetSessionFolder[];
-  sessions: SavedTelnetSession[];
-  onConnect: (session: SavedTelnetSession) => void;
+  folders: ConnectionFolder[];
+  sessions: SavedConnectionSession[];
+  onConnect: (session: SavedConnectionSession) => void;
   onCreateFolder: () => void;
   onCreateLocal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
-  onEdit: (session: SavedTelnetSession) => void;
+  onCreateSerial: () => void;
+  onEdit: (session: SavedConnectionSession) => void;
   onRemoveFolder: (folderId: string) => void;
   onRemoveSession: (sessionId: string) => void;
-  onRenameFolder: (folder: TelnetSessionFolder) => void;
+  onRenameFolder: (folder: ConnectionFolder) => void;
 }
 
 export function ConnectionsSidebar({
@@ -24,6 +25,7 @@ export function ConnectionsSidebar({
   onCreateFolder,
   onCreateLocal,
   onCreateTelnet,
+  onCreateSerial,
   onEdit,
   onRemoveFolder,
   onRemoveSession,
@@ -52,7 +54,7 @@ export function ConnectionsSidebar({
       ))}
 
       <div className="connection-group-label remote-group-label">
-        <span>Telnet 会话</span>
+        <span>远程与串口</span>
         <button aria-label="新建会话分区" className="group-add-button" onClick={onCreateFolder} title="新建分区" type="button"><FolderIcon /><PlusIcon /></button>
       </div>
 
@@ -98,15 +100,19 @@ export function ConnectionsSidebar({
         <span className="new-connection-icon"><PlusIcon /></span>
         <span className="new-connection-copy"><strong>新建 Telnet 连接</strong><small>设置地址、端口与认证</small></span>
       </button>
+      <button className="new-connection-button" onClick={onCreateSerial} type="button">
+        <span className="new-connection-icon serial-new-connection-icon"><PlusIcon /></span>
+        <span className="new-connection-copy"><strong>新建串口连接</strong><small>设置 COM 口与串口参数</small></span>
+      </button>
       {sessions.length > 0 && <p className="connection-gesture-hint">单击编辑 · 双击连接</p>}
     </div>
   );
 }
 
 function SavedSessionRow({ session, onConnect, onEdit, onRemove }: {
-  session: SavedTelnetSession;
-  onConnect: (session: SavedTelnetSession) => void;
-  onEdit: (session: SavedTelnetSession) => void;
+  session: SavedConnectionSession;
+  onConnect: (session: SavedConnectionSession) => void;
+  onEdit: (session: SavedConnectionSession) => void;
   onRemove: (sessionId: string) => void;
 }) {
   const clickTimer = useRef<number | null>(null);
@@ -134,9 +140,9 @@ function SavedSessionRow({ session, onConnect, onEdit, onRemove }: {
         title="单击编辑，双击连接"
         type="button"
       >
-        <span className="connection-profile-icon telnet-profile-icon">{session.loginMode === "passwordOnly" ? "SER" : "TEL"}</span>
-        <span className="connection-name">{session.name}<small>{session.host}:{session.port}</small></span>
-        <span className="session-mode">{session.loginMode === "passwordOnly" ? "串口" : "Telnet"}</span>
+        <span className={`connection-profile-icon ${session.kind}-profile-icon`}>{session.kind === "telnet" ? "TEL" : "COM"}</span>
+        <span className="connection-name">{session.name}<small>{session.kind === "telnet" ? `${session.host}:${session.port}` : `${session.portName} · ${session.baudRate}`}</small></span>
+        <span className="session-mode">{session.kind === "telnet" ? "Telnet" : "串口"}</span>
       </button>
       <button aria-label={`删除 ${session.name}`} className="saved-connection-remove" onClick={() => onRemove(session.id)} title="删除保存的会话" type="button"><CloseIcon /></button>
     </div>

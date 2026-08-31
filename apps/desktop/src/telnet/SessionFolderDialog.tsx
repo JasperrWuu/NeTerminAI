@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { TelnetSessionFolder } from "./types";
+import type { ConnectionFolder } from "../connections/types";
 import { FolderIcon } from "../workbench/icons";
 
 export function SessionFolderDialog({ folder, onCancel, onSave }: {
-  folder?: TelnetSessionFolder;
+  folder?: ConnectionFolder;
   onCancel: () => void;
   onSave: (name: string) => void;
 }) {

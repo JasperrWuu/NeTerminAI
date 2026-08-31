@@ -1,5 +1,5 @@
 import type { LocalTerminalProfileId } from "../terminal/profiles";
-import type { TelnetConnection } from "../telnet/types";
+import type { SerialConnection, TelnetConnection } from "../connections/types";
 
 interface WorkspaceTabBase {
   id: string;
@@ -23,5 +23,10 @@ export interface TelnetTab extends WorkspaceTabBase {
   connection: TelnetConnection;
 }
 
-// SSH, Serial, RDP and tools will extend this union without changing the tab shell.
-export type WorkspaceTab = LocalTerminalTab | TelnetTab | SettingsTab;
+export interface SerialTab extends WorkspaceTabBase {
+  kind: "serial";
+  connection: SerialConnection;
+}
+
+// SSH, RDP and tools can extend this union without changing the tab shell.
+export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SettingsTab;

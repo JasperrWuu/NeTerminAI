@@ -10,6 +10,7 @@ interface WorkspaceTabsProps {
   onClose: (tabId: string) => void;
   onCreateTerminal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
+  onCreateSerial: () => void;
 }
 
 export function WorkspaceTabs({
@@ -19,6 +20,7 @@ export function WorkspaceTabs({
   onClose,
   onCreateTerminal,
   onCreateTelnet,
+  onCreateSerial,
 }: WorkspaceTabsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -49,7 +51,7 @@ export function WorkspaceTabs({
               type="button"
             >
               <span className={`${tab.kind}-tab-icon`}>
-                {tab.kind === "localTerminal" ? "›_" : tab.kind === "telnet" ? "TN" : "Aa"}
+                {tab.kind === "localTerminal" ? "›_" : tab.kind === "telnet" ? "TN" : tab.kind === "serial" ? "COM" : "Aa"}
               </span>
               <span className="tab-title">{tab.title}</span>
             </button>
@@ -115,6 +117,18 @@ export function WorkspaceTabs({
             >
               <span className="profile-icon telnet-profile-icon">TN</span>
               <span>Telnet</span>
+            </button>
+            <button
+              className="terminal-profile-option"
+              onClick={() => {
+                onCreateSerial();
+                setMenuOpen(false);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <span className="profile-icon serial-profile-icon">COM</span>
+              <span>串口</span>
             </button>
           </div>
         )}
