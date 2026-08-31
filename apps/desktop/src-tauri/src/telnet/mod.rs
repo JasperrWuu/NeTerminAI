@@ -167,10 +167,7 @@ impl TelnetManager {
             session_id,
             reader,
             writer,
-            LoginCredentials {
-                username,
-                password,
-            },
+            LoginCredentials { username, password },
             TerminalGeometry {
                 columns,
                 rows,

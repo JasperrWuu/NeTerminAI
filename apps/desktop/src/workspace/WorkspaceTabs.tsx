@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { localTerminalProfiles } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import type { WorkspaceTab } from "./types";
@@ -28,6 +28,47 @@ export function WorkspaceTabs({
 }: WorkspaceTabsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef(new Map<string, HTMLDivElement>());
+  const activeIndicatorRef = useRef<HTMLDivElement>(null);
+
+  const positionActiveIndicator = useCallback((animated: boolean) => {
+    const activeTab = activeTabId ? tabRefs.current.get(activeTabId) : undefined;
+    const indicator = activeIndicatorRef.current;
+    if (!activeTab || !indicator) {
+      if (indicator) indicator.dataset.visible = "false";
+      return;
+    }
+
+    const nextTransform = `translateX(${activeTab.offsetLeft}px)`;
+    const currentTransform = getComputedStyle(indicator).transform;
+    indicator.getAnimations().forEach((animation) => animation.cancel());
+    indicator.style.width = `${activeTab.offsetWidth}px`;
+    indicator.style.height = `${activeTab.offsetHeight}px`;
+    indicator.style.top = `${activeTab.offsetTop}px`;
+    indicator.style.transform = nextTransform;
+    indicator.dataset.visible = "true";
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (animated && !reduceMotion && currentTransform !== "none") {
+      indicator.animate(
+        [{ transform: currentTransform }, { transform: nextTransform }],
+        { duration: 220, easing: "cubic-bezier(0.77, 0, 0.175, 1)" },
+      );
+    }
+  }, [activeTabId]);
+
+  useLayoutEffect(() => {
+    positionActiveIndicator(true);
+  }, [positionActiveIndicator, tabs]);
+
+  useEffect(() => {
+    const tabList = tabListRef.current;
+    if (!tabList) return;
+    const observer = new ResizeObserver(() => positionActiveIndicator(false));
+    observer.observe(tabList);
+    return () => observer.disconnect();
+  }, [positionActiveIndicator]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -44,9 +85,18 @@ export function WorkspaceTabs({
 
   return (
     <div className="tabbar">
-      <div className="tab-list" role="tablist" aria-label="工作区标签">
+      <div className="tab-list" ref={tabListRef} role="tablist" aria-label="工作区标签">
+        <div aria-hidden="true" className="tab-active-indicator" ref={activeIndicatorRef} />
         {tabs.map((tab) => (
-          <div className="tab" data-active={activeTabId === tab.id} key={tab.id}>
+          <div
+            className="tab"
+            data-active={activeTabId === tab.id}
+            key={tab.id}
+            ref={(element) => {
+              if (element) tabRefs.current.set(tab.id, element);
+              else tabRefs.current.delete(tab.id);
+            }}
+          >
             <button
               aria-selected={activeTabId === tab.id}
               className="tab-select"
