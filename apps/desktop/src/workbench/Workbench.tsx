@@ -22,7 +22,10 @@ import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../connections/SessionFolderDialog";
 import { ConnectionsSidebar } from "../connections/ConnectionsSidebar";
 import { SerialConnectionDialog } from "../serial/SerialConnectionDialog";
-import type { ConnectionFolder, SavedConnectionSession, SavedSerialSession, SavedTelnetSession } from "../connections/types";
+import { SshConnectionDialog } from "../ssh/SshConnectionDialog";
+import { RdpConnectionDialog } from "../rdp/RdpConnectionDialog";
+import { RdpPane } from "../rdp/RdpPane";
+import type { ConnectionFolder, SavedConnectionSession, SavedRdpSession, SavedSerialSession, SavedSshSession, SavedTelnetSession } from "../connections/types";
 import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 
 interface WorkbenchProps {
@@ -69,6 +72,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     open: boolean;
     session?: SavedSerialSession;
   }>({ open: false });
+  const [sshDialog, setSshDialog] = useState<{ open: boolean; session?: SavedSshSession }>({ open: false });
+  const [rdpDialog, setRdpDialog] = useState<{ open: boolean; session?: SavedRdpSession }>({ open: false });
   const [folderDialog, setFolderDialog] = useState<{
     open: boolean;
     folder?: ConnectionFolder;
@@ -76,13 +81,19 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
+  const closeSshDialog = useCallback(() => setSshDialog({ open: false }), []);
+  const closeRdpDialog = useCallback(() => setRdpDialog({ open: false }), []);
   const openSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") workspaceTabs.openTelnet(session);
-    else workspaceTabs.openSerial(session);
+    else if (session.kind === "serial") workspaceTabs.openSerial(session);
+    else if (session.kind === "ssh") workspaceTabs.openSsh(session);
+    else workspaceTabs.openRdp(session);
   };
   const editSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") setTelnetDialog({ open: true, session });
-    else setSerialDialog({ open: true, session });
+    else if (session.kind === "serial") setSerialDialog({ open: true, session });
+    else if (session.kind === "ssh") setSshDialog({ open: true, session });
+    else setRdpDialog({ open: true, session });
   };
 
   const leftResize = usePanelResize({
@@ -188,6 +199,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                     onCreateLocal={workspaceTabs.createTerminal}
                     onCreateTelnet={() => setTelnetDialog({ open: true })}
                     onCreateSerial={() => setSerialDialog({ open: true })}
+                    onCreateSsh={() => setSshDialog({ open: true })}
+                    onCreateRdp={() => setRdpDialog({ open: true })}
                     onEdit={editSavedConnection}
                     onRemoveFolder={connectionLibrary.removeFolder}
                     onRemoveSession={connectionLibrary.removeSession}
@@ -221,6 +234,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             onCreateTerminal={workspaceTabs.createTerminal}
             onCreateTelnet={() => setTelnetDialog({ open: true })}
             onCreateSerial={() => setSerialDialog({ open: true })}
+            onCreateSsh={() => setSshDialog({ open: true })}
+            onCreateRdp={() => setRdpDialog({ open: true })}
             tabs={workspaceTabs.tabs}
           />
 
@@ -253,6 +268,17 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                   settings={settings.terminal}
                   theme={settings.appearance.theme}
                 />
+              ) : tab.kind === "ssh" ? (
+                <TerminalPane
+                  active={tab.id === workspaceTabs.activeTabId}
+                  connection={tab.connection}
+                  key={tab.id}
+                  sessionType="ssh"
+                  settings={settings.terminal}
+                  theme={settings.appearance.theme}
+                />
+              ) : tab.kind === "rdp" ? (
+                <RdpPane active={tab.id === workspaceTabs.activeTabId} connection={tab.connection} key={tab.id} />
               ) : (
                 <TerminalSettingsView
                   active={tab.id === workspaceTabs.activeTabId}
@@ -340,6 +366,30 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             if (save) connectionLibrary.saveSerial(connection, folderId, serialDialog.session?.id);
             if (!serialDialog.session) workspaceTabs.openSerial(connection);
             closeSerialDialog();
+          }}
+        />
+      )}
+      {sshDialog.open && (
+        <SshConnectionDialog
+          folders={connectionLibrary.folders}
+          initialSession={sshDialog.session}
+          onCancel={closeSshDialog}
+          onSubmit={(connection, save, folderId) => {
+            if (save) connectionLibrary.saveSsh(connection, folderId, sshDialog.session?.id);
+            if (!sshDialog.session) workspaceTabs.openSsh(connection);
+            closeSshDialog();
+          }}
+        />
+      )}
+      {rdpDialog.open && (
+        <RdpConnectionDialog
+          folders={connectionLibrary.folders}
+          initialSession={rdpDialog.session}
+          onCancel={closeRdpDialog}
+          onSubmit={(connection, save, folderId) => {
+            if (save) connectionLibrary.saveRdp(connection, folderId, rdpDialog.session?.id);
+            if (!rdpDialog.session) workspaceTabs.openRdp(connection);
+            closeRdpDialog();
           }}
         />
       )}

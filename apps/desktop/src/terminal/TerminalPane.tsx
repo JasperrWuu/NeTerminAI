@@ -7,7 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalTheme } from "./themes";
-import type { SerialConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 
 interface TerminalPaneCommonProps {
   active: boolean;
@@ -15,11 +15,13 @@ interface TerminalPaneCommonProps {
   theme: AppearanceTheme;
 }
 
-type TerminalPaneProps = TerminalPaneCommonProps & (
+type TerminalSessionProps =
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
   | { sessionType: "telnet"; connection: TelnetConnection }
   | { sessionType: "serial"; connection: SerialConnection }
-);
+  | { sessionType: "ssh"; connection: SshConnection };
+
+type TerminalPaneProps = TerminalPaneCommonProps & TerminalSessionProps;
 
 interface TerminalOutput { sessionId: string; data: string; }
 interface TerminalExit { sessionId: string; }
@@ -33,19 +35,11 @@ function decodeBase64(value: string) {
 
 export function TerminalPane(props: TerminalPaneProps) {
   const { active, settings, theme } = props;
-  const isTelnet = props.sessionType === "telnet";
-  const isSerial = props.sessionType === "serial";
-  const telnetConnection = isTelnet ? props.connection : null;
-  const serialConnection = isSerial ? props.connection : null;
-  const remoteHost = telnetConnection?.host ?? "";
-  const remotePort = telnetConnection?.port ?? 23;
-  const remoteUsername = telnetConnection?.username ?? "";
-  const remotePassword = telnetConnection?.password ?? "";
-  const serialPortName = serialConnection?.portName ?? "";
   const profileId = props.sessionType === "local" ? props.profileId : null;
-  const commandPrefix = isTelnet ? "telnet" : isSerial ? "serial" : "terminal";
+  const sessionConnection = props.sessionType === "local" ? null : props.connection;
+  const commandPrefix = terminalCommandPrefix(props.sessionType);
   const eventPrefix = commandPrefix;
-  const supportsResize = !isSerial;
+  const supportsResize = props.sessionType !== "serial";
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -180,25 +174,7 @@ export function TerminalPane(props: TerminalPaneProps) {
             setStatus("closed");
           }
         });
-        const createArguments = isTelnet ? {
-              sessionId,
-              host: remoteHost,
-              port: remotePort,
-              username: remoteUsername,
-              password: remotePassword,
-              columns: terminal.cols,
-              rows: terminal.rows,
-            }
-          : isSerial ? {
-              sessionId,
-              portName: serialPortName,
-              baudRate: serialConnection?.baudRate ?? 9600,
-              dataBits: serialConnection?.dataBits ?? 8,
-              stopBits: serialConnection?.stopBits ?? 1,
-              parity: serialConnection?.parity ?? "none",
-              flowControl: serialConnection?.flowControl ?? "none",
-            }
-          : { sessionId, profile: profileId, columns: terminal.cols, rows: terminal.rows };
+        const createArguments = terminalCreateArguments(props, sessionId, terminal.cols, terminal.rows);
         await invoke(`create_${commandPrefix}`, createArguments);
         if (disposed) {
           await invoke(`close_${commandPrefix}`, { sessionId });
@@ -237,37 +213,63 @@ export function TerminalPane(props: TerminalPaneProps) {
   }, [
     commandPrefix,
     eventPrefix,
-    isTelnet,
-    isSerial,
     profileId,
-    remoteHost,
-    remotePassword,
-    remotePort,
-    remoteUsername,
-    serialConnection?.baudRate,
-    serialConnection?.dataBits,
-    serialConnection?.flowControl,
-    serialConnection?.parity,
-    serialConnection?.stopBits,
-    serialPortName,
+    sessionConnection,
     supportsResize,
   ]);
 
   return (
     <section
       className="terminal-pane workspace-view"
-      aria-label={isTelnet ? `Telnet ${remoteHost}` : isSerial ? `串口 ${serialPortName}` : "本地终端"}
+      aria-label={terminalAriaLabel(props)}
       aria-hidden={!active}
       data-active={active}
     >
       <div className="terminal-container" onPointerDown={() => terminalRef.current?.focus()} ref={containerRef} />
       {status !== "ready" && (
         <div className="terminal-state" data-status={status}>
-          {status === "starting" && (isTelnet ? `正在连接 ${remoteHost}:${remotePort}…` : isSerial ? `正在打开 ${serialPortName}…` : "正在启动终端…")}
-          {status === "closed" && (isTelnet ? "Telnet 连接已关闭" : isSerial ? "串口连接已关闭" : "终端已关闭")}
-          {status === "error" && (errorMessage || (isTelnet ? "Telnet 连接失败" : isSerial ? "串口连接失败" : "终端启动失败"))}
+          {terminalStatusText(props, status, errorMessage)}
         </div>
       )}
     </section>
   );
+}
+
+function terminalCommandPrefix(sessionType: TerminalSessionProps["sessionType"]) {
+  if (sessionType === "local") return "terminal";
+  return sessionType;
+}
+
+function terminalCreateArguments(props: TerminalSessionProps, sessionId: string, columns: number, rows: number) {
+  if (props.sessionType === "local") return { sessionId, profile: props.profileId, columns, rows };
+  if (props.sessionType === "telnet") {
+    const { host, port, username, password } = props.connection;
+    return { sessionId, host, port, username, password, columns, rows };
+  }
+  if (props.sessionType === "ssh") {
+    const { host, port, username, identityFile } = props.connection;
+    return { sessionId, host, port, username, identityFile, columns, rows };
+  }
+  const { portName, baudRate, dataBits, stopBits, parity, flowControl } = props.connection;
+  return { sessionId, portName, baudRate, dataBits, stopBits, parity, flowControl };
+}
+
+function terminalAriaLabel(props: TerminalSessionProps) {
+  if (props.sessionType === "local") return "本地终端";
+  if (props.sessionType === "serial") return `串口 ${props.connection.portName}`;
+  return `${props.sessionType.toUpperCase()} ${props.connection.host}`;
+}
+
+function terminalStatusText(
+  props: TerminalSessionProps,
+  status: "starting" | "ready" | "closed" | "error",
+  errorMessage: string,
+) {
+  const protocol = props.sessionType === "local" ? "终端" : props.sessionType === "serial" ? "串口" : props.sessionType.toUpperCase();
+  if (status === "error") return errorMessage || `${protocol}连接失败`;
+  if (status === "closed") return props.sessionType === "local" ? "终端已关闭" : `${protocol}连接已关闭`;
+  if (status === "ready") return "";
+  if (props.sessionType === "local") return "正在启动终端…";
+  if (props.sessionType === "serial") return `正在打开 ${props.connection.portName}…`;
+  return `正在连接 ${props.connection.host}:${props.connection.port}…`;
 }

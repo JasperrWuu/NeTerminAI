@@ -2,9 +2,13 @@ import { useEffect, useState } from "react";
 import type {
   ConnectionFolder,
   SavedConnectionSession,
+  SavedRdpSession,
   SavedSerialSession,
+  SavedSshSession,
   SavedTelnetSession,
+  RdpConnection,
   SerialConnection,
+  SshConnection,
   TelnetConnection,
 } from "./types";
 
@@ -38,6 +42,12 @@ function normalizeSession(session: SavedConnectionSession): SavedConnectionSessi
   }
   if (session.kind === "telnet") {
     return { ...session, folderId: session.folderId ?? null };
+  }
+  if (session.kind === "ssh") {
+    return { ...session, folderId: session.folderId ?? null, port: session.port || 22, identityFile: session.identityFile ?? "" };
+  }
+  if (session.kind === "rdp") {
+    return { ...session, folderId: session.folderId ?? null, port: session.port || 3389, displayMode: session.displayMode || "windowed", adminSession: session.adminSession ?? false };
   }
   return null;
 }
@@ -142,6 +152,34 @@ export function useConnectionLibrary() {
     }));
   };
 
+  const saveSsh = (connection: SshConnection, folderId: string | null, existingId?: string) => {
+    const session: SavedSshSession = {
+      ...connection,
+      id: existingId ?? crypto.randomUUID(),
+      kind: "ssh",
+      folderId,
+      name: connection.name.trim() || `${connection.host}:${connection.port}`,
+    };
+    setLibrary((current) => ({
+      ...current,
+      sessions: existingId ? current.sessions.map((item) => item.id === existingId ? session : item) : [...current.sessions, session],
+    }));
+  };
+
+  const saveRdp = (connection: RdpConnection, folderId: string | null, existingId?: string) => {
+    const session: SavedRdpSession = {
+      ...connection,
+      id: existingId ?? crypto.randomUUID(),
+      kind: "rdp",
+      folderId,
+      name: connection.name.trim() || `${connection.host}:${connection.port}`,
+    };
+    setLibrary((current) => ({
+      ...current,
+      sessions: existingId ? current.sessions.map((item) => item.id === existingId ? session : item) : [...current.sessions, session],
+    }));
+  };
+
   const removeSession = (sessionId: string) => {
     setLibrary((current) => ({
       ...current,
@@ -173,6 +211,8 @@ export function useConnectionLibrary() {
     sessions: library.sessions,
     saveTelnet,
     saveSerial,
+    saveSsh,
+    saveRdp,
     removeSession,
     createFolder,
     renameFolder,

@@ -11,6 +11,8 @@ interface WorkspaceTabsProps {
   onCreateTerminal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
   onCreateSerial: () => void;
+  onCreateSsh: () => void;
+  onCreateRdp: () => void;
 }
 
 export function WorkspaceTabs({
@@ -21,6 +23,8 @@ export function WorkspaceTabs({
   onCreateTerminal,
   onCreateTelnet,
   onCreateSerial,
+  onCreateSsh,
+  onCreateRdp,
 }: WorkspaceTabsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -51,7 +55,7 @@ export function WorkspaceTabs({
               type="button"
             >
               <span className={`${tab.kind}-tab-icon`}>
-                {tab.kind === "localTerminal" ? "›_" : tab.kind === "telnet" ? "TN" : tab.kind === "serial" ? "COM" : "Aa"}
+                {workspaceTabIcon(tab.kind)}
               </span>
               <span className="tab-title">{tab.title}</span>
             </button>
@@ -118,6 +122,9 @@ export function WorkspaceTabs({
               <span className="profile-icon telnet-profile-icon">TN</span>
               <span>Telnet</span>
             </button>
+            <button className="terminal-profile-option" onClick={() => { onCreateSsh(); setMenuOpen(false); }} role="menuitem" type="button">
+              <span className="profile-icon ssh-profile-icon">SSH</span><span>SSH</span>
+            </button>
             <button
               className="terminal-profile-option"
               onClick={() => {
@@ -130,6 +137,9 @@ export function WorkspaceTabs({
               <span className="profile-icon serial-profile-icon">COM</span>
               <span>串口</span>
             </button>
+            <button className="terminal-profile-option" onClick={() => { onCreateRdp(); setMenuOpen(false); }} role="menuitem" type="button">
+              <span className="profile-icon rdp-profile-icon">RDP</span><span>远程桌面</span>
+            </button>
           </div>
         )}
       </div>
@@ -137,4 +147,16 @@ export function WorkspaceTabs({
       <div className="tabbar-spacer" />
     </div>
   );
+}
+
+function workspaceTabIcon(kind: WorkspaceTab["kind"]) {
+  const icons: Record<WorkspaceTab["kind"], string> = {
+    localTerminal: "›_",
+    telnet: "TN",
+    serial: "COM",
+    ssh: "SSH",
+    rdp: "RDP",
+    settings: "Aa",
+  };
+  return icons[kind];
 }

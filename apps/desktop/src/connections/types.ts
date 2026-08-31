@@ -26,6 +26,25 @@ export interface SerialConnection {
   flowControl: SerialFlowControl;
 }
 
+export interface SshConnection {
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  identityFile: string;
+}
+
+export type RdpDisplayMode = "windowed" | "fullscreen" | "multimon";
+
+export interface RdpConnection {
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  displayMode: RdpDisplayMode;
+  adminSession: boolean;
+}
+
 interface SavedConnectionBase {
   id: string;
   folderId: string | null;
@@ -40,7 +59,15 @@ export interface SavedSerialSession extends SerialConnection, SavedConnectionBas
   kind: "serial";
 }
 
-export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession;
+export interface SavedSshSession extends SshConnection, SavedConnectionBase {
+  kind: "ssh";
+}
+
+export interface SavedRdpSession extends RdpConnection, SavedConnectionBase {
+  kind: "rdp";
+}
+
+export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession | SavedSshSession | SavedRdpSession;
 
 export const emptyTelnetConnection: TelnetConnection = {
   name: "",
@@ -58,4 +85,21 @@ export const emptySerialConnection: SerialConnection = {
   stopBits: 1,
   parity: "none",
   flowControl: "none",
+};
+
+export const emptySshConnection: SshConnection = {
+  name: "",
+  host: "",
+  port: 22,
+  username: "",
+  identityFile: "",
+};
+
+export const emptyRdpConnection: RdpConnection = {
+  name: "",
+  host: "",
+  port: 3389,
+  username: "",
+  displayMode: "windowed",
+  adminSession: false,
 };

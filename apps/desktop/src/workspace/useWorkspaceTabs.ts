@@ -3,7 +3,7 @@ import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import type { LocalTerminalTab, WorkspaceTab } from "./types";
 import type { SettingsSection } from "./types";
-import type { SerialConnection, TelnetConnection } from "../connections/types";
+import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 
 function createLocalTerminalTab(
   id: string,
@@ -87,6 +87,22 @@ export function useWorkspaceTabs() {
     }));
   };
 
+  const openSsh = (connection: SshConnection) => {
+    const tabId = crypto.randomUUID();
+    setWorkspace((current) => ({
+      tabs: [...current.tabs, { id: tabId, kind: "ssh", connection, title: connection.name.trim() || `${connection.host}:${connection.port}` }],
+      activeTabId: tabId,
+    }));
+  };
+
+  const openRdp = (connection: RdpConnection) => {
+    const tabId = crypto.randomUUID();
+    setWorkspace((current) => ({
+      tabs: [...current.tabs, { id: tabId, kind: "rdp", connection, title: connection.name.trim() || `${connection.host}:${connection.port}` }],
+      activeTabId: tabId,
+    }));
+  };
+
   const closeTab = (tabId: string) => {
     setWorkspace((current) => {
       const closedIndex = current.tabs.findIndex((tab) => tab.id === tabId);
@@ -109,6 +125,8 @@ export function useWorkspaceTabs() {
     createTerminal,
     openTelnet,
     openSerial,
+    openSsh,
+    openRdp,
     openSettings,
     closeTab,
   };

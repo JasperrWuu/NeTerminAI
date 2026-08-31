@@ -12,6 +12,8 @@ interface ConnectionsSidebarProps {
   onCreateLocal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
   onCreateSerial: () => void;
+  onCreateSsh: () => void;
+  onCreateRdp: () => void;
   onEdit: (session: SavedConnectionSession) => void;
   onRemoveFolder: (folderId: string) => void;
   onRemoveSession: (sessionId: string) => void;
@@ -26,6 +28,8 @@ export function ConnectionsSidebar({
   onCreateLocal,
   onCreateTelnet,
   onCreateSerial,
+  onCreateSsh,
+  onCreateRdp,
   onEdit,
   onRemoveFolder,
   onRemoveSession,
@@ -92,14 +96,13 @@ export function ConnectionsSidebar({
         </section>
       )}
 
-      <button className="new-connection-button" onClick={onCreateTelnet} type="button">
-        <span className="new-connection-icon"><PlusIcon /></span>
-        <span className="new-connection-copy"><strong>新建 Telnet 连接</strong><small>设置地址、端口与认证</small></span>
-      </button>
-      <button className="new-connection-button" onClick={onCreateSerial} type="button">
-        <span className="new-connection-icon serial-new-connection-icon"><PlusIcon /></span>
-        <span className="new-connection-copy"><strong>新建串口连接</strong><small>设置 COM 口与串口参数</small></span>
-      </button>
+      <div className="connection-group-label create-group-label">新建连接</div>
+      <div className="connection-create-grid">
+        <NewConnectionButton kind="telnet" label="Telnet" detail="TCP 终端" onClick={onCreateTelnet} />
+        <NewConnectionButton kind="ssh" label="SSH" detail="安全终端" onClick={onCreateSsh} />
+        <NewConnectionButton kind="serial" label="串口" detail="本机 COM" onClick={onCreateSerial} />
+        <NewConnectionButton kind="rdp" label="RDP" detail="远程桌面" onClick={onCreateRdp} />
+      </div>
       {sessions.length > 0 && <p className="connection-gesture-hint">单击编辑 · 双击连接</p>}
     </div>
   );
@@ -136,11 +139,38 @@ function SavedSessionRow({ session, onConnect, onEdit, onRemove }: {
         title="单击编辑，双击连接"
         type="button"
       >
-        <span className={`connection-profile-icon ${session.kind}-profile-icon`}>{session.kind === "telnet" ? "TEL" : "COM"}</span>
-        <span className="connection-name">{session.name}<small>{session.kind === "telnet" ? `${session.host}:${session.port}` : `${session.portName} · ${session.baudRate}`}</small></span>
-        <span className="session-mode">{session.kind === "telnet" ? "Telnet" : "串口"}</span>
+        <span className={`connection-profile-icon ${session.kind}-profile-icon`}>{sessionProtocol(session)}</span>
+        <span className="connection-name">{session.name}<small>{sessionDescription(session)}</small></span>
+        <span className="session-mode">{sessionMode(session)}</span>
       </button>
       <button aria-label={`删除 ${session.name}`} className="saved-connection-remove" onClick={() => onRemove(session.id)} title="删除保存的会话" type="button"><CloseIcon /></button>
     </div>
   );
+}
+
+function NewConnectionButton({ kind, label, detail, onClick }: { kind: SavedConnectionSession["kind"]; label: string; detail: string; onClick: () => void }) {
+  return (
+    <button className={`connection-create-card ${kind}-create-card`} onClick={onClick} type="button">
+      <span className={`connection-create-icon ${kind}-profile-icon`}><PlusIcon /></span>
+      <strong>{label}</strong>
+      <small>{detail}</small>
+    </button>
+  );
+}
+
+function sessionProtocol(session: SavedConnectionSession) {
+  if (session.kind === "telnet") return "TEL";
+  if (session.kind === "serial") return "COM";
+  return session.kind.toUpperCase();
+}
+
+function sessionDescription(session: SavedConnectionSession) {
+  if (session.kind === "serial") return `${session.portName} · ${session.baudRate}`;
+  return `${session.host}:${session.port}`;
+}
+
+function sessionMode(session: SavedConnectionSession) {
+  if (session.kind === "serial") return "串口";
+  if (session.kind === "rdp") return "RDP";
+  return session.kind === "ssh" ? "SSH" : "Telnet";
 }
