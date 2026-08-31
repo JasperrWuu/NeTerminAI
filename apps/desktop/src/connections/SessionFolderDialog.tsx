@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { ConnectionFolder } from "../connections/types";
 import { FolderIcon } from "../workbench/icons";
+import type { ConnectionFolder } from "./types";
 
 export function SessionFolderDialog({ folder, onCancel, onSave }: {
   folder?: ConnectionFolder;

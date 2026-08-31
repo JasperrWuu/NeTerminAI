@@ -70,11 +70,17 @@ struct SerialExit {
 impl SerialManager {
     pub fn begin(&self, session_id: &str) -> Result<Arc<AtomicBool>, String> {
         let cancellation = Arc::new(AtomicBool::new(false));
-        let mut sessions = self.sessions.lock().map_err(|_| "串口会话状态不可用".to_owned())?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "串口会话状态不可用".to_owned())?;
         if sessions.contains_key(session_id) {
             return Err("串口会话已存在".to_owned());
         }
-        sessions.insert(session_id.to_owned(), SessionState::Connecting(Arc::clone(&cancellation)));
+        sessions.insert(
+            session_id.to_owned(),
+            SessionState::Connecting(Arc::clone(&cancellation)),
+        );
         Ok(cancellation)
     }
 
@@ -133,13 +139,19 @@ impl SerialManager {
         };
         let (writer, receiver) = mpsc::channel();
         {
-            let mut sessions = self.sessions.lock().map_err(|_| "串口会话状态不可用".to_owned())?;
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "串口会话状态不可用".to_owned())?;
             match sessions.get(&session_id) {
                 Some(SessionState::Connecting(current)) if Arc::ptr_eq(current, &cancellation) => {
-                    sessions.insert(session_id.clone(), SessionState::Connected(SerialSession {
-                        writer: writer.clone(),
-                        cancellation: Arc::clone(&cancellation),
-                    }));
+                    sessions.insert(
+                        session_id.clone(),
+                        SessionState::Connected(SerialSession {
+                            writer: writer.clone(),
+                            cancellation: Arc::clone(&cancellation),
+                        }),
+                    );
                 }
                 _ => return Err("串口连接已取消".to_owned()),
             }
@@ -152,20 +164,31 @@ impl SerialManager {
 
     pub fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
         let writer = {
-            let sessions = self.sessions.lock().map_err(|_| "串口会话状态不可用".to_owned())?;
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "串口会话状态不可用".to_owned())?;
             match sessions.get(session_id) {
                 Some(SessionState::Connected(session)) => session.writer.clone(),
                 Some(SessionState::Connecting(_)) => return Err("串口仍在连接中".to_owned()),
                 None => return Err("串口会话不存在".to_owned()),
             }
         };
-        writer.send(WriterMessage::Bytes(data.to_vec())).map_err(|_| "串口连接已关闭".to_owned())
+        writer
+            .send(WriterMessage::Bytes(data.to_vec()))
+            .map_err(|_| "串口连接已关闭".to_owned())
     }
 
     pub fn close(&self, session_id: &str) -> Result<(), String> {
-        let session = self.sessions.lock().map_err(|_| "串口会话状态不可用".to_owned())?.remove(session_id);
+        let session = self
+            .sessions
+            .lock()
+            .map_err(|_| "串口会话状态不可用".to_owned())?
+            .remove(session_id);
         match session {
-            Some(SessionState::Connecting(cancellation)) => cancellation.store(true, Ordering::Release),
+            Some(SessionState::Connecting(cancellation)) => {
+                cancellation.store(true, Ordering::Release)
+            }
             Some(SessionState::Connected(session)) => {
                 session.cancellation.store(true, Ordering::Release);
                 let _ = session.writer.send(WriterMessage::Shutdown);
@@ -204,20 +227,42 @@ fn spawn_writer(
     });
 }
 
-fn spawn_reader(app: AppHandle, session_id: String, mut reader: Box<dyn serialport::SerialPort>, cancellation: Arc<AtomicBool>) {
+fn spawn_reader(
+    app: AppHandle,
+    session_id: String,
+    mut reader: Box<dyn serialport::SerialPort>,
+    cancellation: Arc<AtomicBool>,
+) {
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
         while !cancellation.load(Ordering::Acquire) {
             match reader.read(&mut buffer) {
                 Ok(0) => {}
                 Ok(length) => {
-                    if app.emit(OUTPUT_EVENT, SerialOutput { session_id: session_id.clone(), data: STANDARD.encode(&buffer[..length]) }).is_err() { break; }
+                    if app
+                        .emit(
+                            OUTPUT_EVENT,
+                            SerialOutput {
+                                session_id: session_id.clone(),
+                                data: STANDARD.encode(&buffer[..length]),
+                            },
+                        )
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
-                Err(error) if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::Interrupted) => {}
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::Interrupted) => {}
                 Err(_) => break,
             }
         }
-        let _ = app.emit(EXIT_EVENT, SerialExit { session_id: session_id.clone() });
+        let _ = app.emit(
+            EXIT_EVENT,
+            SerialExit {
+                session_id: session_id.clone(),
+            },
+        );
         let _ = app.state::<SerialManager>().close(&session_id);
     });
 }
@@ -241,11 +286,19 @@ fn map_stop_bits(value: u8) -> Result<StopBits, String> {
 }
 
 fn map_parity(value: SerialParity) -> Parity {
-    match value { SerialParity::None => Parity::None, SerialParity::Odd => Parity::Odd, SerialParity::Even => Parity::Even }
+    match value {
+        SerialParity::None => Parity::None,
+        SerialParity::Odd => Parity::Odd,
+        SerialParity::Even => Parity::Even,
+    }
 }
 
 fn map_flow_control(value: SerialFlowControl) -> FlowControl {
-    match value { SerialFlowControl::None => FlowControl::None, SerialFlowControl::Software => FlowControl::Software, SerialFlowControl::Hardware => FlowControl::Hardware }
+    match value {
+        SerialFlowControl::None => FlowControl::None,
+        SerialFlowControl::Software => FlowControl::Software,
+        SerialFlowControl::Hardware => FlowControl::Hardware,
+    }
 }
 
 pub fn available_ports() -> Result<Vec<String>, String> {
@@ -274,5 +327,35 @@ mod tests {
 
         assert!(cancellation.load(Ordering::Acquire));
         assert!(manager.sessions.lock().expect("read sessions").is_empty());
+    }
+
+    #[test]
+    fn failed_serial_connection_releases_its_session_id() {
+        let manager = SerialManager::default();
+        let cancellation = manager.begin("failed").expect("begin session");
+
+        manager.remove_if_connecting("failed", &cancellation);
+
+        assert!(manager.sessions.lock().expect("read sessions").is_empty());
+        manager.begin("failed").expect("reuse released session id");
+    }
+
+    #[test]
+    fn stale_serial_attempt_cannot_remove_a_newer_session() {
+        let manager = SerialManager::default();
+        let current = manager.begin("current").expect("begin session");
+        let stale = Arc::new(AtomicBool::new(false));
+
+        manager.remove_if_connecting("current", &stale);
+
+        assert!(
+            manager
+                .sessions
+                .lock()
+                .expect("read sessions")
+                .contains_key("current")
+        );
+        manager.close("current").expect("close session");
+        assert!(current.load(Ordering::Acquire));
     }
 }

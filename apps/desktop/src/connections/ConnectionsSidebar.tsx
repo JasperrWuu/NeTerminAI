@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { localTerminalProfiles } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
-import type { ConnectionFolder, SavedConnectionSession } from "../connections/types";
 import { ChevronIcon, CloseIcon, EditIcon, FolderIcon, PlusIcon } from "../workbench/icons";
+import type { ConnectionFolder, SavedConnectionSession } from "./types";
 
 interface ConnectionsSidebarProps {
   folders: ConnectionFolder[];
@@ -77,9 +77,7 @@ export function ConnectionsSidebar({
             </div>
             {!collapsed && (
               <div className="session-folder-contents">
-                {folderSessions.map((session) => (
-                  <SavedSessionRow key={session.id} onConnect={onConnect} onEdit={onEdit} onRemove={onRemoveSession} session={session} />
-                ))}
+                {folderSessions.map((session) => <SavedSessionRow key={session.id} onConnect={onConnect} onEdit={onEdit} onRemove={onRemoveSession} session={session} />)}
                 {folderSessions.length === 0 && <p className="empty-folder-hint">暂无会话</p>}
               </div>
             )}
@@ -90,9 +88,7 @@ export function ConnectionsSidebar({
       {(ungrouped.length > 0 || folders.length === 0) && (
         <section className="session-folder ungrouped-folder">
           {folders.length > 0 && <div className="ungrouped-label">未分组</div>}
-          {ungrouped.map((session) => (
-            <SavedSessionRow key={session.id} onConnect={onConnect} onEdit={onEdit} onRemove={onRemoveSession} session={session} />
-          ))}
+          {ungrouped.map((session) => <SavedSessionRow key={session.id} onConnect={onConnect} onEdit={onEdit} onRemove={onRemoveSession} session={session} />)}
         </section>
       )}
 

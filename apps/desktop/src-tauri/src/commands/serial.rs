@@ -34,7 +34,11 @@ pub async fn create_serial(
 }
 
 #[tauri::command]
-pub fn write_serial(manager: State<'_, SerialManager>, session_id: String, data: String) -> Result<(), String> {
+pub fn write_serial(
+    manager: State<'_, SerialManager>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
     manager.write(&session_id, data.as_bytes())
 }
 
