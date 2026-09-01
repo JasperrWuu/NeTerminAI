@@ -1,4 +1,7 @@
 mod commands;
+// P1-01 introduces lifecycle primitives before they are wired into runtime managers in P1-02+.
+#[allow(dead_code)]
+pub(crate) mod lifecycle;
 mod rdp;
 mod serial;
 mod telnet;
