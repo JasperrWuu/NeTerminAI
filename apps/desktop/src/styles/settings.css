@@ -1,9 +1,12 @@
 .settings-page {
   display: flex;
-  flex: 1;
+  inset: 0;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  pointer-events: auto;
+  position: absolute;
+  z-index: 1;
 }
 
 .settings-page-content {
@@ -24,6 +27,7 @@
 }
 
 .settings-page-content > .settings-view {
+  display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -80,16 +84,22 @@
 
 .settings-view {
   background: var(--bg-canvas);
-  height: 100%;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   min-width: 0;
   width: 100%;
 }
 
 .settings-scroll-area {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 44px clamp(24px, 6cqw, 64px) 72px;
+  scrollbar-gutter: stable;
 }
 
 .settings-heading {

@@ -36,6 +36,8 @@
   --success: #65c88a;
   --warning: #e3aa5f;
   --shadow-panel: 0 14px 36px rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.36);
 }
 
 :root[data-theme="light"] {
@@ -60,10 +62,40 @@
   --success: #4f7754;
   --warning: #a76532;
   --shadow-panel: 0 14px 36px rgba(78, 63, 51, 0.09);
+  --scrollbar-thumb: rgba(78, 63, 51, 0.24);
+  --scrollbar-thumb-hover: rgba(78, 63, 51, 0.38);
 }
 
 * {
   box-sizing: border-box;
+}
+
+* {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  min-height: 24px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 html,
@@ -510,6 +542,7 @@ button:focus-visible,
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  isolation: isolate;
   min-width: 280px;
   overflow: hidden;
   position: relative;
@@ -994,8 +1027,9 @@ button:focus-visible,
   height: 100%;
 }
 
-.terminal-container .xterm-viewport {
-  scrollbar-color: var(--border-strong) transparent;
+.terminal-pane .terminal-container .xterm .xterm-viewport {
+  background-color: transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
   scrollbar-width: thin;
 }
 
