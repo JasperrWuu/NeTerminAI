@@ -573,6 +573,7 @@ button:focus-visible,
 }
 
 .workspace-tab-slot {
+  container-type: inline-size;
   left: 0;
   overflow: hidden;
   pointer-events: none;
@@ -725,6 +726,37 @@ button:focus-visible,
   color: var(--text-primary);
 }
 
+.tab-sync-mark {
+  align-items: center;
+  color: var(--accent-strong);
+  display: flex;
+  flex: 0 0 18px;
+  height: 18px;
+  justify-content: space-between;
+  margin-right: 2px;
+  position: relative;
+  width: 18px;
+}
+
+.tab-sync-mark::before {
+  background: currentColor;
+  content: "";
+  height: 1px;
+  left: 5px;
+  opacity: 0.72;
+  position: absolute;
+  right: 5px;
+}
+
+.tab-sync-mark i {
+  background: var(--bg-elevated);
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  height: 6px;
+  position: relative;
+  width: 6px;
+}
+
 @container (max-width: 280px) {
   .tabbar { padding-inline: 6px; }
   .tab-list { gap: 2px; }
@@ -732,6 +764,10 @@ button:focus-visible,
   .tab-select { gap: 0; justify-content: center; padding: 0 2px; }
   .tab-title { display: none; }
   .tab-close { height: 22px; margin-right: 2px; width: 22px; }
+  .tab-sync-mark { height: 7px; left: 24px; margin: 0; position: absolute; top: 4px; width: 7px; }
+  .tab-sync-mark::before,
+  .tab-sync-mark i:last-child { display: none; }
+  .tab-sync-mark i:first-child { background: var(--accent); border-color: var(--bg-elevated); height: 7px; width: 7px; }
 }
 
 .tab-glyph {
@@ -925,6 +961,40 @@ button:focus-visible,
   scrollbar-width: thin;
 }
 
+.terminal-pane[data-synchronized="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+.terminal-sync-indicator {
+  align-items: center;
+  background: color-mix(in srgb, var(--bg-panel-solid) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border-strong));
+  border-radius: 13px;
+  color: var(--accent-strong);
+  display: flex;
+  font-size: 10px;
+  font-weight: 620;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  pointer-events: none;
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  z-index: 3;
+}
+
+.terminal-sync-indicator svg {
+  fill: none;
+  height: 13px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  width: 13px;
+}
+
 .terminal-state {
   align-items: center;
   background: var(--bg-elevated);
@@ -1033,6 +1103,23 @@ button:focus-visible,
   height: 5px;
   width: 5px;
 }
+
+.status-sync-input {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 5px;
+  color: var(--accent-strong);
+  display: flex;
+  font: inherit;
+  font-weight: 620;
+  gap: 6px;
+  height: 18px;
+  padding: 0 7px;
+}
+
+.status-sync-input:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.status-sync-input i { background: currentColor; border-radius: 50%; height: 5px; width: 5px; }
 
 .status-spacer {
   flex: 1;

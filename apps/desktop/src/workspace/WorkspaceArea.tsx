@@ -13,6 +13,7 @@ interface WorkspaceAreaProps {
   activePaneId: string;
   layout: WorkspaceLayoutNode;
   tabs: WorkspaceTab[];
+  synchronizedTabIds: ReadonlySet<string>;
   onActivatePane: (paneId: string) => void;
   onActivateTab: (paneId: string, tabId: string) => void;
   onCloseTab: (paneId: string, tabId: string) => void;
@@ -42,6 +43,7 @@ interface PaneBounds {
 }
 
 export function WorkspaceArea(props: WorkspaceAreaProps) {
+  const { onDraggingChange, onMoveTab } = props;
   const [draggedTab, setDraggedTab] = useState<DraggedTab | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const [paneBounds, setPaneBounds] = useState<Record<string, PaneBounds>>({});
@@ -83,7 +85,7 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
         dragging = true;
         tabElement?.setAttribute("data-dragging", "true");
         document.body.classList.add("is-dragging-tab");
-        props.onDraggingChange?.(true);
+        onDraggingChange?.(true);
         setDraggedTab({
           sourcePaneId,
           tabId: tab.id,
@@ -107,11 +109,11 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
       tabElement?.removeAttribute("data-dragging");
       document.body.classList.remove("is-dragging-tab");
-      if (wasDragging) props.onDraggingChange?.(false);
+      if (wasDragging) onDraggingChange?.(false);
 
       if (wasDragging && commit) {
         const target = dropTargetRef.current;
-        if (target) props.onMoveTab(tab.id, sourcePaneId, target.paneId, target.zone);
+        if (target) onMoveTab(tab.id, sourcePaneId, target.paneId, target.zone);
       }
       dragging = false;
       dropTargetRef.current = null;
@@ -128,7 +130,7 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", pointerUp);
     window.addEventListener("pointercancel", pointerCancel);
-  }, [props, updateDropTarget]);
+  }, [onDraggingChange, onMoveTab, updateDropTarget]);
 
   const tabsById = new Map(props.tabs.map((tab) => [tab.id, tab]));
   const tabPlacements = collectTabPlacements(props.layout);
@@ -260,6 +262,7 @@ function WorkspacePane({ node, ...props }: Omit<LayoutNodeProps, "node"> & { nod
     >
       <WorkspaceTabs
         activeTabId={node.activeTabId}
+        synchronizedTabIds={props.synchronizedTabIds}
         onActivate={props.onActivateTab}
         onClose={props.onCloseTab}
         onTabPointerDown={props.onTabPointerDown}

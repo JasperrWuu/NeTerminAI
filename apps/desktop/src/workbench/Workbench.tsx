@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { WorkbenchPreferencesController } from "./useWorkbenchPreferences";
 import type { ApplicationSettingsController } from "../settings/useApplicationSettings";
@@ -19,6 +19,8 @@ import { WorkspaceArea } from "../workspace/WorkspaceArea";
 import { useWorkspaceTabs } from "../workspace/useWorkspaceTabs";
 import type { WorkspaceTab } from "../workspace/types";
 import { TerminalSettingsView } from "../settings/TerminalSettingsView";
+import { KeyboardShortcutsView } from "../settings/KeyboardShortcutsView";
+import { keybindingCommands, matchesKeyboardShortcut } from "../settings/keybindings";
 import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../connections/SessionFolderDialog";
 import { ConnectionsSidebar } from "../connections/ConnectionsSidebar";
@@ -28,6 +30,8 @@ import { RdpConnectionDialog } from "../rdp/RdpConnectionDialog";
 import { RdpPane } from "../rdp/RdpPane";
 import type { ConnectionFolder, SavedConnectionSession, SavedRdpSession, SavedSerialSession, SavedSshSession, SavedTelnetSession } from "../connections/types";
 import { useConnectionLibrary } from "../connections/useConnectionLibrary";
+import { collectVisibleTabIds } from "../workspace/layout";
+import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
 
 interface WorkbenchProps {
   preferences: WorkbenchPreferencesController;
@@ -81,11 +85,66 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     folder?: ConnectionFolder;
   }>({ open: false });
   const dialogOpen = telnetDialog.open || serialDialog.open || sshDialog.open || rdpDialog.open || folderDialog.open;
+  const visibleTabIds = useMemo(
+    () => collectVisibleTabIds(workspaceTabs.layout),
+    [workspaceTabs.layout],
+  );
+  const visibleTerminalIds = useMemo(() => {
+    const terminalIds = new Set(
+      workspaceTabs.tabs.filter(isCharacterTerminal).map((tab) => tab.id),
+    );
+    return visibleTabIds.filter((tabId) => terminalIds.has(tabId));
+  }, [visibleTabIds, workspaceTabs.tabs]);
+  const synchronizedInput = useSynchronizedInput(visibleTerminalIds);
+  const synchronizedTabIds = useMemo(
+    () => new Set(synchronizedInput.enabled ? visibleTerminalIds : []),
+    [synchronizedInput.enabled, visibleTerminalIds],
+  );
+  const activeTerminalId = workspaceTabs.activeTabId
+    && workspaceTabs.tabs.some((tab) => tab.id === workspaceTabs.activeTabId && isCharacterTerminal(tab))
+    ? workspaceTabs.activeTabId
+    : null;
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
   const closeSshDialog = useCallback(() => setSshDialog({ open: false }), []);
   const closeRdpDialog = useCallback(() => setRdpDialog({ open: false }), []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (dialogOpen || target?.closest("[data-keybinding-recorder]")) return;
+      const editable = target?.closest("input, textarea, select, [contenteditable='true']");
+      if (editable && !target?.closest(".xterm")) return;
+
+      const command = keybindingCommands.find((item) =>
+        matchesKeyboardShortcut(event, settings.keybindings[item.id]),
+      );
+      if (!command) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (command.id === "synchronizeVisibleTerminals") {
+        synchronizedInput.enable();
+      } else if (command.id === "stopSynchronizedInput") {
+        synchronizedInput.disable();
+        synchronizedInput.focus(activeTerminalId);
+      } else {
+        workspaceTabs.activateNextSession();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [
+    activeTerminalId,
+    dialogOpen,
+    settings.keybindings,
+    synchronizedInput.disable,
+    synchronizedInput.enable,
+    synchronizedInput.focus,
+    workspaceTabs.activateNextSession,
+  ]);
   const openSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") workspaceTabs.openTelnet(session);
     else if (session.kind === "serial") workspaceTabs.openSerial(session);
@@ -141,15 +200,20 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     "--right-sidebar-width": `${preferences.rightSidebarWidth}px`,
   } as CSSProperties;
 
-  const renderWorkspaceTab = (tab: WorkspaceTab, active: boolean) => {
+  const renderWorkspaceTab = (tab: WorkspaceTab, active: boolean, paneId: string) => {
     if (tab.kind === "localTerminal") {
       return (
         <TerminalPane
           active={active}
           key={tab.id}
+          onActivate={() => workspaceTabs.activatePane(paneId)}
+          onInput={synchronizedInput.routeInput}
           profileId={tab.profileId}
+          registerInputTarget={synchronizedInput.registerTarget}
           sessionType="local"
           settings={settings.terminal}
+          synchronizedInput={synchronizedTabIds.has(tab.id)}
+          tabId={tab.id}
           theme={settings.appearance.theme}
         />
       );
@@ -160,8 +224,13 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           active={active}
           connection={tab.connection}
           key={tab.id}
+          onActivate={() => workspaceTabs.activatePane(paneId)}
+          onInput={synchronizedInput.routeInput}
+          registerInputTarget={synchronizedInput.registerTarget}
           sessionType="telnet"
           settings={settings.terminal}
+          synchronizedInput={synchronizedTabIds.has(tab.id)}
+          tabId={tab.id}
           theme={settings.appearance.theme}
         />
       );
@@ -172,8 +241,13 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           active={active}
           connection={tab.connection}
           key={tab.id}
+          onActivate={() => workspaceTabs.activatePane(paneId)}
+          onInput={synchronizedInput.routeInput}
+          registerInputTarget={synchronizedInput.registerTarget}
           sessionType="serial"
           settings={settings.terminal}
+          synchronizedInput={synchronizedTabIds.has(tab.id)}
+          tabId={tab.id}
           theme={settings.appearance.theme}
         />
       );
@@ -184,8 +258,13 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           active={active}
           connection={tab.connection}
           key={tab.id}
+          onActivate={() => workspaceTabs.activatePane(paneId)}
+          onInput={synchronizedInput.routeInput}
+          registerInputTarget={synchronizedInput.registerTarget}
           sessionType="ssh"
           settings={settings.terminal}
+          synchronizedInput={synchronizedTabIds.has(tab.id)}
+          tabId={tab.id}
           theme={settings.appearance.theme}
         />
       );
@@ -193,12 +272,25 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     if (tab.kind === "rdp") {
       return <RdpPane active={active && !dialogOpen && !tabDragging} connection={tab.connection} key={tab.id} />;
     }
+    if (tab.section === "keyboard") {
+      return (
+        <KeyboardShortcutsView
+          active={active}
+          key={tab.id}
+          onChange={settings.updateKeybindings}
+          onOpenTerminalSettings={() => workspaceTabs.openSettings("terminal")}
+          onReset={settings.resetKeybindings}
+          settings={settings.keybindings}
+        />
+      );
+    }
     return (
       <TerminalSettingsView
         active={active}
         appearanceTheme={settings.appearance.theme}
         key={tab.id}
         onChange={settings.updateTerminal}
+        onOpenKeyboardShortcuts={() => workspaceTabs.openSettings("keyboard")}
         onReset={settings.resetTerminal}
         settings={settings.terminal}
       />
@@ -324,6 +416,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             onMoveTab={workspaceTabs.moveTab}
             onDraggingChange={setTabDragging}
             renderTab={renderWorkspaceTab}
+            synchronizedTabIds={synchronizedTabIds}
             tabs={workspaceTabs.tabs}
           />
         </main>
@@ -358,6 +451,19 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
 
       <footer className="statusbar">
         <span className="status-ready"><i /> 就绪</span>
+        {synchronizedInput.enabled && (
+          <button
+            className="status-sync-input"
+            onClick={() => {
+              synchronizedInput.disable();
+              synchronizedInput.focus(activeTerminalId);
+            }}
+            title="点击关闭同步输入"
+            type="button"
+          >
+            <i /> 同步输入 · {visibleTerminalIds.length} 个终端
+          </button>
+        )}
         <span className="status-spacer" />
         <span>本地工作区</span>
         <span>UTF-8</span>
@@ -473,4 +579,11 @@ function EmptyPanel({ description }: { description: string }) {
       <p>{description}</p>
     </div>
   );
+}
+
+function isCharacterTerminal(tab: WorkspaceTab) {
+  return tab.kind === "localTerminal"
+    || tab.kind === "telnet"
+    || tab.kind === "serial"
+    || tab.kind === "ssh";
 }

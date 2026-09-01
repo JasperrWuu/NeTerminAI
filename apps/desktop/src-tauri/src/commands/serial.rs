@@ -34,12 +34,9 @@ pub async fn create_serial(
 }
 
 #[tauri::command]
-pub async fn write_serial(app: AppHandle, session_id: String, data: String) -> Result<(), String> {
-    run_blocking("串口输入", move || {
-        app.state::<SerialManager>()
-            .write(&session_id, data.as_bytes())
-    })
-    .await
+pub fn write_serial(app: AppHandle, session_id: String, data: String) -> Result<(), String> {
+    app.state::<SerialManager>()
+        .write(&session_id, data.as_bytes())
 }
 
 #[tauri::command]

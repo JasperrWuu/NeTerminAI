@@ -770,20 +770,6 @@
   border-radius: 0 0 17px 17px;
 }
 
-.secondary-button {
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  color: var(--text-secondary);
-  height: 34px;
-  padding: 0 14px;
-}
-
-.secondary-button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
 .connection-dialog button:active {
   transform: scale(0.97);
   transition: transform var(--motion-fast) ease-out;

@@ -185,16 +185,31 @@ impl SerialManager {
             .lock()
             .map_err(|_| "串口会话状态不可用".to_owned())?
             .remove(session_id);
-        match session {
-            Some(SessionState::Connecting(cancellation)) => {
-                cancellation.store(true, Ordering::Release)
-            }
-            Some(SessionState::Connected(session)) => {
-                session.cancellation.store(true, Ordering::Release);
-                let _ = session.writer.send(WriterMessage::Shutdown);
-            }
-            None => {}
-        }
+        stop_session(session);
+        Ok(())
+    }
+
+    fn close_if_current(
+        &self,
+        session_id: &str,
+        cancellation: &Arc<AtomicBool>,
+    ) -> Result<(), String> {
+        let session = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "串口会话状态不可用".to_owned())?;
+            let is_current = matches!(
+                sessions.get(session_id),
+                Some(SessionState::Connecting(current)) if Arc::ptr_eq(current, cancellation)
+            ) || matches!(
+                sessions.get(session_id),
+                Some(SessionState::Connected(session))
+                    if Arc::ptr_eq(&session.cancellation, cancellation)
+            );
+            is_current.then(|| sessions.remove(session_id)).flatten()
+        };
+        stop_session(session);
         Ok(())
     }
 
@@ -204,6 +219,17 @@ impl SerialManager {
         {
             sessions.remove(session_id);
         }
+    }
+}
+
+fn stop_session(session: Option<SessionState>) {
+    match session {
+        Some(SessionState::Connecting(cancellation)) => cancellation.store(true, Ordering::Release),
+        Some(SessionState::Connected(session)) => {
+            session.cancellation.store(true, Ordering::Release);
+            let _ = session.writer.send(WriterMessage::Shutdown);
+        }
+        None => {}
     }
 }
 
@@ -263,7 +289,9 @@ fn spawn_reader(
                 session_id: session_id.clone(),
             },
         );
-        let _ = app.state::<SerialManager>().close(&session_id);
+        let _ = app
+            .state::<SerialManager>()
+            .close_if_current(&session_id, &cancellation);
     });
 }
 
@@ -346,7 +374,9 @@ mod tests {
         let current = manager.begin("current").expect("begin session");
         let stale = Arc::new(AtomicBool::new(false));
 
-        manager.remove_if_connecting("current", &stale);
+        manager
+            .close_if_current("current", &stale)
+            .expect("ignore stale close");
 
         assert!(
             manager

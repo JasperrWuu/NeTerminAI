@@ -58,6 +58,11 @@ export function findPaneContainingTab(
   return findPaneContainingTab(node.first, tabId) ?? findPaneContainingTab(node.second, tabId);
 }
 
+export function collectVisibleTabIds(node: WorkspaceLayoutNode): string[] {
+  if (node.type === "pane") return node.activeTabId ? [node.activeTabId] : [];
+  return [...collectVisibleTabIds(node.first), ...collectVisibleTabIds(node.second)];
+}
+
 export function firstPane(node: WorkspaceLayoutNode): WorkspacePaneNode {
   return node.type === "pane" ? node : firstPane(node.first);
 }

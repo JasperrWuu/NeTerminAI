@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
@@ -59,7 +59,7 @@ export function useWorkspaceTabs() {
     return { tabs: [initialTab], layout: initialPane, activePaneId: initialPane.id };
   });
 
-  const addTab = (create: (tabs: WorkspaceTab[]) => WorkspaceTab) => {
+  const addTab = useCallback((create: (tabs: WorkspaceTab[]) => WorkspaceTab) => {
     setWorkspace((current) => {
       const tab = create(current.tabs);
       const paneId = findPane(current.layout, current.activePaneId)?.id ?? firstPane(current.layout).id;
@@ -73,14 +73,14 @@ export function useWorkspaceTabs() {
         activePaneId: paneId,
       };
     });
-  };
+  }, []);
 
-  const createTerminal = (profileId: LocalTerminalProfileId) => {
+  const createTerminal = useCallback((profileId: LocalTerminalProfileId) => {
     const tabId = crypto.randomUUID();
     addTab((tabs) => createLocalTerminalTab(tabId, profileId, tabs));
-  };
+  }, [addTab]);
 
-  const openSettings = (section: SettingsSection) => {
+  const openSettings = useCallback((section: SettingsSection) => {
     setWorkspace((current) => {
       const existing = current.tabs.find(
         (tab) => tab.kind === "settings" && tab.section === section,
@@ -99,7 +99,7 @@ export function useWorkspaceTabs() {
         id: crypto.randomUUID(),
         kind: "settings",
         section,
-        title: "终端设置",
+        title: section === "terminal" ? "终端设置" : "键盘快捷键",
       };
       const paneId = findPane(current.layout, current.activePaneId)?.id ?? firstPane(current.layout).id;
       return {
@@ -112,37 +112,37 @@ export function useWorkspaceTabs() {
         activePaneId: paneId,
       };
     });
-  };
+  }, []);
 
-  const openTelnet = (connection: TelnetConnection) => addTab(() => ({
+  const openTelnet = useCallback((connection: TelnetConnection) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "telnet",
     connection,
     title: connection.name.trim() || `${connection.host}:${connection.port}`,
-  }));
+  })), [addTab]);
 
-  const openSerial = (connection: SerialConnection) => addTab(() => ({
+  const openSerial = useCallback((connection: SerialConnection) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "serial",
     connection,
     title: connection.name.trim() || connection.portName,
-  }));
+  })), [addTab]);
 
-  const openSsh = (connection: SshConnection) => addTab(() => ({
+  const openSsh = useCallback((connection: SshConnection) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "ssh",
     connection,
     title: connection.name.trim() || `${connection.host}:${connection.port}`,
-  }));
+  })), [addTab]);
 
-  const openRdp = (connection: RdpConnection) => addTab(() => ({
+  const openRdp = useCallback((connection: RdpConnection) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "rdp",
     connection,
     title: connection.name.trim() || `${connection.host}:${connection.port}`,
-  }));
+  })), [addTab]);
 
-  const activateTab = (paneId: string, tabId: string) => {
+  const activateTab = useCallback((paneId: string, tabId: string) => {
     setWorkspace((current) => ({
       ...current,
       layout: updatePane(current.layout, paneId, (pane) => (
@@ -150,9 +150,29 @@ export function useWorkspaceTabs() {
       )),
       activePaneId: paneId,
     }));
-  };
+  }, []);
 
-  const closeTab = (paneId: string, tabId: string) => {
+  const activateNextSession = useCallback(() => {
+    setWorkspace((current) => {
+      const sessions = current.tabs.filter((tab) => tab.kind !== "settings");
+      if (sessions.length === 0) return current;
+      const activePane = findPane(current.layout, current.activePaneId) ?? firstPane(current.layout);
+      const activeIndex = sessions.findIndex((tab) => tab.id === activePane.activeTabId);
+      const next = sessions[(activeIndex + 1) % sessions.length];
+      const nextPane = findPaneContainingTab(current.layout, next.id);
+      if (!nextPane) return current;
+      return {
+        ...current,
+        layout: updatePane(current.layout, nextPane.id, (pane) => ({
+          ...pane,
+          activeTabId: next.id,
+        })),
+        activePaneId: nextPane.id,
+      };
+    });
+  }, []);
+
+  const closeTab = useCallback((paneId: string, tabId: string) => {
     setWorkspace((current) => {
       const nextLayout = removeTabFromPane(current.layout, paneId, tabId);
       const layout = nextLayout ?? createPane();
@@ -163,9 +183,9 @@ export function useWorkspaceTabs() {
         activePaneId,
       };
     });
-  };
+  }, []);
 
-  const moveTab = (
+  const moveTab = useCallback((
     tabId: string,
     sourcePaneId: string,
     targetPaneId: string,
@@ -219,17 +239,23 @@ export function useWorkspaceTabs() {
       }));
       return { ...current, layout, activePaneId: newPane.id };
     });
-  };
+  }, []);
+
+  const activatePane = useCallback((activePaneId: string) => {
+    setWorkspace((current) => findPane(current.layout, activePaneId)
+      ? { ...current, activePaneId }
+      : current);
+  }, []);
 
   const activePane = findPane(workspace.layout, workspace.activePaneId) ?? firstPane(workspace.layout);
 
-  return {
+  return useMemo(() => ({
     tabs: workspace.tabs,
     layout: workspace.layout,
     activePaneId: activePane.id,
     activeTabId: activePane.activeTabId,
-    activatePane: (activePaneId: string) =>
-      setWorkspace((current) => findPane(current.layout, activePaneId) ? { ...current, activePaneId } : current),
+    activateNextSession,
+    activatePane,
     activateTab,
     createTerminal,
     openTelnet,
@@ -239,5 +265,21 @@ export function useWorkspaceTabs() {
     openSettings,
     closeTab,
     moveTab,
-  };
+  }), [
+    activateNextSession,
+    activatePane,
+    activateTab,
+    activePane.activeTabId,
+    activePane.id,
+    closeTab,
+    createTerminal,
+    moveTab,
+    openRdp,
+    openSerial,
+    openSettings,
+    openSsh,
+    openTelnet,
+    workspace.layout,
+    workspace.tabs,
+  ]);
 }

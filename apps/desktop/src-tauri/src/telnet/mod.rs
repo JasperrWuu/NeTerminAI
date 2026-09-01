@@ -44,6 +44,7 @@ enum SessionState {
 struct TelnetSession {
     writer: Sender<WriterMessage>,
     control: TcpStream,
+    cancellation: Arc<AtomicBool>,
     window_size_enabled: Arc<AtomicBool>,
 }
 
@@ -150,6 +151,7 @@ impl TelnetManager {
                         SessionState::Connected(TelnetSession {
                             writer: writer.clone(),
                             control,
+                            cancellation: Arc::clone(&cancellation),
                             window_size_enabled: Arc::clone(&window_size_enabled),
                         }),
                     );
@@ -173,6 +175,7 @@ impl TelnetManager {
                 rows,
                 window_size_enabled,
             },
+            cancellation,
         );
         Ok(())
     }
@@ -210,16 +213,31 @@ impl TelnetManager {
             .map_err(|_| "Telnet 会话状态不可用".to_owned())?
             .remove(session_id);
 
-        match session {
-            Some(SessionState::Connecting(cancellation)) => {
-                cancellation.store(true, Ordering::Release);
-            }
-            Some(SessionState::Connected(session)) => {
-                let _ = session.control.shutdown(Shutdown::Both);
-                let _ = session.writer.send(WriterMessage::Shutdown);
-            }
-            None => {}
-        }
+        stop_session(session);
+        Ok(())
+    }
+
+    fn close_if_current(
+        &self,
+        session_id: &str,
+        cancellation: &Arc<AtomicBool>,
+    ) -> Result<(), String> {
+        let session = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "Telnet 会话状态不可用".to_owned())?;
+            let is_current = matches!(
+                sessions.get(session_id),
+                Some(SessionState::Connecting(current)) if Arc::ptr_eq(current, cancellation)
+            ) || matches!(
+                sessions.get(session_id),
+                Some(SessionState::Connected(session))
+                    if Arc::ptr_eq(&session.cancellation, cancellation)
+            );
+            is_current.then(|| sessions.remove(session_id)).flatten()
+        };
+        stop_session(session);
         Ok(())
     }
 
@@ -254,9 +272,27 @@ impl TelnetManager {
     }
 }
 
+fn stop_session(session: Option<SessionState>) {
+    match session {
+        Some(SessionState::Connecting(cancellation)) => {
+            cancellation.store(true, Ordering::Release);
+        }
+        Some(SessionState::Connected(session)) => {
+            session.cancellation.store(true, Ordering::Release);
+            let _ = session.control.shutdown(Shutdown::Both);
+            let _ = session.writer.send(WriterMessage::Shutdown);
+        }
+        None => {}
+    }
+}
+
 fn connect(host: &str, port: u16) -> Result<TcpStream, String> {
+    let host = host.trim();
+    if host.is_empty() || port == 0 {
+        return Err("Telnet 主机地址或端口无效".to_owned());
+    }
     let address = format!("{host}:{port}");
-    let addresses = address
+    let addresses = (host, port)
         .to_socket_addrs()
         .map_err(|error| format!("无法解析 Telnet 地址：{error}"))?;
     let mut last_error = None;
@@ -309,6 +345,7 @@ fn spawn_reader(
     writer: Sender<WriterMessage>,
     credentials: LoginCredentials,
     geometry: TerminalGeometry,
+    cancellation: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
@@ -322,6 +359,9 @@ fn spawn_reader(
         let mut password_sent = credentials.password.is_empty();
 
         loop {
+            if cancellation.load(Ordering::Acquire) {
+                break;
+            }
             let length = match reader.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(length) => length,
@@ -336,10 +376,7 @@ fn spawn_reader(
                 continue;
             }
 
-            prompt.push_str(&String::from_utf8_lossy(&frame.output).to_lowercase());
-            if prompt.len() > 512 {
-                prompt.drain(..prompt.len() - 512);
-            }
+            append_prompt_text(&mut prompt, &frame.output);
             if !username_sent && (prompt.contains("login:") || prompt.contains("username:")) {
                 let _ = writer.send(WriterMessage::Bytes(line_message(&credentials.username)));
                 username_sent = true;
@@ -365,7 +402,9 @@ fn spawn_reader(
                 session_id: session_id.clone(),
             },
         );
-        let _ = app.state::<TelnetManager>().close(&session_id);
+        let _ = app
+            .state::<TelnetManager>()
+            .close_if_current(&session_id, &cancellation);
     });
 }
 
@@ -533,6 +572,19 @@ fn line_message(value: &str) -> Vec<u8> {
     bytes
 }
 
+fn append_prompt_text(prompt: &mut String, output: &[u8]) {
+    prompt.extend(output.iter().map(|byte| {
+        if byte.is_ascii() {
+            byte.to_ascii_lowercase() as char
+        } else {
+            ' '
+        }
+    }));
+    if prompt.len() > 512 {
+        prompt.drain(..prompt.len() - 512);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,5 +647,48 @@ mod tests {
 
         assert!(cancellation.load(Ordering::Acquire));
         assert!(manager.sessions.lock().expect("read sessions").is_empty());
+    }
+
+    #[test]
+    fn failed_connection_releases_its_session_id() {
+        let manager = TelnetManager::default();
+        let cancellation = manager.begin("failed").expect("begin session");
+
+        manager.remove_if_connecting("failed", &cancellation);
+
+        assert!(manager.sessions.lock().expect("read sessions").is_empty());
+        manager.begin("failed").expect("reuse released session id");
+    }
+
+    #[test]
+    fn stale_connection_attempt_cannot_remove_a_newer_session() {
+        let manager = TelnetManager::default();
+        let current = manager.begin("current").expect("begin session");
+        let stale = Arc::new(AtomicBool::new(false));
+
+        manager
+            .close_if_current("current", &stale)
+            .expect("ignore stale close");
+
+        assert!(
+            manager
+                .sessions
+                .lock()
+                .expect("read sessions")
+                .contains_key("current")
+        );
+        manager.close("current").expect("close session");
+        assert!(current.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn prompt_scanner_handles_non_ascii_output_without_invalid_string_boundaries() {
+        let mut prompt = String::new();
+        let output = "设备登录提示".repeat(200);
+
+        append_prompt_text(&mut prompt, output.as_bytes());
+
+        assert_eq!(prompt.len(), 512);
+        assert!(prompt.is_ascii());
     }
 }

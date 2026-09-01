@@ -3,6 +3,12 @@ export type TerminalCursorStyle = "block" | "bar" | "underline";
 export type TerminalColorScheme = "adaptive" | "graphite" | "paper";
 export type TerminalFontWeight = 400 | 500 | 600;
 export type TerminalHighlightMatchMode = "text" | "regex";
+export type KeybindingCommandId =
+  | "synchronizeVisibleTerminals"
+  | "stopSynchronizedInput"
+  | "focusNextSession";
+
+export type KeybindingSettings = Record<KeybindingCommandId, string>;
 
 export interface TerminalHighlightRule {
   id: string;
@@ -31,4 +37,5 @@ export interface TerminalSettings {
 export interface ApplicationSettings {
   appearance: AppearanceSettings;
   terminal: TerminalSettings;
+  keybindings: KeybindingSettings;
 }

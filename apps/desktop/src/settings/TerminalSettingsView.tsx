@@ -15,6 +15,7 @@ interface TerminalSettingsViewProps {
   appearanceTheme: AppearanceTheme;
   settings: TerminalSettings;
   onChange: (settings: Partial<TerminalSettings>) => void;
+  onOpenKeyboardShortcuts: () => void;
   onReset: () => void;
 }
 
@@ -35,6 +36,7 @@ export function TerminalSettingsView({
   appearanceTheme,
   settings,
   onChange,
+  onOpenKeyboardShortcuts,
   onReset,
 }: TerminalSettingsViewProps) {
   const previewTheme = resolveTerminalTheme(settings.colorScheme, appearanceTheme);
@@ -48,7 +50,10 @@ export function TerminalSettingsView({
             <h1>终端</h1>
             <p>调整阅读密度、光标反馈与颜色。更改会立即应用到所有终端。</p>
           </div>
-          <button className="secondary-button" onClick={onReset} type="button">恢复默认</button>
+          <div className="settings-heading-actions">
+            <button className="secondary-button" onClick={onOpenKeyboardShortcuts} type="button">键盘快捷键</button>
+            <button className="secondary-button" onClick={onReset} type="button">恢复默认</button>
+          </div>
         </header>
 
         <div className="settings-layout">

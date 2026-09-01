@@ -17,7 +17,11 @@ pub async fn create_rdp(
     bounds: RdpBounds,
 ) -> Result<(), String> {
     let manager = state.inner().clone();
-    on_main_thread(app, "RDP 创建", move |app| {
+    let cancellation = manager.begin(&session_id)?;
+    let cleanup_manager = manager.clone();
+    let cleanup_session_id = session_id.clone();
+    let cleanup_cancellation = cancellation.clone();
+    let result = on_main_thread(app, "RDP 创建", move |app| {
         #[cfg(windows)]
         {
             let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
@@ -35,15 +39,29 @@ pub async fn create_rdp(
                 &username,
                 admin_session,
                 bounds.physical(scale),
+                cancellation,
             )
         }
         #[cfg(not(windows))]
         {
-            let _ = (app, session_id, host, port, username, admin_session, bounds);
+            let _ = (
+                app,
+                session_id,
+                host,
+                port,
+                username,
+                admin_session,
+                bounds,
+                cancellation,
+            );
             manager.unsupported()
         }
     })
-    .await
+    .await;
+    if result.is_err() {
+        cleanup_manager.cancel_connecting(&cleanup_session_id, &cleanup_cancellation);
+    }
+    result
 }
 
 #[tauri::command]

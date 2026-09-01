@@ -10,11 +10,18 @@ import { resolveTerminalClipboardAction } from "./clipboard";
 import { applyTerminalHighlights, compileTerminalHighlightRules } from "./highlighting";
 import { resolveTerminalTheme } from "./themes";
 import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
+import type { TerminalInputTarget } from "./useSynchronizedInput";
+import { invokeInBackground } from "../platform/tauri";
 
 interface TerminalPaneCommonProps {
   active: boolean;
+  synchronizedInput: boolean;
+  tabId: string;
   settings: TerminalSettings;
   theme: AppearanceTheme;
+  onInput: (tabId: string, data: string) => void;
+  onActivate: () => void;
+  registerInputTarget: (tabId: string, target: TerminalInputTarget) => () => void;
 }
 
 type TerminalSessionProps =
@@ -48,11 +55,15 @@ export function TerminalPane(props: TerminalPaneProps) {
   const sessionReadyRef = useRef(false);
   const ptySessionIdRef = useRef<string | null>(null);
   const activeRef = useRef(active);
+  const onInputRef = useRef(props.onInput);
+  const registerInputTargetRef = useRef(props.registerInputTarget);
   const highlightRulesRef = useRef(compileTerminalHighlightRules(settings.highlightRules));
   const [status, setStatus] = useState<"starting" | "ready" | "closed" | "error">("starting");
   const [errorMessage, setErrorMessage] = useState("");
 
   activeRef.current = active;
+  onInputRef.current = props.onInput;
+  registerInputTargetRef.current = props.registerInputTarget;
 
   useEffect(() => {
     if (terminalRef.current) {
@@ -80,7 +91,11 @@ export function TerminalPane(props: TerminalPaneProps) {
       fitAddon.fit();
       const sessionId = ptySessionIdRef.current;
       if (supportsResize && sessionReadyRef.current && sessionId) {
-        void invoke(`resize_${commandPrefix}`, { sessionId, columns: terminal.cols, rows: terminal.rows });
+        invokeInBackground(`resize_${commandPrefix}`, {
+          sessionId,
+          columns: terminal.cols,
+          rows: terminal.rows,
+        });
       }
     }
   }, [active, commandPrefix, settings, supportsResize]);
@@ -95,7 +110,11 @@ export function TerminalPane(props: TerminalPaneProps) {
       terminal.focus();
       const sessionId = ptySessionIdRef.current;
       if (supportsResize && sessionReadyRef.current && sessionId) {
-        void invoke(`resize_${commandPrefix}`, { sessionId, columns: terminal.cols, rows: terminal.rows });
+        invokeInBackground(`resize_${commandPrefix}`, {
+          sessionId,
+          columns: terminal.cols,
+          rows: terminal.rows,
+        });
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -158,7 +177,11 @@ export function TerminalPane(props: TerminalPaneProps) {
       if (disposed || !activeRef.current) return;
       fitAddon.fit();
       if (supportsResize && sessionReadyRef.current) {
-        void invoke(`resize_${commandPrefix}`, { sessionId, columns: terminal.cols, rows: terminal.rows });
+        invokeInBackground(`resize_${commandPrefix}`, {
+          sessionId,
+          columns: terminal.cols,
+          rows: terminal.rows,
+        });
       }
     };
     const resizeObserver = new ResizeObserver(() => {
@@ -180,7 +203,11 @@ export function TerminalPane(props: TerminalPaneProps) {
           }
         });
     };
-    const inputSubscription = terminal.onData(writeInput);
+    const unregisterInputTarget = registerInputTargetRef.current(props.tabId, {
+      focus: () => terminal.focus(),
+      write: writeInput,
+    });
+    const inputSubscription = terminal.onData((data) => onInputRef.current(props.tabId, data));
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown") return true;
       const action = resolveTerminalClipboardAction(event, terminal.hasSelection());
@@ -246,13 +273,14 @@ export function TerminalPane(props: TerminalPaneProps) {
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       pendingOutput = [];
       inputSubscription.dispose();
+      unregisterInputTarget();
       unlistenOutput?.();
       unlistenExit?.();
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
       if (ptySessionIdRef.current === sessionId) ptySessionIdRef.current = null;
-      void invoke(`close_${commandPrefix}`, { sessionId });
+      invokeInBackground(`close_${commandPrefix}`, { sessionId });
     };
     // Visual settings intentionally update without replacing the running PTY session.
   }, [
@@ -269,14 +297,36 @@ export function TerminalPane(props: TerminalPaneProps) {
       aria-label={terminalAriaLabel(props)}
       aria-hidden={!active}
       data-active={active}
+      data-synchronized={props.synchronizedInput}
     >
-      <div className="terminal-container" onPointerDown={() => terminalRef.current?.focus()} ref={containerRef} />
+      <div
+        className="terminal-container"
+        onPointerDown={() => {
+          props.onActivate();
+          terminalRef.current?.focus();
+        }}
+        ref={containerRef}
+      />
+      {props.synchronizedInput && (
+        <div className="terminal-sync-indicator" aria-label="此终端已加入同步输入">
+          <SyncInputIcon />
+          <span>同步输入</span>
+        </div>
+      )}
       {status !== "ready" && (
         <div className="terminal-state" data-status={status}>
           {terminalStatusText(props, status, errorMessage)}
         </div>
       )}
     </section>
+  );
+}
+
+function SyncInputIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M3 5.25h6.5M7.5 3.25l2 2-2 2M13 10.75H6.5M8.5 8.75l-2 2 2 2" />
+    </svg>
   );
 }
 

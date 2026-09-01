@@ -34,26 +34,20 @@ pub async fn create_telnet(
 }
 
 #[tauri::command]
-pub async fn write_telnet(app: AppHandle, session_id: String, data: String) -> Result<(), String> {
-    run_blocking("Telnet 输入", move || {
-        app.state::<TelnetManager>()
-            .write(&session_id, data.as_bytes())
-    })
-    .await
+pub fn write_telnet(app: AppHandle, session_id: String, data: String) -> Result<(), String> {
+    app.state::<TelnetManager>()
+        .write(&session_id, data.as_bytes())
 }
 
 #[tauri::command]
-pub async fn resize_telnet(
+pub fn resize_telnet(
     app: AppHandle,
     session_id: String,
     columns: u16,
     rows: u16,
 ) -> Result<(), String> {
-    run_blocking("Telnet 尺寸调整", move || {
-        app.state::<TelnetManager>()
-            .resize(&session_id, columns, rows)
-    })
-    .await
+    app.state::<TelnetManager>()
+        .resize(&session_id, columns, rows)
 }
 
 #[tauri::command]

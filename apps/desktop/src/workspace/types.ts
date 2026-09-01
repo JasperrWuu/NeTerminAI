@@ -11,7 +11,7 @@ export interface LocalTerminalTab extends WorkspaceTabBase {
   profileId: LocalTerminalProfileId;
 }
 
-export type SettingsSection = "terminal";
+export type SettingsSection = "terminal" | "keyboard";
 
 export interface SettingsTab extends WorkspaceTabBase {
   kind: "settings";

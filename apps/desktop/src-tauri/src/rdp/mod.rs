@@ -1,7 +1,10 @@
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 #[derive(Clone, Copy, Deserialize)]
@@ -34,10 +37,35 @@ pub struct PhysicalRdpBounds {
 
 #[derive(Clone, Default)]
 pub struct RdpManager {
-    sessions: Arc<Mutex<HashMap<String, isize>>>,
+    sessions: Arc<Mutex<HashMap<String, RdpSessionState>>>,
+}
+
+enum RdpSessionState {
+    Connecting(Arc<AtomicBool>),
+    Connected {
+        cancellation: Arc<AtomicBool>,
+        handle: isize,
+    },
 }
 
 impl RdpManager {
+    pub fn begin(&self, session_id: &str) -> Result<Arc<AtomicBool>, String> {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "RDP 会话状态不可用".to_owned())?;
+        match sessions.entry(session_id.to_owned()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(RdpSessionState::Connecting(Arc::clone(&cancellation)));
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {
+                return Err("RDP 会话已存在".to_owned());
+            }
+        }
+        Ok(cancellation)
+    }
+
     #[cfg(windows)]
     #[allow(clippy::too_many_arguments)]
     pub fn create(
@@ -49,17 +77,23 @@ impl RdpManager {
         username: &str,
         admin_session: bool,
         bounds: PhysicalRdpBounds,
+        cancellation: Arc<AtomicBool>,
     ) -> Result<(), String> {
-        windows_host::create(
+        let result = windows_host::create(
             self,
             parent,
-            session_id,
+            session_id.clone(),
             host,
             port,
             username,
             admin_session,
             bounds,
-        )
+            Arc::clone(&cancellation),
+        );
+        if result.is_err() {
+            self.cancel_connecting(&session_id, &cancellation);
+        }
+        result
     }
 
     #[cfg(windows)]
@@ -82,32 +116,73 @@ impl RdpManager {
         Err("应用内 RDP 当前仅支持 Windows".to_owned())
     }
 
-    fn insert(&self, session_id: String, handle: isize) -> Result<Option<isize>, String> {
-        self.sessions
+    fn finish_connecting(
+        &self,
+        session_id: &str,
+        cancellation: &Arc<AtomicBool>,
+        handle: isize,
+    ) -> Result<bool, String> {
+        let mut sessions = self
+            .sessions
             .lock()
-            .map(|mut sessions| sessions.insert(session_id, handle))
-            .map_err(|_| "RDP 会话状态不可用".to_owned())
+            .map_err(|_| "RDP 会话状态不可用".to_owned())?;
+        let is_current = matches!(
+            sessions.get(session_id),
+            Some(RdpSessionState::Connecting(current)) if Arc::ptr_eq(current, cancellation)
+        ) && !cancellation.load(Ordering::Acquire);
+        if is_current {
+            sessions.insert(
+                session_id.to_owned(),
+                RdpSessionState::Connected {
+                    cancellation: Arc::clone(cancellation),
+                    handle,
+                },
+            );
+        }
+        Ok(is_current)
     }
 
     fn get(&self, session_id: &str) -> Result<Option<isize>, String> {
         self.sessions
             .lock()
-            .map(|sessions| sessions.get(session_id).copied())
+            .map(|sessions| match sessions.get(session_id) {
+                Some(RdpSessionState::Connected { handle, .. }) => Some(*handle),
+                _ => None,
+            })
             .map_err(|_| "RDP 会话状态不可用".to_owned())
     }
 
-    fn remove(&self, session_id: &str) -> Result<Option<isize>, String> {
+    fn remove(&self, session_id: &str) -> Result<Option<RdpSessionState>, String> {
         self.sessions
             .lock()
             .map(|mut sessions| sessions.remove(session_id))
             .map_err(|_| "RDP 会话状态不可用".to_owned())
     }
+
+    pub fn cancel_connecting(&self, session_id: &str, cancellation: &Arc<AtomicBool>) {
+        cancellation.store(true, Ordering::Release);
+        if let Ok(mut sessions) = self.sessions.lock()
+            && matches!(
+                sessions.get(session_id),
+                Some(RdpSessionState::Connecting(current)) if Arc::ptr_eq(current, cancellation)
+            )
+        {
+            sessions.remove(session_id);
+        }
+    }
 }
 
 #[cfg(windows)]
 mod windows_host {
-    use super::{PhysicalRdpBounds, RdpManager};
-    use std::{cell::Cell, ffi::c_void};
+    use super::{PhysicalRdpBounds, RdpManager, RdpSessionState};
+    use std::{
+        cell::Cell,
+        ffi::c_void,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
     use windows::{
         Win32::{
             Foundation::HWND,
@@ -151,9 +226,13 @@ mod windows_host {
         username: &str,
         admin_session: bool,
         bounds: PhysicalRdpBounds,
+        cancellation: Arc<AtomicBool>,
     ) -> Result<(), String> {
         validate_session_id(&session_id)?;
         validate_connection(host, port, username)?;
+        if cancellation.load(Ordering::Acquire) {
+            return Err("RDP 连接已取消".to_owned());
+        }
         ensure_ole_initialized()?;
 
         let window = unsafe {
@@ -184,10 +263,7 @@ mod windows_host {
             return Err(error);
         }
 
-        if let Some(previous) = manager.insert(session_id, window.0 as isize)? {
-            destroy(HWND(previous as *mut c_void));
-        }
-        unsafe {
+        let display_result = unsafe {
             SetWindowPos(
                 window,
                 Some(HWND_TOP),
@@ -197,7 +273,22 @@ mod windows_host {
                 bounds.height,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
-            .map_err(|error| format!("无法显示应用内 RDP 视图：{error}"))?;
+            .map_err(|error| format!("无法显示应用内 RDP 视图：{error}"))
+        };
+        if let Err(error) = display_result {
+            destroy(window);
+            return Err(error);
+        }
+        match manager.finish_connecting(&session_id, &cancellation, window.0 as isize) {
+            Ok(true) => {}
+            Ok(false) => {
+                destroy(window);
+                return Err("RDP 连接已取消".to_owned());
+            }
+            Err(error) => {
+                destroy(window);
+                return Err(error);
+            }
         }
         Ok(())
     }
@@ -233,8 +324,18 @@ mod windows_host {
     }
 
     pub fn close(manager: &RdpManager, session_id: &str) -> Result<(), String> {
-        if let Some(handle) = manager.remove(session_id)? {
-            destroy(HWND(handle as *mut c_void));
+        match manager.remove(session_id)? {
+            Some(RdpSessionState::Connecting(cancellation)) => {
+                cancellation.store(true, Ordering::Release);
+            }
+            Some(RdpSessionState::Connected {
+                cancellation,
+                handle,
+            }) => {
+                cancellation.store(true, Ordering::Release);
+                destroy(HWND(handle as *mut c_void));
+            }
+            None => {}
         }
         Ok(())
     }
@@ -445,6 +546,18 @@ mod tests {
             (bounds.x, bounds.y, bounds.width, bounds.height),
             (13, 26, 1000, 750)
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn connecting_rdp_session_can_be_cancelled_immediately() {
+        let manager = RdpManager::default();
+        let cancellation = manager.begin("pending").expect("begin session");
+
+        manager.close("pending").expect("close session");
+
+        assert!(cancellation.load(Ordering::Acquire));
+        assert!(manager.sessions.lock().expect("read sessions").is_empty());
     }
 
     #[cfg(windows)]

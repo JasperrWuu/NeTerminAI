@@ -1,104 +1,94 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AppearanceSettings,
   ApplicationSettings,
+  KeybindingSettings,
   TerminalSettings,
 } from "./types";
-
-const STORAGE_KEY = "neterminai.application.settings.v1";
-
-export const defaultApplicationSettings: ApplicationSettings = {
-  appearance: {
-    theme: "dark",
-  },
-  terminal: {
-    fontFamily: '"Cascadia Mono", "SFMono-Regular", Consolas, monospace',
-    fontSize: 14,
-    fontWeight: 400,
-    lineHeight: 1.18,
-    cursorStyle: "bar",
-    cursorBlink: true,
-    scrollback: 10_000,
-    colorScheme: "adaptive",
-    highlightRules: [],
-  },
-};
-
-function readSettings(): ApplicationSettings {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return defaultApplicationSettings;
-
-    const parsed = JSON.parse(stored) as Partial<ApplicationSettings>;
-    const settings: ApplicationSettings = {
-      appearance: {
-        ...defaultApplicationSettings.appearance,
-        ...parsed.appearance,
-      },
-      terminal: {
-        ...defaultApplicationSettings.terminal,
-        ...parsed.terminal,
-        highlightRules: Array.isArray(parsed.terminal?.highlightRules)
-          ? parsed.terminal.highlightRules
-          : [],
-      },
-    };
-    if (settings.terminal.colorScheme === "paper") settings.appearance.theme = "light";
-    if (settings.terminal.colorScheme === "graphite") settings.appearance.theme = "dark";
-    return settings;
-  } catch {
-    return defaultApplicationSettings;
-  }
-}
+import {
+  defaultApplicationSettings,
+  persistApplicationSettings,
+  readApplicationSettings,
+} from "./applicationSettings";
 
 export interface ApplicationSettingsController extends ApplicationSettings {
   updateAppearance: (settings: Partial<AppearanceSettings>) => void;
+  updateKeybindings: (settings: Partial<KeybindingSettings>) => void;
   updateTerminal: (settings: Partial<TerminalSettings>) => void;
+  resetKeybindings: () => void;
   resetTerminal: () => void;
 }
 
 export function useApplicationSettings(): ApplicationSettingsController {
-  const [settings, setSettings] = useState<ApplicationSettings>(readSettings);
+  const [settings, setSettings] = useState<ApplicationSettings>(readApplicationSettings);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    } catch {
-      // Keep the in-memory settings usable when browser storage is unavailable.
-    }
+    persistApplicationSettings(settings);
   }, [settings]);
 
-  return {
-    ...settings,
-    updateAppearance: (patch) =>
-      setSettings((current) => {
-        const nextTheme = patch.theme ?? current.appearance.theme;
-        const linkedColorScheme =
-          current.terminal.colorScheme === "adaptive"
-            ? "adaptive"
-            : nextTheme === "light" ? "paper" : "graphite";
-        return {
-          appearance: { ...current.appearance, ...patch },
-          terminal: { ...current.terminal, colorScheme: linkedColorScheme },
-        };
-      }),
-    updateTerminal: (patch) =>
-      setSettings((current) => {
-        const linkedTheme =
-          patch.colorScheme === "paper"
-            ? "light"
-            : patch.colorScheme === "graphite"
-              ? "dark"
-              : current.appearance.theme;
-        return {
-          appearance: { ...current.appearance, theme: linkedTheme },
-          terminal: { ...current.terminal, ...patch },
-        };
-      }),
-    resetTerminal: () =>
-      setSettings((current) => ({
+  const updateAppearance = useCallback((patch: Partial<AppearanceSettings>) => {
+    setSettings((current) => {
+      const nextTheme = patch.theme ?? current.appearance.theme;
+      const linkedColorScheme = current.terminal.colorScheme === "adaptive"
+        ? "adaptive"
+        : nextTheme === "light" ? "paper" : "graphite";
+      return {
         ...current,
-        terminal: defaultApplicationSettings.terminal,
-      })),
-  };
+        appearance: { ...current.appearance, ...patch },
+        terminal: { ...current.terminal, colorScheme: linkedColorScheme },
+      };
+    });
+  }, []);
+
+  const updateTerminal = useCallback((patch: Partial<TerminalSettings>) => {
+    setSettings((current) => {
+      const linkedTheme = patch.colorScheme === "paper"
+        ? "light"
+        : patch.colorScheme === "graphite"
+          ? "dark"
+          : current.appearance.theme;
+      return {
+        ...current,
+        appearance: { ...current.appearance, theme: linkedTheme },
+        terminal: { ...current.terminal, ...patch },
+      };
+    });
+  }, []);
+
+  const updateKeybindings = useCallback((patch: Partial<KeybindingSettings>) => {
+    setSettings((current) => ({
+      ...current,
+      keybindings: { ...current.keybindings, ...patch },
+    }));
+  }, []);
+
+  const resetKeybindings = useCallback(() => {
+    setSettings((current) => ({
+      ...current,
+      keybindings: defaultApplicationSettings.keybindings,
+    }));
+  }, []);
+
+  const resetTerminal = useCallback(() => {
+    setSettings((current) => ({
+      ...current,
+      terminal: defaultApplicationSettings.terminal,
+    }));
+  }, []);
+
+  return useMemo(() => ({
+    ...settings,
+    updateAppearance,
+    updateKeybindings,
+    updateTerminal,
+    resetKeybindings,
+    resetTerminal,
+  }), [
+    resetKeybindings,
+    resetTerminal,
+    settings,
+    updateAppearance,
+    updateKeybindings,
+    updateTerminal,
+  ]);
 }

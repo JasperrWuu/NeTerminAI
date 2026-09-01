@@ -1,7 +1,11 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Sender},
+    },
     thread,
 };
 
@@ -12,7 +16,15 @@ use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Default)]
 pub struct TerminalManager {
-    sessions: Mutex<HashMap<String, Arc<Mutex<TerminalSession>>>>,
+    sessions: Mutex<HashMap<String, TerminalSessionState>>,
+}
+
+enum TerminalSessionState {
+    Connecting(Arc<AtomicBool>),
+    Connected {
+        cancellation: Arc<AtomicBool>,
+        session: Arc<Mutex<TerminalSession>>,
+    },
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -27,8 +39,18 @@ pub enum TerminalProfile {
 
 struct TerminalSession {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    writer: Sender<TerminalWriterMessage>,
     child: Box<dyn Child + Send + Sync>,
+}
+
+enum TerminalWriterMessage {
+    Bytes(Vec<u8>),
+    Shutdown,
+}
+
+struct TerminalResources {
+    reader: Box<dyn Read + Send>,
+    session: Arc<Mutex<TerminalSession>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -45,6 +67,23 @@ struct TerminalExit {
 }
 
 impl TerminalManager {
+    pub fn begin(&self, session_id: &str) -> Result<Arc<AtomicBool>, String> {
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "终端会话状态不可用".to_owned())?;
+        match sessions.entry(session_id.to_owned()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(TerminalSessionState::Connecting(Arc::clone(&cancellation)));
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {
+                return Err("终端会话已存在".to_owned());
+            }
+        }
+        Ok(cancellation)
+    }
+
     pub fn create(
         &self,
         app: AppHandle,
@@ -52,6 +91,7 @@ impl TerminalManager {
         profile: TerminalProfile,
         columns: u16,
         rows: u16,
+        cancellation: Arc<AtomicBool>,
     ) -> Result<(), String> {
         self.create_command(
             app,
@@ -61,6 +101,7 @@ impl TerminalManager {
             rows,
             "terminal",
             "本地终端",
+            cancellation,
         )
     }
 
@@ -75,18 +116,27 @@ impl TerminalManager {
         identity_file: String,
         columns: u16,
         rows: u16,
+        cancellation: Arc<AtomicBool>,
     ) -> Result<(), String> {
-        if host.trim().is_empty() || port == 0 {
+        let host = host.trim();
+        let username = username.trim();
+        if host.is_empty() || port == 0 {
+            self.remove_if_connecting(&session_id, &cancellation);
             return Err("SSH 主机地址或端口无效".to_owned());
+        }
+        if host.contains(['\r', '\n']) || username.contains(['\r', '\n']) {
+            self.remove_if_connecting(&session_id, &cancellation);
+            return Err("SSH 主机地址或账号包含无效换行符".to_owned());
         }
         self.create_command(
             app,
             session_id,
-            ssh_command(&host, port, &username, &identity_file),
+            ssh_command(host, port, username, &identity_file),
             columns,
             rows,
             "ssh",
             "SSH 终端",
+            cancellation,
         )
     }
 
@@ -95,12 +145,64 @@ impl TerminalManager {
         &self,
         app: AppHandle,
         session_id: String,
-        mut command: CommandBuilder,
+        command: CommandBuilder,
         columns: u16,
         rows: u16,
         event_prefix: &'static str,
         label: &str,
+        cancellation: Arc<AtomicBool>,
     ) -> Result<(), String> {
+        if cancellation.load(Ordering::Acquire) {
+            self.remove_if_connecting(&session_id, &cancellation);
+            return Err(format!("{label}启动已取消"));
+        }
+
+        let resources = self.open_command_resources(command, columns, rows, label);
+        let TerminalResources { reader, session } = match resources {
+            Ok(resources) => resources,
+            Err(error) => {
+                self.remove_if_connecting(&session_id, &cancellation);
+                return Err(error);
+            }
+        };
+
+        if cancellation.load(Ordering::Acquire) {
+            self.remove_if_connecting(&session_id, &cancellation);
+            return Err(format!("{label}启动已取消"));
+        }
+
+        {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "终端会话状态不可用".to_owned())?;
+            match sessions.get(&session_id) {
+                Some(TerminalSessionState::Connecting(current))
+                    if Arc::ptr_eq(current, &cancellation) =>
+                {
+                    sessions.insert(
+                        session_id.clone(),
+                        TerminalSessionState::Connected {
+                            cancellation: Arc::clone(&cancellation),
+                            session,
+                        },
+                    );
+                }
+                _ => return Err(format!("{label}启动已取消")),
+            }
+        }
+
+        spawn_output_reader(app, session_id, reader, event_prefix, cancellation);
+        Ok(())
+    }
+
+    fn open_command_resources(
+        &self,
+        mut command: CommandBuilder,
+        columns: u16,
+        rows: u16,
+        label: &str,
+    ) -> Result<TerminalResources, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -127,34 +229,29 @@ impl TerminalManager {
             .master
             .take_writer()
             .map_err(|error| format!("无法写入终端：{error}"))?;
+        let (writer_sender, writer_receiver) = mpsc::channel();
+        spawn_input_writer(writer, writer_receiver);
 
-        self.sessions
-            .lock()
-            .map_err(|_| "终端会话状态不可用".to_owned())?
-            .insert(
-                session_id.clone(),
-                Arc::new(Mutex::new(TerminalSession {
-                    master: pair.master,
-                    writer,
-                    child,
-                })),
-            );
-
-        spawn_output_reader(app, session_id, reader, event_prefix);
-        Ok(())
+        Ok(TerminalResources {
+            reader,
+            session: Arc::new(Mutex::new(TerminalSession {
+                master: pair.master,
+                writer: writer_sender,
+                child,
+            })),
+        })
     }
 
     pub fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
         let session = self.session(session_id)?;
-        let mut session = session
+        let writer = session
             .lock()
-            .map_err(|_| "终端会话状态不可用".to_owned())?;
-
-        session
+            .map_err(|_| "终端会话状态不可用".to_owned())?
             .writer
-            .write_all(data)
-            .and_then(|_| session.writer.flush())
-            .map_err(|error| format!("终端输入失败：{error}"))
+            .clone();
+        writer
+            .send(TerminalWriterMessage::Bytes(data.to_vec()))
+            .map_err(|_| "终端输入通道已关闭".to_owned())
     }
 
     pub fn resize(&self, session_id: &str, columns: u16, rows: u16) -> Result<(), String> {
@@ -175,30 +272,101 @@ impl TerminalManager {
     }
 
     pub fn close(&self, session_id: &str) -> Result<(), String> {
-        let session = self
+        let state = self
             .sessions
             .lock()
             .map_err(|_| "终端会话状态不可用".to_owned())?
             .remove(session_id);
-        drop(session);
+        match &state {
+            Some(TerminalSessionState::Connecting(cancellation))
+            | Some(TerminalSessionState::Connected { cancellation, .. }) => {
+                cancellation.store(true, Ordering::Release);
+            }
+            None => {}
+        }
+        drop(state);
         Ok(())
     }
 
     fn session(&self, session_id: &str) -> Result<Arc<Mutex<TerminalSession>>, String> {
-        self.sessions
+        let sessions = self
+            .sessions
             .lock()
-            .map_err(|_| "终端会话状态不可用".to_owned())?
-            .get(session_id)
-            .cloned()
-            .ok_or_else(|| "终端会话不存在".to_owned())
+            .map_err(|_| "终端会话状态不可用".to_owned())?;
+        match sessions.get(session_id) {
+            Some(TerminalSessionState::Connected { session, .. }) => Ok(Arc::clone(session)),
+            Some(TerminalSessionState::Connecting(_)) => Err("终端仍在启动中".to_owned()),
+            None => Err("终端会话不存在".to_owned()),
+        }
+    }
+
+    fn remove_if_connecting(&self, session_id: &str, cancellation: &Arc<AtomicBool>) {
+        if let Ok(mut sessions) = self.sessions.lock()
+            && matches!(
+                sessions.get(session_id),
+                Some(TerminalSessionState::Connecting(current)) if Arc::ptr_eq(current, cancellation)
+            )
+        {
+            sessions.remove(session_id);
+        }
+    }
+
+    fn close_if_current(
+        &self,
+        session_id: &str,
+        cancellation: &Arc<AtomicBool>,
+    ) -> Result<(), String> {
+        let state = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "终端会话状态不可用".to_owned())?;
+            let is_current = matches!(
+                sessions.get(session_id),
+                Some(TerminalSessionState::Connecting(current)) if Arc::ptr_eq(current, cancellation)
+            ) || matches!(
+                sessions.get(session_id),
+                Some(TerminalSessionState::Connected { cancellation: current, .. })
+                    if Arc::ptr_eq(current, cancellation)
+            );
+            is_current.then(|| sessions.remove(session_id)).flatten()
+        };
+        if state.is_some() {
+            cancellation.store(true, Ordering::Release);
+        }
+        drop(state);
+        Ok(())
     }
 }
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
+        let _ = self.writer.send(TerminalWriterMessage::Shutdown);
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+fn spawn_input_writer(
+    mut writer: Box<dyn Write + Send>,
+    receiver: mpsc::Receiver<TerminalWriterMessage>,
+) {
+    thread::spawn(move || {
+        while let Ok(message) = receiver.recv() {
+            match message {
+                TerminalWriterMessage::Bytes(bytes) => {
+                    if writer
+                        .write_all(&bytes)
+                        .and_then(|_| writer.flush())
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                TerminalWriterMessage::Shutdown => break,
+            }
+        }
+    });
 }
 
 fn spawn_output_reader(
@@ -206,6 +374,7 @@ fn spawn_output_reader(
     session_id: String,
     mut reader: Box<dyn Read + Send>,
     event_prefix: &'static str,
+    cancellation: Arc<AtomicBool>,
 ) {
     thread::spawn(move || {
         let mut buffer = [0_u8; 8192];
@@ -216,6 +385,9 @@ fn spawn_output_reader(
             match reader.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(length) => {
+                    if cancellation.load(Ordering::Acquire) {
+                        break;
+                    }
                     let output = TerminalOutput {
                         session_id: session_id.clone(),
                         data: STANDARD.encode(&buffer[..length]),
@@ -234,7 +406,9 @@ fn spawn_output_reader(
                 session_id: session_id.clone(),
             },
         );
-        let _ = app.state::<TerminalManager>().close(&session_id);
+        let _ = app
+            .state::<TerminalManager>()
+            .close_if_current(&session_id, &cancellation);
     });
 }
 
@@ -251,6 +425,7 @@ fn ssh_command(host: &str, port: u16, username: &str, identity_file: &str) -> Co
     if !identity_file.is_empty() {
         command.args(["-i", identity_file]);
     }
+    command.arg("--");
     command.arg(if username.is_empty() {
         host.to_owned()
     } else {
@@ -280,6 +455,7 @@ fn ssh_command(host: &str, port: u16, username: &str, identity_file: &str) -> Co
     if !identity_file.is_empty() {
         command.args(["-i", identity_file]);
     }
+    command.arg("--");
     command.arg(if username.is_empty() {
         host.to_owned()
     } else {
@@ -377,9 +553,50 @@ mod tests {
                 .windows(2)
                 .any(|pair| pair == ["-i", "C:\\keys\\id_ed25519"])
         );
+        assert_eq!(arguments[arguments.len() - 2], "--");
         assert_eq!(
             arguments.last().map(String::as_str),
             Some("operator@server.example")
         );
+    }
+
+    #[test]
+    fn connecting_terminal_can_be_cancelled_immediately() {
+        let manager = TerminalManager::default();
+        let cancellation = manager.begin("pending").expect("begin session");
+
+        manager.close("pending").expect("close session");
+
+        assert!(cancellation.load(Ordering::Acquire));
+        assert!(manager.sessions.lock().expect("read sessions").is_empty());
+    }
+
+    #[test]
+    fn duplicate_terminal_session_id_is_rejected() {
+        let manager = TerminalManager::default();
+        manager.begin("duplicate").expect("begin session");
+
+        assert!(manager.begin("duplicate").is_err());
+    }
+
+    #[test]
+    fn stale_terminal_attempt_cannot_remove_a_newer_session() {
+        let manager = TerminalManager::default();
+        let current = manager.begin("current").expect("begin session");
+        let stale = Arc::new(AtomicBool::new(false));
+
+        manager
+            .close_if_current("current", &stale)
+            .expect("ignore stale close");
+
+        assert!(
+            manager
+                .sessions
+                .lock()
+                .expect("read sessions")
+                .contains_key("current")
+        );
+        manager.close("current").expect("close session");
+        assert!(current.load(Ordering::Acquire));
     }
 }

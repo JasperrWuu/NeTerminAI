@@ -7,6 +7,7 @@ interface WorkspaceTabsProps {
   paneId: string;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
+  synchronizedTabIds: ReadonlySet<string>;
   onActivate: (paneId: string, tabId: string) => void;
   onClose: (paneId: string, tabId: string) => void;
   onTabPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, paneId: string, tab: WorkspaceTab) => void;
@@ -16,6 +17,7 @@ export function WorkspaceTabs({
   paneId,
   tabs,
   activeTabId,
+  synchronizedTabIds,
   onActivate,
   onClose,
   onTabPointerDown,
@@ -86,6 +88,11 @@ export function WorkspaceTabs({
               <WorkspaceTabIcon kind={tab.kind} />
               <span className="tab-title">{tab.title}</span>
             </button>
+            {synchronizedTabIds.has(tab.id) && (
+              <span className="tab-sync-mark" aria-label="同步输入已开启" title="同步输入已开启">
+                <i /><i />
+              </span>
+            )}
             <button
               aria-label={`关闭 ${tab.title}`}
               className="tab-close"

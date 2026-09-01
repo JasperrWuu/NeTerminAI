@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ConnectionFolder,
   SavedConnectionSession,
@@ -115,7 +115,7 @@ export function useConnectionLibrary() {
 
   useEffect(() => persist(library), [library]);
 
-  const saveTelnet = (
+  const saveTelnet = useCallback((
     connection: TelnetConnection,
     savesPassword: boolean,
     folderId: string | null,
@@ -136,9 +136,9 @@ export function useConnectionLibrary() {
         ? current.sessions.map((item) => (item.id === existingId ? session : item))
         : [...current.sessions, session],
     }));
-  };
+  }, []);
 
-  const saveSerial = (connection: SerialConnection, folderId: string | null, existingId?: string) => {
+  const saveSerial = useCallback((connection: SerialConnection, folderId: string | null, existingId?: string) => {
     const session: SavedSerialSession = {
       ...connection,
       id: existingId ?? crypto.randomUUID(),
@@ -152,9 +152,9 @@ export function useConnectionLibrary() {
         ? current.sessions.map((item) => (item.id === existingId ? session : item))
         : [...current.sessions, session],
     }));
-  };
+  }, []);
 
-  const saveSsh = (connection: SshConnection, folderId: string | null, existingId?: string) => {
+  const saveSsh = useCallback((connection: SshConnection, folderId: string | null, existingId?: string) => {
     const session: SavedSshSession = {
       ...connection,
       id: existingId ?? crypto.randomUUID(),
@@ -166,9 +166,9 @@ export function useConnectionLibrary() {
       ...current,
       sessions: existingId ? current.sessions.map((item) => item.id === existingId ? session : item) : [...current.sessions, session],
     }));
-  };
+  }, []);
 
-  const saveRdp = (connection: RdpConnection, folderId: string | null, existingId?: string) => {
+  const saveRdp = useCallback((connection: RdpConnection, folderId: string | null, existingId?: string) => {
     const session: SavedRdpSession = {
       ...connection,
       id: existingId ?? crypto.randomUUID(),
@@ -180,36 +180,36 @@ export function useConnectionLibrary() {
       ...current,
       sessions: existingId ? current.sessions.map((item) => item.id === existingId ? session : item) : [...current.sessions, session],
     }));
-  };
+  }, []);
 
-  const removeSession = (sessionId: string) => {
+  const removeSession = useCallback((sessionId: string) => {
     setLibrary((current) => ({
       ...current,
       sessions: current.sessions.filter((session) => session.id !== sessionId),
     }));
-  };
+  }, []);
 
-  const createFolder = (name: string) => {
+  const createFolder = useCallback((name: string) => {
     const folder: ConnectionFolder = { id: crypto.randomUUID(), name: name.trim() };
     setLibrary((current) => ({ ...current, folders: [...current.folders, folder] }));
     return folder.id;
-  };
+  }, []);
 
-  const renameFolder = (folderId: string, name: string) => {
+  const renameFolder = useCallback((folderId: string, name: string) => {
     setLibrary((current) => ({
       ...current,
       folders: current.folders.map((folder) => folder.id === folderId ? { ...folder, name: name.trim() } : folder),
     }));
-  };
+  }, []);
 
-  const removeFolder = (folderId: string) => {
+  const removeFolder = useCallback((folderId: string) => {
     setLibrary((current) => ({
       folders: current.folders.filter((folder) => folder.id !== folderId),
       sessions: current.sessions.map((session) => session.folderId === folderId ? { ...session, folderId: null } : session),
     }));
-  };
+  }, []);
 
-  return {
+  return useMemo(() => ({
     folders: library.folders,
     sessions: library.sessions,
     saveTelnet,
@@ -220,5 +220,16 @@ export function useConnectionLibrary() {
     createFolder,
     renameFolder,
     removeFolder,
-  };
+  }), [
+    createFolder,
+    library.folders,
+    library.sessions,
+    removeFolder,
+    removeSession,
+    renameFolder,
+    saveRdp,
+    saveSerial,
+    saveSsh,
+    saveTelnet,
+  ]);
 }

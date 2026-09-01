@@ -15,6 +15,7 @@ pub async fn create_ssh(
     columns: u16,
     rows: u16,
 ) -> Result<(), String> {
+    let cancellation = app.state::<TerminalManager>().begin(&session_id)?;
     let state_app = app.clone();
     run_blocking("SSH 启动", move || {
         state_app.state::<TerminalManager>().create_ssh(
@@ -26,6 +27,7 @@ pub async fn create_ssh(
             identity_file,
             columns,
             rows,
+            cancellation,
         )
     })
     .await

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { RdpConnection } from "../connections/types";
+import { invokeInBackground } from "../platform/tauri";
 
 interface RdpBounds {
   x: number;
@@ -32,7 +33,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
 
     const syncBounds = (visible: boolean) => {
       if (!readyRef.current || disposed) return;
-      void invoke("resize_rdp", { sessionId, bounds: readBounds(viewport), visible });
+      invokeInBackground("resize_rdp", { sessionId, bounds: readBounds(viewport), visible });
     };
     const scheduleResize = () => {
       if (resizeFrame !== undefined) return;
@@ -78,7 +79,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
       window.removeEventListener("resize", scheduleResize);
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       if (sessionIdRef.current === sessionId) sessionIdRef.current = null;
-      void invoke("close_rdp", { sessionId });
+      invokeInBackground("close_rdp", { sessionId });
     };
   }, [connection]);
 
@@ -86,7 +87,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
     const viewport = viewportRef.current;
     const sessionId = sessionIdRef.current;
     if (!viewport || !sessionId || !readyRef.current) return;
-    void invoke("resize_rdp", { sessionId, bounds: readBounds(viewport), visible: active });
+    invokeInBackground("resize_rdp", { sessionId, bounds: readBounds(viewport), visible: active });
   }, [active, status]);
 
   return (
