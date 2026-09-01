@@ -12,9 +12,12 @@ import { resolveTerminalTheme } from "./themes";
 import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import type { TerminalInputTarget } from "./useSynchronizedInput";
 import { invokeInBackground } from "../platform/tauri";
+import { terminalFontStack } from "./fontStack";
 
 interface TerminalPaneCommonProps {
   active: boolean;
+  connectionId?: string;
+  paneId?: string;
   synchronizedInput: boolean;
   tabId: string;
   settings: TerminalSettings;
@@ -82,7 +85,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     const terminal = terminalRef.current;
     const fitAddon = fitAddonRef.current;
     if (!terminal || !fitAddon) return;
-    terminal.options.fontFamily = settings.fontFamily;
+    terminal.options.fontFamily = terminalFontStack(settings);
     terminal.options.fontSize = settings.fontSize;
     terminal.options.fontWeight = settings.fontWeight;
     terminal.options.lineHeight = settings.lineHeight;
@@ -128,11 +131,12 @@ export function TerminalPane(props: TerminalPaneProps) {
     if (!container) return;
     const sessionId = crypto.randomUUID();
     ptySessionIdRef.current = sessionId;
+    container.closest<HTMLElement>(".terminal-pane")?.setAttribute("data-session-id", sessionId);
     const terminal = new Terminal({
       allowTransparency: false,
       cursorBlink: settings.cursorBlink,
       cursorStyle: settings.cursorStyle,
-      fontFamily: settings.fontFamily,
+      fontFamily: terminalFontStack(settings),
       fontSize: settings.fontSize,
       fontWeight: settings.fontWeight,
       lineHeight: settings.lineHeight,
@@ -282,6 +286,7 @@ export function TerminalPane(props: TerminalPaneProps) {
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      container.closest<HTMLElement>(".terminal-pane")?.removeAttribute("data-session-id");
       if (ptySessionIdRef.current === sessionId) ptySessionIdRef.current = null;
       invokeInBackground(`close_${commandPrefix}`, { sessionId });
     };
@@ -300,7 +305,11 @@ export function TerminalPane(props: TerminalPaneProps) {
       aria-label={terminalAriaLabel(props)}
       aria-hidden={!active}
       data-active={active}
+      data-connection-id={props.connectionId}
+      data-pane-id={props.paneId}
+      data-session-id={ptySessionIdRef.current ?? undefined}
       data-synchronized={props.synchronizedInput}
+      data-tab-id={props.tabId}
     >
       <div
         className="terminal-container"

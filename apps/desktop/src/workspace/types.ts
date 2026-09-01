@@ -4,6 +4,8 @@ import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection }
 interface WorkspaceTabBase {
   id: string;
   title: string;
+  /** Internal pane sessions are deliberately hidden from the tab strip. */
+  displayInTabBar?: boolean;
 }
 
 export interface LocalTerminalTab extends WorkspaceTabBase {
@@ -47,6 +49,8 @@ export interface WorkspaceSplitNode {
   type: "split";
   id: string;
   direction: WorkspaceSplitDirection;
+  /** Relative size of the first child, retained when the layout is resized. */
+  ratio?: number;
   first: WorkspaceLayoutNode;
   second: WorkspaceLayoutNode;
 }

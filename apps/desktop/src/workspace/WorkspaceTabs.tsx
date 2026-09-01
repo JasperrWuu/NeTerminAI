@@ -11,7 +11,9 @@ interface WorkspaceTabsProps {
   synchronizedTabIds: ReadonlySet<string>;
   onActivate: (paneId: string, tabId: string) => void;
   onClose: (paneId: string, tabId: string) => void;
+  onClosePane: (paneId: string) => void;
   onTabPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, paneId: string, tab: WorkspaceTab) => void;
+  canClosePane: boolean;
 }
 
 export function WorkspaceTabs({
@@ -22,7 +24,9 @@ export function WorkspaceTabs({
   synchronizedTabIds,
   onActivate,
   onClose,
+  onClosePane,
   onTabPointerDown,
+  canClosePane,
 }: WorkspaceTabsProps) {
   const tabListRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
@@ -79,11 +83,13 @@ export function WorkspaceTabs({
     return () => observer.disconnect();
   }, [positionActiveIndicator]);
 
+  const visibleTabs = tabs.filter((tab) => tab.displayInTabBar !== false);
+
   return (
     <div className="tabbar" data-active-pane={paneActive}>
       <div className="tab-list" ref={tabListRef} role="tablist" aria-label="工作区标签">
         <div aria-hidden="true" className="tab-active-indicator" ref={activeIndicatorRef} />
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <div
             className="tab"
             data-active={activeTabId === tab.id}
@@ -121,7 +127,24 @@ export function WorkspaceTabs({
             </button>
           </div>
         ))}
+        {visibleTabs.length === 0 && (
+          <span className="pane-session-label">
+            <WorkspaceTabIcon kind={tabs.find((tab) => tab.id === activeTabId)?.kind ?? "localTerminal"} />
+            <span>{tabs.find((tab) => tab.id === activeTabId)?.title ?? "独立终端分区"}</span>
+          </span>
+        )}
       </div>
+      {canClosePane && (
+        <button
+          aria-label="关闭当前分区"
+          className="pane-close"
+          onClick={() => onClosePane(paneId)}
+          title="关闭当前分区"
+          type="button"
+        >
+          <svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
+        </button>
+      )}
     </div>
   );
 }

@@ -32,7 +32,6 @@ export function SettingsPage({
           <TerminalSettingsView
             appearanceTheme={appearanceTheme}
             onChange={onChangeTerminal}
-            onOpenKeyboardShortcuts={() => onSelectSection("keyboard")}
             onReset={onResetTerminal}
             settings={terminal}
           />

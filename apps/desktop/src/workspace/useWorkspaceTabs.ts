@@ -7,9 +7,13 @@ import {
   findPaneContainingTab,
   firstPane,
   buildBalancedWorkspaceLayout,
+  collectTabIds,
+  countWorkspacePanes,
   collapseWorkspaceLayout,
+  removePane,
   removeTabFromPane,
   replacePane,
+  resizeWorkspaceSplit,
   updatePane,
 } from "./layout";
 import type {
@@ -53,6 +57,10 @@ function createLocalTerminalTab(
   };
 }
 
+function cloneWorkspaceTab(tab: WorkspaceTab): WorkspaceTab {
+  return { ...tab, id: crypto.randomUUID(), displayInTabBar: false } as WorkspaceTab;
+}
+
 export function useWorkspaceTabs() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() => {
     const initialTab = createLocalTerminalTab(crypto.randomUUID(), "powershell", []);
@@ -83,12 +91,13 @@ export function useWorkspaceTabs() {
 
   const balanceWorkspace = useCallback(() => {
     setWorkspace((current) => {
-      const tabIds = current.tabs.map((tab) => tab.id);
+      const tabIds = current.tabs.filter((tab) => tab.displayInTabBar !== false).map((tab) => tab.id);
       const activeTabId = findPane(current.layout, current.activePaneId)?.activeTabId ?? tabIds[0] ?? null;
       const layout = buildBalancedWorkspaceLayout(tabIds);
       const activePane = activeTabId ? findPaneContainingTab(layout, activeTabId) : firstPane(layout);
       return {
         ...current,
+        tabs: current.tabs.filter((tab) => tab.displayInTabBar !== false),
         layout,
         activePaneId: activePane?.id ?? firstPane(layout).id,
       };
@@ -97,9 +106,56 @@ export function useWorkspaceTabs() {
 
   const collapseWorkspace = useCallback(() => {
     setWorkspace((current) => {
-      const activeTabId = findPane(current.layout, current.activePaneId)?.activeTabId ?? null;
-      const layout = collapseWorkspaceLayout(current.tabs.map((tab) => tab.id), activeTabId);
-      return { ...current, layout, activePaneId: layout.id };
+      const tabs = current.tabs.filter((tab) => tab.displayInTabBar !== false);
+      const activeTabId = findPane(current.layout, current.activePaneId)?.activeTabId;
+      const layout = collapseWorkspaceLayout(tabs.map((tab) => tab.id), activeTabId ?? null);
+      return { ...current, tabs, layout, activePaneId: layout.id };
+    });
+  }, []);
+
+  const splitActivePane = useCallback(() => {
+    setWorkspace((current) => {
+      const sourcePane = findPane(current.layout, current.activePaneId);
+      const sourceTab = sourcePane?.activeTabId
+        ? current.tabs.find((tab) => tab.id === sourcePane.activeTabId)
+        : undefined;
+      if (!sourcePane || !sourceTab) return current;
+
+      const clonedTab = cloneWorkspaceTab(sourceTab);
+      const newPane = createPane(clonedTab.id);
+      const direction = countWorkspacePanes(current.layout) % 2 === 1 ? "row" : "column";
+      const layout = replacePane(current.layout, sourcePane.id, (pane) => ({
+        type: "split",
+        id: crypto.randomUUID(),
+        direction,
+        ratio: 0.5,
+        first: pane,
+        second: newPane,
+      }));
+      return {
+        tabs: [...current.tabs, clonedTab],
+        layout,
+        activePaneId: newPane.id,
+      };
+    });
+  }, []);
+
+  const resizeSplit = useCallback((splitId: string, ratio: number) => {
+    setWorkspace((current) => ({
+      ...current,
+      layout: resizeWorkspaceSplit(current.layout, splitId, ratio),
+    }));
+  }, []);
+
+  const closePane = useCallback((paneId: string) => {
+    setWorkspace((current) => {
+      if (countWorkspacePanes(current.layout) <= 1 || !findPane(current.layout, paneId)) return current;
+      const layout = removePane(current.layout, paneId);
+      if (!layout) return current;
+      const usedTabIds = new Set(collectTabIds(layout));
+      const tabs = current.tabs.filter((tab) => usedTabIds.has(tab.id));
+      const activePane = findPane(layout, current.activePaneId) ?? firstPane(layout);
+      return { tabs, layout, activePaneId: activePane.id };
     });
   }, []);
 
@@ -143,7 +199,7 @@ export function useWorkspaceTabs() {
 
   const activateNextSession = useCallback(() => {
     setWorkspace((current) => {
-      const sessions = current.tabs;
+      const sessions = current.tabs.filter((tab) => tab.displayInTabBar !== false);
       if (sessions.length === 0) return current;
       const activePane = findPane(current.layout, current.activePaneId) ?? firstPane(current.layout);
       const activeIndex = sessions.findIndex((tab) => tab.id === activePane.activeTabId);
@@ -195,6 +251,7 @@ export function useWorkspaceTabs() {
           type: "split",
           id: crypto.randomUUID(),
           direction,
+          ratio: 0.5,
           first: placeFirst ? pane : emptyPane,
           second: placeFirst ? emptyPane : pane,
         }));
@@ -223,6 +280,7 @@ export function useWorkspaceTabs() {
         type: "split",
         id: crypto.randomUUID(),
         direction,
+        ratio: 0.5,
         first: placeFirst ? newPane : pane,
         second: placeFirst ? pane : newPane,
       }));
@@ -247,6 +305,7 @@ export function useWorkspaceTabs() {
     activatePane,
     activateTab,
     balanceWorkspace,
+    closePane,
     collapseWorkspace,
     createTerminal,
     openTelnet,
@@ -255,11 +314,14 @@ export function useWorkspaceTabs() {
     openRdp,
     closeTab,
     moveTab,
+    resizeSplit,
+    splitActivePane,
   }), [
     activateNextSession,
     activatePane,
     activateTab,
     balanceWorkspace,
+    closePane,
     collapseWorkspace,
     activePane.activeTabId,
     activePane.id,
@@ -272,5 +334,7 @@ export function useWorkspaceTabs() {
     openTelnet,
     workspace.layout,
     workspace.tabs,
+    resizeSplit,
+    splitActivePane,
   ]);
 }

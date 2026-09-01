@@ -33,6 +33,7 @@ pub fn run() {
             commands::rdp::resize_rdp,
             commands::rdp::focus_rdp,
             commands::rdp::close_rdp,
+            commands::fonts::list_system_fonts,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run NeTerminAI");

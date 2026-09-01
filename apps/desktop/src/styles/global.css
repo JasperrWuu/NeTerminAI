@@ -151,9 +151,10 @@ button:focus-visible,
   backdrop-filter: blur(24px) saturate(150%);
   border-bottom: 1px solid var(--separator);
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto 1fr auto auto;
   padding: 0 10px;
   position: relative;
+  user-select: none;
   z-index: 4;
 }
 
@@ -193,12 +194,37 @@ button:focus-visible,
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 520;
+  justify-self: center;
 }
 
 .titlebar-actions {
   gap: 2px;
   justify-self: end;
 }
+
+.window-controls {
+  align-items: center;
+  display: flex;
+  gap: 2px;
+  margin-left: 10px;
+}
+
+.window-control {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--icon-color);
+  cursor: pointer;
+  display: flex;
+  height: 30px;
+  justify-content: center;
+  transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  width: 34px;
+}
+.window-control:hover { background: var(--icon-surface); color: var(--text-primary); }
+.window-control-close:hover { background: #d75c4a; color: #fff; }
+.window-control svg { fill: none; height: 14px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.35; width: 14px; }
 
 .icon-button,
 .activity-button,
@@ -577,14 +603,55 @@ button:focus-visible,
   background: var(--separator);
   display: flex;
   flex: 1;
-  gap: 1px;
+  gap: 0;
   min-height: 0;
   min-width: 0;
 }
 
 .workspace-split[data-direction="row"] { flex-direction: row; }
 .workspace-split[data-direction="column"] { flex-direction: column; }
-.workspace-split > * { flex: 1 1 0; }
+.workspace-split-child {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace-split-handle {
+  background: transparent;
+  flex: 0 0 8px;
+  position: relative;
+  z-index: 26;
+}
+
+.workspace-split-handle::after {
+  background: var(--separator);
+  border-radius: 999px;
+  content: "";
+  position: absolute;
+  transition: background-color var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+
+.workspace-split-handle[data-direction="row"] { cursor: col-resize; }
+.workspace-split-handle[data-direction="column"] { cursor: row-resize; }
+.workspace-split-handle[data-direction="row"]::after {
+  bottom: 0;
+  left: 3px;
+  top: 0;
+  width: 2px;
+}
+.workspace-split-handle[data-direction="column"]::after {
+  height: 2px;
+  left: 0;
+  right: 0;
+  top: 3px;
+}
+.workspace-split-handle:hover::after,
+.workspace-split-handle:focus-visible::after {
+  background: var(--accent);
+  opacity: 0.9;
+}
 
 .workspace-pane {
   background: var(--bg-canvas);
@@ -677,6 +744,38 @@ button:focus-visible,
 }
 
 .tab-list::-webkit-scrollbar { display: none; }
+
+.pane-session-label {
+  align-items: center;
+  color: var(--text-secondary);
+  display: flex;
+  font-size: 12px;
+  font-weight: 580;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 8px;
+}
+.pane-session-label > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-session-label .tab-glyph { color: var(--accent-strong); }
+
+.pane-close {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  flex: 0 0 28px;
+  height: 28px;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 0;
+  transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  width: 28px;
+}
+.pane-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pane-close svg { fill: none; height: 14px; stroke: currentColor; stroke-linecap: round; stroke-width: 1.6; width: 14px; }
 
 .tab-active-indicator {
   background: color-mix(in srgb, var(--bg-elevated) 84%, var(--accent-soft));
@@ -1031,6 +1130,28 @@ button:focus-visible,
   background-color: transparent;
   scrollbar-color: var(--scrollbar-thumb) transparent;
   scrollbar-width: thin;
+}
+
+/* xterm.js ships arrow controls in its custom scrollbar. They are the
+   small triangle visible in the lower-right corner, not part of our UI. */
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .scra {
+  display: none !important;
+}
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  width: 8px !important;
+}
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar.horizontal {
+  height: 8px !important;
+}
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: var(--scrollbar-thumb) !important;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box !important;
+}
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .slider:hover {
+  background: var(--scrollbar-thumb-hover) !important;
+  background-clip: padding-box !important;
 }
 
 .terminal-pane[data-synchronized="true"] {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WorkbenchPreferencesController } from "./useWorkbenchPreferences";
 import type { ApplicationSettingsController } from "../settings/useApplicationSettings";
 import type { ActivityId } from "./types";
@@ -142,7 +143,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         synchronizedInput.disable();
         synchronizedInput.focus(activeTerminalId);
       } else if (command.id === "balanceWorkspace") {
-        workspaceTabs.balanceWorkspace();
+        workspaceTabs.splitActivePane();
       } else if (command.id === "collapseWorkspace") {
         workspaceTabs.collapseWorkspace();
       } else {
@@ -161,8 +162,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     synchronizedInput.enable,
     synchronizedInput.focus,
     workspaceTabs.activateNextSession,
-    workspaceTabs.balanceWorkspace,
     workspaceTabs.collapseWorkspace,
+    workspaceTabs.splitActivePane,
   ]);
   const openSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") workspaceTabs.openTelnet(session);
@@ -224,6 +225,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       return (
         <TerminalPane
           active={active && !settingsOpen}
+          connectionId={tab.id}
+          paneId={paneId}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
           onInput={synchronizedInput.routeInput}
@@ -241,6 +244,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       return (
         <TerminalPane
           active={active && !settingsOpen}
+          connectionId={tab.id}
+          paneId={paneId}
           connection={tab.connection}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
@@ -258,6 +263,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       return (
         <TerminalPane
           active={active && !settingsOpen}
+          connectionId={tab.id}
+          paneId={paneId}
           connection={tab.connection}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
@@ -275,6 +282,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       return (
         <TerminalPane
           active={active && !settingsOpen}
+          connectionId={tab.id}
+          paneId={paneId}
           connection={tab.connection}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
@@ -289,14 +298,25 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       );
     }
     if (tab.kind === "rdp") {
-      return <RdpPane active={active && !settingsOpen && !dialogOpen && !tabDragging} connection={tab.connection} key={tab.id} />;
+      return <RdpPane active={active && !settingsOpen && !dialogOpen && !tabDragging} connection={tab.connection} connectionId={tab.id} key={tab.id} paneId={paneId} tabId={tab.id} />;
     }
     return null;
   };
 
   return (
     <div className="workbench" style={layoutStyle}>
-      <header className="titlebar">
+      <header
+        className="titlebar"
+        data-tauri-drag-region
+        onDoubleClick={(event) => {
+          if ((event.target as HTMLElement).closest("[data-titlebar-control]")) return;
+          if ("__TAURI_INTERNALS__" in window) void getCurrentWindow().toggleMaximize();
+        }}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || (event.target as HTMLElement).closest("[data-titlebar-control]")) return;
+          if ("__TAURI_INTERNALS__" in window) void getCurrentWindow().startDragging();
+        }}
+      >
         <div className="brand" aria-label="NeTerminAI">
           <img className="brand-mark" src="/brand/neterminai-logo.png" alt="" />
           <span className="brand-name">NeTerminAI</span>
@@ -306,24 +326,28 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
 
         <div className="titlebar-actions">
           <IconButton
+            dataTitlebarControl
             label={preferences.leftSidebarOpen ? "收起左侧栏" : "展开左侧栏"}
             onClick={preferences.toggleLeftSidebar}
           >
             <SidebarIcon />
           </IconButton>
           <IconButton
+            dataTitlebarControl
             label={settings.appearance.theme === "dark" ? "切换到明亮主题" : "切换到暗色主题"}
             onClick={() => settings.updateAppearance({ theme: settings.appearance.theme === "dark" ? "light" : "dark" })}
           >
             {settings.appearance.theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </IconButton>
           <IconButton
+            dataTitlebarControl
             label={preferences.rightSidebarOpen ? "收起 AI 侧栏" : "展开 AI 侧栏"}
             onClick={preferences.toggleRightSidebar}
           >
             <AssistantIcon />
           </IconButton>
         </div>
+        <WindowControls />
       </header>
 
       <div className="workbench-body">
@@ -412,7 +436,9 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
               onActivatePane={workspaceTabs.activatePane}
               onActivateTab={workspaceTabs.activateTab}
               onCloseTab={workspaceTabs.closeTab}
+              onClosePane={workspaceTabs.closePane}
               onMoveTab={workspaceTabs.moveTab}
+              onResizeSplit={workspaceTabs.resizeSplit}
               onDraggingChange={setTabDragging}
               renderTab={renderWorkspaceTab}
               synchronizedTabIds={synchronizedTabIds}
@@ -553,18 +579,67 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
 
 function IconButton({
   children,
+  dataTitlebarControl = false,
   label,
   onClick,
 }: {
   children: ReactNode;
+  dataTitlebarControl?: boolean;
   label: string;
   onClick: () => void;
 }) {
   return (
-    <button className="icon-button" onClick={onClick} title={label} type="button">
+    <button className="icon-button" data-titlebar-control={dataTitlebarControl || undefined} onClick={onClick} title={label} type="button">
       {children}
       <span className="sr-only">{label}</span>
     </button>
+  );
+}
+
+function WindowControls() {
+  const [maximized, setMaximized] = useState(false);
+  const appWindow = useMemo(() => "__TAURI_INTERNALS__" in window ? getCurrentWindow() : null, []);
+
+  useEffect(() => {
+    if (!appWindow) return;
+    let disposed = false;
+    const sync = async () => {
+      try {
+        const value = await appWindow.isMaximized();
+        if (!disposed) setMaximized(value);
+      } catch {
+        // The browser preview does not expose a native window; desktop builds do.
+      }
+    };
+    void sync();
+    let unlisten: (() => void) | undefined;
+    void appWindow.onResized(() => { void sync(); }).then((cleanup) => {
+      if (disposed) cleanup();
+      else unlisten = cleanup;
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [appWindow]);
+
+  const toggleMaximize = () => {
+    if (!appWindow) return;
+    void appWindow.toggleMaximize().then(() => setMaximized((current) => !current));
+  };
+
+  return (
+    <div className="window-controls" data-titlebar-control>
+      <button aria-label="最小化" className="window-control" data-titlebar-control onClick={() => void appWindow?.minimize()} type="button">
+        <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
+      </button>
+      <button aria-label={maximized ? "还原" : "最大化"} className="window-control" data-titlebar-control onClick={toggleMaximize} type="button">
+        <svg aria-hidden="true" viewBox="0 0 16 16">{maximized ? <path d="M5.5 5.5h6v6h-6zM4.5 10.5h-1v-6h6v1" /> : <rect x="3.5" y="3.5" width="9" height="9" rx="1" />}</svg>
+      </button>
+      <button aria-label="关闭" className="window-control window-control-close" data-titlebar-control onClick={() => void appWindow?.close()} type="button">
+        <svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
+      </button>
+    </div>
   );
 }
 

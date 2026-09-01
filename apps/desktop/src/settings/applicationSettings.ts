@@ -10,7 +10,8 @@ const STORAGE_KEY = "neterminai.application.settings.v1";
 export const defaultApplicationSettings: ApplicationSettings = {
   appearance: { theme: "dark" },
   terminal: {
-    fontFamily: '"Cascadia Mono", "SFMono-Regular", Consolas, monospace',
+    fontFamilyLatin: "Cascadia Mono",
+    fontFamilyCjk: "Microsoft YaHei",
     fontSize: 14,
     fontWeight: 400,
     lineHeight: 1.18,
@@ -80,7 +81,10 @@ function normalizeSettings(value: unknown): ApplicationSettings {
         : defaults.appearance.theme,
     },
     terminal: {
-      fontFamily: nonEmptyString(terminal?.fontFamily) ?? defaults.terminal.fontFamily,
+      fontFamilyLatin: nonEmptyString(terminal?.fontFamilyLatin)
+        ?? legacyFontFamily(terminal?.fontFamily)
+        ?? defaults.terminal.fontFamilyLatin,
+      fontFamilyCjk: nonEmptyString(terminal?.fontFamilyCjk) ?? defaults.terminal.fontFamilyCjk,
       fontSize: finiteNumberInRange(terminal?.fontSize, 11, 22) ?? defaults.terminal.fontSize,
       fontWeight: terminal?.fontWeight === 400 || terminal?.fontWeight === 500 || terminal?.fontWeight === 600
         ? terminal.fontWeight
@@ -211,6 +215,13 @@ function stringValue(value: unknown) {
 
 function nonEmptyString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function legacyFontFamily(value: unknown) {
+  const family = nonEmptyString(value);
+  if (!family) return null;
+  const first = family.match(/^\s*"([^"]+)"|^\s*([^,]+)/);
+  return (first?.[1] ?? first?.[2])?.trim() || null;
 }
 
 function finiteNumberInRange(value: unknown, minimum: number, maximum: number) {

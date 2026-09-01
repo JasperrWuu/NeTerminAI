@@ -33,7 +33,8 @@ export interface AppearanceSettings {
   theme: AppearanceTheme;
 }
 export interface TerminalSettings {
-  fontFamily: string;
+  fontFamilyLatin: string;
+  fontFamilyCjk: string;
   fontSize: number;
   fontWeight: TerminalFontWeight;
   lineHeight: number;

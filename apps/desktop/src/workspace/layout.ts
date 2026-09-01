@@ -63,6 +63,17 @@ export function collectVisibleTabIds(node: WorkspaceLayoutNode): string[] {
   return [...collectVisibleTabIds(node.first), ...collectVisibleTabIds(node.second)];
 }
 
+export function collectTabIds(node: WorkspaceLayoutNode): string[] {
+  if (node.type === "pane") return [...node.tabIds];
+  return [...collectTabIds(node.first), ...collectTabIds(node.second)];
+}
+
+export function countWorkspacePanes(node: WorkspaceLayoutNode): number {
+  return node.type === "pane"
+    ? 1
+    : countWorkspacePanes(node.first) + countWorkspacePanes(node.second);
+}
+
 /**
  * Creates a near-complete binary layout for the supplied tabs. Alternating the
  * split direction at each level keeps the common 4-tab case as a 2×2 grid,
@@ -84,6 +95,7 @@ export function buildBalancedWorkspaceLayout(tabIds: readonly string[], depth = 
     type: "split",
     id: crypto.randomUUID(),
     direction,
+    ratio: 0.5,
     first: buildBalancedWorkspaceLayout(tabIds.slice(0, splitIndex), depth + 1),
     second: buildBalancedWorkspaceLayout(tabIds.slice(splitIndex), depth + 1),
   };
@@ -131,6 +143,34 @@ export function replacePane(
     ...node,
     first: replacePane(node.first, paneId, replace),
     second: replacePane(node.second, paneId, replace),
+  };
+}
+
+export function removePane(
+  node: WorkspaceLayoutNode,
+  paneId: string,
+): WorkspaceLayoutNode | null {
+  if (node.type === "pane") return node.id === paneId ? null : node;
+  const first = removePane(node.first, paneId);
+  const second = removePane(node.second, paneId);
+  if (!first) return second;
+  if (!second) return first;
+  return { ...node, first, second };
+}
+
+export function resizeWorkspaceSplit(
+  node: WorkspaceLayoutNode,
+  splitId: string,
+  ratio: number,
+): WorkspaceLayoutNode {
+  if (node.type === "pane") return node;
+  if (node.id === splitId) {
+    return { ...node, ratio: Math.min(0.82, Math.max(0.18, ratio)) };
+  }
+  return {
+    ...node,
+    first: resizeWorkspaceSplit(node.first, splitId, ratio),
+    second: resizeWorkspaceSplit(node.second, splitId, ratio),
   };
 }
 

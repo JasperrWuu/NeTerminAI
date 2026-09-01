@@ -17,7 +17,7 @@ interface RdpRuntimeStatus {
 
 type RdpViewStatus = "initializing" | "connecting" | "ready" | "error";
 
-export function RdpPane({ active, connection }: { active: boolean; connection: RdpConnection }) {
+export function RdpPane({ active, connection, connectionId, paneId, tabId }: { active: boolean; connection: RdpConnection; connectionId?: string; paneId?: string; tabId?: string }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
   const hostReadyRef = useRef(false);
@@ -38,6 +38,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
     if (!viewport) return;
     const sessionId = crypto.randomUUID();
     sessionIdRef.current = sessionId;
+    viewport.closest<HTMLElement>(".rdp-pane")?.setAttribute("data-session-id", sessionId);
     hostReadyRef.current = false;
     setStatus("initializing");
     setError("");
@@ -129,6 +130,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       if (statusTimer !== undefined) window.clearTimeout(statusTimer);
       if (sessionIdRef.current === sessionId) sessionIdRef.current = null;
+      viewport.closest<HTMLElement>(".rdp-pane")?.removeAttribute("data-session-id");
       invokeInBackground("close_rdp", { sessionId });
     };
   }, [attempt, connection]);
@@ -148,7 +150,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
   }, [active, focusRemoteDesktop, status]);
 
   return (
-    <section aria-hidden={!active} className="rdp-pane workspace-view" data-active={active}>
+    <section aria-hidden={!active} className="rdp-pane workspace-view" data-active={active} data-connection-id={connectionId} data-pane-id={paneId} data-tab-id={tabId}>
       <header className="rdp-session-toolbar">
         <span className="rdp-session-badge">RDP</span>
         <span className="rdp-session-title">{connection.name.trim() || connection.host}</span>

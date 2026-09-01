@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   AppearanceTheme,
   TerminalColorScheme,
@@ -11,12 +12,12 @@ import type {
 import { resolveTerminalTheme } from "../terminal/themes";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { CloseIcon } from "../workbench/icons";
+import { quoteFontFamilyName, terminalFontStack } from "../terminal/fontStack";
 
 interface TerminalSettingsViewProps {
   appearanceTheme: AppearanceTheme;
   settings: TerminalSettings;
   onChange: (settings: Partial<TerminalSettings>) => void;
-  onOpenKeyboardShortcuts: () => void;
   onReset: () => void;
 }
 
@@ -36,10 +37,29 @@ export function TerminalSettingsView({
   appearanceTheme,
   settings,
   onChange,
-  onOpenKeyboardShortcuts,
   onReset,
 }: TerminalSettingsViewProps) {
   const previewTheme = resolveTerminalTheme(settings.colorScheme, appearanceTheme);
+  const [fontFamilies, setFontFamilies] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let cancelled = false;
+    void invoke<string[]>("list_system_fonts")
+      .then((fonts) => {
+        if (!cancelled) setFontFamilies(fonts);
+      })
+      .catch(() => {
+        if (!cancelled) setFontFamilies([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const availableFonts = useMemo(() => Array.from(new Set([
+    settings.fontFamilyLatin,
+    settings.fontFamilyCjk,
+    ...fontFamilies,
+  ].filter(Boolean))), [fontFamilies, settings.fontFamilyCjk, settings.fontFamilyLatin]);
 
   return (
     <section className="settings-view" aria-label="终端设置">
@@ -51,7 +71,6 @@ export function TerminalSettingsView({
             <p>调整阅读密度、光标反馈与颜色。更改会立即应用到所有终端。</p>
           </div>
           <div className="settings-heading-actions">
-            <button className="secondary-button" onClick={onOpenKeyboardShortcuts} type="button">键盘快捷键</button>
             <button className="secondary-button" onClick={onReset} type="button">恢复默认</button>
           </div>
         </header>
@@ -59,14 +78,11 @@ export function TerminalSettingsView({
         <div className="settings-layout">
           <div className="settings-sections">
             <SettingsGroup title="字体">
-              <SettingRow label="字体族" description="按顺序使用系统中已安装的等宽字体。">
-                <input
-                  aria-label="字体族"
-                  className="settings-text-input"
-                  onChange={(event) => onChange({ fontFamily: event.target.value })}
-                  spellCheck={false}
-                  value={settings.fontFamily}
-                />
+              <SettingRow label="英文字体" description="用于 ASCII 与 Latin 字符。">
+                <FontPicker value={settings.fontFamilyLatin} fonts={availableFonts} onChange={(fontFamilyLatin) => onChange({ fontFamilyLatin })} />
+              </SettingRow>
+              <SettingRow label="中文字体" description="用于 CJK 字符的 fallback。">
+                <FontPicker value={settings.fontFamilyCjk} fonts={availableFonts} onChange={(fontFamilyCjk) => onChange({ fontFamilyCjk })} />
               </SettingRow>
               <SettingRow label="字号" description={`${settings.fontSize}px`}>
                 <input aria-label="字号" type="range" min={11} max={22} step={1} value={settings.fontSize}
@@ -128,7 +144,7 @@ export function TerminalSettingsView({
                   <span>实时预览</span>
                   <span>{settings.colorScheme === "adaptive" ? "自动" : colorSchemes.find((scheme) => scheme.id === settings.colorScheme)?.name}</span>
                 </div>
-                <pre style={{ fontFamily: settings.fontFamily, fontSize: settings.fontSize, fontWeight: settings.fontWeight, lineHeight: settings.lineHeight }}>
+                <pre style={{ fontFamily: terminalFontStack(settings), fontSize: settings.fontSize, fontWeight: settings.fontWeight, lineHeight: settings.lineHeight }}>
                   <span style={{ color: previewTheme.green }}>❯</span> ssh edge-node{`\n`}
                   <span style={{ color: previewTheme.blue }}>info</span>  Connected to 10.0.0.8{`\n`}
                   <span style={{ color: previewTheme.yellow }}>warn</span>  2 updates available{`\n`}
@@ -148,6 +164,86 @@ export function TerminalSettingsView({
         </div>
       </div>
     </section>
+  );
+}
+
+function FontPicker({
+  fonts,
+  onChange,
+  value,
+}: {
+  fonts: string[];
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const filteredFonts = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return normalizedQuery
+      ? fonts.filter((font) => font.toLocaleLowerCase().includes(normalizedQuery))
+      : fonts;
+  }, [fonts, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  const selectFont = (font: string) => {
+    onChange(font);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div className="font-picker" ref={pickerRef}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className="font-picker-trigger"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span style={{ fontFamily: quoteFontFamilyName(value) }}>{value}</span>
+        <svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4.5 6 3.5 3.5L11.5 6" /></svg>
+      </button>
+      {open && (
+        <div className="font-picker-menu">
+          <input
+            aria-label="搜索字体"
+            autoFocus
+            className="font-picker-search"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索已安装字体"
+            spellCheck={false}
+            value={query}
+          />
+          <div className="font-picker-options" role="listbox" aria-label="已安装字体">
+            {filteredFonts.length > 0 ? filteredFonts.map((font) => (
+              <button
+                aria-selected={font === value}
+                className="font-picker-option"
+                data-active={font === value}
+                key={font}
+                onClick={() => selectFont(font)}
+                role="option"
+                style={{ fontFamily: quoteFontFamilyName(font) }}
+                type="button"
+              >
+                <span>{font}</span>
+                {font === value && <span aria-hidden="true">✓</span>}
+              </button>
+            )) : <div className="font-picker-empty">没有匹配的已安装字体</div>}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

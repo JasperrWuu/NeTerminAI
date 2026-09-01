@@ -161,7 +161,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--text-primary) 4%, transparent);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .setting-row {
@@ -179,6 +179,99 @@
 .setting-row small { color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
 .setting-control { align-items: center; display: flex; justify-content: flex-end; min-width: 220px; }
 .setting-control > .segmented-control { max-width: 100%; width: 220px; }
+
+.font-picker {
+  position: relative;
+  width: 280px;
+}
+
+.font-picker-trigger {
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 14px;
+  gap: 10px;
+  height: 34px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+  text-align: left;
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease;
+  width: 100%;
+}
+
+.font-picker-trigger:hover,
+.font-picker-trigger[aria-expanded="true"] {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.font-picker-trigger > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-picker-trigger svg { fill: none; flex: 0 0 16px; height: 16px; stroke: var(--text-tertiary); stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; width: 16px; }
+
+.font-picker-menu {
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  left: 0;
+  margin-top: 7px;
+  min-width: 100%;
+  padding: 8px;
+  position: absolute;
+  top: 100%;
+  z-index: 60;
+}
+
+.font-picker-search {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+  height: 32px;
+  outline: none;
+  padding: 0 9px;
+  width: 100%;
+}
+.font-picker-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.font-picker-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 7px;
+  max-height: 258px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.font-picker-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 5px 9px;
+  text-align: left;
+  width: 100%;
+}
+.font-picker-option:hover,
+.font-picker-option[data-active="true"] { background: var(--accent-soft); color: var(--accent-strong); }
+.font-picker-option > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-picker-empty { color: var(--text-secondary); font-size: 12px; padding: 11px 9px; }
 
 .setting-control input[type="range"] { accent-color: var(--accent); width: 210px; }
 
@@ -733,6 +826,7 @@
   .settings-heading { margin-bottom: 28px; }
   .setting-row { align-items: flex-start; flex-direction: column; gap: 10px; }
   .setting-control, .settings-text-input { justify-content: flex-start; min-width: 0; width: 100%; }
+  .font-picker { width: 100%; }
   .setting-control > .segmented-control { width: 100%; }
   .setting-control input[type="range"] { width: 100%; }
   .scheme-grid { grid-template-columns: 1fr; }

@@ -25,8 +25,8 @@ export const keybindingCommands: KeybindingCommand[] = [
   },
   {
     id: "balanceWorkspace",
-    label: "均衡分布所有会话",
-    description: "将所有会话均匀铺开，并交替使用左右与上下分区。",
+    label: "创建终端分区",
+    description: "在当前工作区创建一个独立终端，并自动交替使用左右与上下分区。",
   },
   {
     id: "collapseWorkspace",

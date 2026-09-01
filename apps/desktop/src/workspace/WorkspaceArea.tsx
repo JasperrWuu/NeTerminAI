@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { WorkspaceTabs } from "./WorkspaceTabs";
-import { resolveWorkspaceDropZone } from "./layout";
+import { countWorkspacePanes, resolveWorkspaceDropZone } from "./layout";
 import type {
   WorkspaceDropZone,
   WorkspaceLayoutNode,
@@ -17,7 +17,9 @@ interface WorkspaceAreaProps {
   onActivatePane: (paneId: string) => void;
   onActivateTab: (paneId: string, tabId: string) => void;
   onCloseTab: (paneId: string, tabId: string) => void;
+  onClosePane: (paneId: string) => void;
   onMoveTab: (tabId: string, sourcePaneId: string, targetPaneId: string, zone: WorkspaceDropZone) => void;
+  onResizeSplit: (splitId: string, ratio: number) => void;
   onDraggingChange?: (dragging: boolean) => void;
   renderTab: (tab: WorkspaceTab, active: boolean, paneId: string) => ReactNode;
 }
@@ -189,6 +191,7 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
       <div className="workspace-view-layer">
         {props.tabs.map((tab) => {
           const placement = tabPlacements.get(tab.id);
+          if (!placement) return null;
           const bounds = placement ? paneBounds[placement.paneId] : undefined;
           const active = Boolean(bounds && placement?.active);
           const style = bounds ? {
@@ -236,10 +239,16 @@ interface LayoutNodeProps extends WorkspaceAreaProps {
 
 function LayoutNode({ node, ...props }: LayoutNodeProps) {
   if (node.type === "split") {
+    const ratio = node.ratio ?? 0.5;
     return (
       <div className="workspace-split" data-direction={node.direction}>
-        <LayoutNode {...props} node={node.first} />
-        <LayoutNode {...props} node={node.second} />
+        <div className="workspace-split-child" style={{ flexBasis: `${ratio * 100}%` }}>
+          <LayoutNode {...props} node={node.first} />
+        </div>
+        <SplitResizeHandle direction={node.direction} onResize={props.onResizeSplit} splitId={node.id} />
+        <div className="workspace-split-child">
+          <LayoutNode {...props} node={node.second} />
+        </div>
       </div>
     );
   }
@@ -266,8 +275,10 @@ function WorkspacePane({ node, ...props }: Omit<LayoutNodeProps, "node"> & { nod
         synchronizedTabIds={props.synchronizedTabIds}
         onActivate={props.onActivateTab}
         onClose={props.onCloseTab}
+        onClosePane={props.onClosePane}
         onTabPointerDown={props.onTabPointerDown}
         paneId={node.id}
+        canClosePane={countWorkspacePanes(props.layout) > 1}
         tabs={tabs}
       />
       <div className="workspace-pane-content" data-workspace-pane-content={node.id}>
@@ -286,6 +297,57 @@ function WorkspacePane({ node, ...props }: Omit<LayoutNodeProps, "node"> & { nod
         </div>
       )}
     </section>
+  );
+}
+
+function SplitResizeHandle({
+  direction,
+  onResize,
+  splitId,
+}: {
+  direction: "row" | "column";
+  onResize: (splitId: string, ratio: number) => void;
+  splitId: string;
+}) {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget;
+    const split = handle.parentElement;
+    const first = handle.previousElementSibling as HTMLElement | null;
+    if (!split || !first) return;
+    const splitBounds = split.getBoundingClientRect();
+    const firstBounds = first.getBoundingClientRect();
+    const axisStart = direction === "row" ? event.clientX : event.clientY;
+    const total = direction === "row" ? splitBounds.width : splitBounds.height;
+    const firstSize = direction === "row" ? firstBounds.width : firstBounds.height;
+    if (total <= 0) return;
+    const pointerId = event.pointerId;
+    try { handle.setPointerCapture(pointerId); } catch { /* synthetic pointer */ }
+    const move = (pointerEvent: PointerEvent) => {
+      const delta = (direction === "row" ? pointerEvent.clientX : pointerEvent.clientY) - axisStart;
+      onResize(splitId, (firstSize + delta) / total);
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      try { handle.releasePointerCapture(pointerId); } catch { /* already released */ }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end, { once: true });
+    window.addEventListener("pointercancel", end, { once: true });
+  };
+  return (
+    <div
+      aria-label="调整分区大小"
+      className="workspace-split-handle"
+      data-direction={direction}
+      onPointerDown={handlePointerDown}
+      role="separator"
+      tabIndex={0}
+    />
   );
 }
 
