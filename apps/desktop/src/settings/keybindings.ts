@@ -37,10 +37,7 @@ export const keybindingCommands: KeybindingCommand[] = [
 
 export function keyboardEventToShortcut(event: KeyboardEvent | ReactKeyboardEvent) {
   if (isModifierKey(event.key)) return null;
-  const plusKey = event.key === "+"
-    || event.key === "Add"
-    || event.code === "NumpadAdd"
-    || (event.key === "=" && event.shiftKey && event.code === "Equal");
+  const plusKey = isPlusKey(event);
   const key = normalizeKey(plusKey ? "+" : event.key);
   if (!key) return null;
 
@@ -58,8 +55,12 @@ export function keyboardEventToShortcut(event: KeyboardEvent | ReactKeyboardEven
 }
 
 export function matchesKeyboardShortcut(event: KeyboardEvent, shortcut: string) {
-  const normalized = keyboardEventToShortcut(event);
-  return Boolean(shortcut && normalized === shortcut);
+  const parts = shortcutParts(shortcut);
+  const key = parts.at(-1);
+  if (!key || !hasMatchingModifiers(event, parts)) return false;
+  return key === "+" ? isPlusKey(event)
+    : key === "-" ? isMinusKey(event)
+      : normalizeKey(event.key) === key;
 }
 
 export function shortcutParts(shortcut: string) {
@@ -94,6 +95,30 @@ export function findKeybindingConflict(
 
 function isModifierKey(key: string) {
   return key === "Control" || key === "Shift" || key === "Alt" || key === "Meta";
+}
+
+function hasMatchingModifiers(event: KeyboardEvent, parts: string[]) {
+  // Shift is a physical requirement for the main keyboard's `+`, not a
+  // separate modifier from the user's point of view. Treat Ctrl+Shift+= and
+  // Ctrl+NumpadAdd as the same Ctrl++ command.
+  const usesPlusKey = parts.at(-1) === "+" && isPlusKey(event);
+  const expectedShift = parts.includes("Shift");
+  const matchesShift = expectedShift ? event.shiftKey : usesPlusKey || !event.shiftKey;
+  return event.ctrlKey === parts.includes("Ctrl")
+    && matchesShift
+    && event.altKey === parts.includes("Alt")
+    && event.metaKey === parts.includes("Meta");
+}
+
+function isPlusKey(event: KeyboardEvent | ReactKeyboardEvent) {
+  return event.key === "+"
+    || event.key === "Add"
+    || event.code === "NumpadAdd"
+    || (event.key === "=" && event.shiftKey && event.code === "Equal");
+}
+
+function isMinusKey(event: KeyboardEvent) {
+  return event.key === "-" || event.key === "Subtract" || event.code === "NumpadSubtract";
 }
 
 function normalizeKey(key: string) {

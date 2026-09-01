@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { RdpConnection } from "../connections/types";
 import { invokeInBackground } from "../platform/tauri";
@@ -27,6 +27,11 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
   const [error, setError] = useState("");
 
   activeRef.current = active;
+
+  const focusRemoteDesktop = useCallback(() => {
+    const sessionId = sessionIdRef.current;
+    if (sessionId) invokeInBackground("focus_rdp", { sessionId });
+  }, []);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -133,7 +138,14 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
     const sessionId = sessionIdRef.current;
     if (!viewport || !sessionId || !hostReadyRef.current) return;
     invokeInBackground("resize_rdp", { sessionId, bounds: readBounds(viewport), visible: active });
-  }, [active, status]);
+    if (active && status === "ready") focusRemoteDesktop();
+  }, [active, focusRemoteDesktop, status]);
+
+  useEffect(() => {
+    if (!active || status !== "ready") return;
+    window.addEventListener("focus", focusRemoteDesktop);
+    return () => window.removeEventListener("focus", focusRemoteDesktop);
+  }, [active, focusRemoteDesktop, status]);
 
   return (
     <section aria-hidden={!active} className="rdp-pane workspace-view" data-active={active}>
@@ -146,7 +158,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
           <i />{rdpStatusLabel(status)}
         </span>
       </header>
-      <div className="rdp-native-viewport" ref={viewportRef}>
+      <div className="rdp-native-viewport" onPointerDown={focusRemoteDesktop} ref={viewportRef}>
         {status !== "ready" && (
           <div className="rdp-status-card" data-status={status}>
             <div className="rdp-status-icon">RDP</div>

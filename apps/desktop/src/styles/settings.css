@@ -329,7 +329,7 @@
   align-items: center;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 58px;
   padding: 6px 8px;
 }
@@ -415,30 +415,6 @@
   width: 12px;
 }
 
-.highlight-set-use-button {
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  border-radius: 7px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 620;
-  height: 29px;
-  min-width: 53px;
-  padding: 0 9px;
-  transition:
-    background-color var(--motion-fast) ease,
-    border-color var(--motion-fast) ease,
-    color var(--motion-fast) ease,
-    transform var(--motion-fast) var(--ease-out);
-}
-.highlight-set-use-button:hover { background: var(--bg-hover); color: var(--text-primary); }
-.highlight-set-use-button:active { transform: scale(0.97); }
-.highlight-set-use-button[data-active="true"] {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-  color: var(--accent-strong);
-}
-.highlight-set-use-button:disabled { cursor: not-allowed; opacity: 0.42; }
 .highlight-set-enable { flex: 0 0 auto; }
 
 .highlight-set-body {

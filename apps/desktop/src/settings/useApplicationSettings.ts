@@ -7,6 +7,7 @@ import type {
 } from "./types";
 import {
   defaultApplicationSettings,
+  normalizeTerminalHighlightSelection,
   persistApplicationSettings,
   readApplicationSettings,
 } from "./applicationSettings";
@@ -42,6 +43,7 @@ export function useApplicationSettings(): ApplicationSettingsController {
 
   const updateTerminal = useCallback((patch: Partial<TerminalSettings>) => {
     setSettings((current) => {
+      const terminal = { ...current.terminal, ...patch };
       const linkedTheme = patch.colorScheme === "paper"
         ? "light"
         : patch.colorScheme === "graphite"
@@ -50,7 +52,13 @@ export function useApplicationSettings(): ApplicationSettingsController {
       return {
         ...current,
         appearance: { ...current.appearance, theme: linkedTheme },
-        terminal: { ...current.terminal, ...patch },
+        terminal: {
+          ...terminal,
+          ...normalizeTerminalHighlightSelection(
+            terminal.highlightSets,
+            terminal.activeHighlightSetId,
+          ),
+        },
       };
     });
   }, []);

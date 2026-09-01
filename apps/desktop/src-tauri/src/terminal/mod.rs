@@ -502,14 +502,25 @@ fn configure_ssh_authentication(
     command.args(["-o", "NumberOfPasswordPrompts=3"]);
     match authentication {
         SshAuthentication::Password => {
+            // Some SSH servers require more than one authentication method
+            // (for example, a public key followed by an interactive password).
+            // Keep password first, but leave the client able to satisfy that
+            // server-side policy instead of failing before it can prompt.
             command.args([
                 "-o",
-                "PreferredAuthentications=keyboard-interactive,password",
+                "PreferredAuthentications=keyboard-interactive,password,publickey",
             ]);
-            command.args(["-o", "PubkeyAuthentication=no"]);
+            command.args(["-o", "KbdInteractiveAuthentication=yes"]);
+            command.args(["-o", "PasswordAuthentication=yes"]);
         }
         SshAuthentication::Key => {
-            command.args(["-o", "PreferredAuthentications=publickey"]);
+            // A selected identity remains the only offered identity, while an
+            // interactive second factor is still allowed when the server asks
+            // for it after accepting the key.
+            command.args([
+                "-o",
+                "PreferredAuthentications=publickey,keyboard-interactive,password",
+            ]);
             command.args(["-o", "IdentitiesOnly=yes"]);
             if !identity_file.is_empty() {
                 command.args(["-i", identity_file]);
@@ -627,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn password_ssh_prefers_interactive_authentication_without_public_keys() {
+    fn password_ssh_keeps_public_key_fallback_for_combined_server_policies() {
         let command = ssh_command(
             "server.example",
             22,
@@ -644,15 +655,47 @@ mod tests {
         assert!(arguments.windows(2).any(|pair| {
             pair == [
                 "-o",
-                "PreferredAuthentications=keyboard-interactive,password",
+                "PreferredAuthentications=keyboard-interactive,password,publickey",
             ]
         }));
         assert!(
             arguments
                 .windows(2)
-                .any(|pair| pair == ["-o", "PubkeyAuthentication=no"])
+                .any(|pair| pair == ["-o", "KbdInteractiveAuthentication=yes"])
         );
-        assert!(!arguments.iter().any(|argument| argument == "-i"));
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-o", "PasswordAuthentication=yes"])
+        );
+    }
+
+    #[test]
+    fn key_ssh_allows_an_interactive_second_factor() {
+        let command = ssh_command(
+            "server.example",
+            22,
+            "operator",
+            SshAuthentication::Key,
+            "C:\\keys\\id_ed25519",
+        );
+        let arguments = command
+            .get_argv()
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(arguments.windows(2).any(|pair| {
+            pair == [
+                "-o",
+                "PreferredAuthentications=publickey,keyboard-interactive,password",
+            ]
+        }));
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-o", "IdentitiesOnly=yes"])
+        );
     }
 
     #[test]

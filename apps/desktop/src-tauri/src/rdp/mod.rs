@@ -128,6 +128,11 @@ impl RdpManager {
     }
 
     #[cfg(windows)]
+    pub fn focus(&self, session_id: &str) -> Result<(), String> {
+        windows_host::focus(self, session_id)
+    }
+
+    #[cfg(windows)]
     pub fn status(&self, session_id: &str) -> Result<RdpRuntimeStatus, String> {
         let handle = {
             let sessions = self
@@ -241,10 +246,11 @@ mod windows_host {
                 Ole::{DISPID_PROPERTYPUT, OleInitialize},
                 Variant::VARIANT,
             },
+            UI::Input::KeyboardAndMouse::SetFocus,
             UI::WindowsAndMessaging::{
                 CreateWindowExW, DestroyWindow, HWND_TOP, SW_HIDE, SW_SHOW, SWP_NOACTIVATE,
-                SWP_SHOWWINDOW, SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WS_CHILD,
-                WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
+                SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SetWindowPos, ShowWindow, WINDOW_EX_STYLE,
+                WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
             },
         },
         core::{BOOL, GUID, HRESULT, IUnknown, Interface, PCWSTR, s, w},
@@ -283,7 +289,9 @@ mod windows_host {
 
         let window = create_host_window(parent, bounds)?;
 
-        if let Err(error) = configure_control(window, host, port, username, admin_session, bounds) {
+        if let Err(error) =
+            configure_control(window, parent, host, port, username, admin_session, bounds)
+        {
             unsafe {
                 let _ = DestroyWindow(window);
             }
@@ -367,6 +375,27 @@ mod windows_host {
         Ok(())
     }
 
+    pub fn focus(manager: &RdpManager, session_id: &str) -> Result<(), String> {
+        let Some(handle) = manager.get(session_id)? else {
+            return Ok(());
+        };
+        let window = HWND(handle as *mut c_void);
+        unsafe {
+            SetWindowPos(
+                window,
+                Some(HWND_TOP),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+            .map_err(|error| format!("无法聚焦应用内 RDP 视图：{error}"))?;
+            let _ = SetFocus(Some(window));
+        }
+        Ok(())
+    }
+
     pub fn status(handle: isize) -> Result<RdpRuntimeStatus, String> {
         let control = control_dispatch(HWND(handle as *mut c_void))?;
         let connected = get_i16_property(&control, "Connected")?;
@@ -396,16 +425,44 @@ mod windows_host {
             }
         }
 
+        // These are the documented Microsoft RDP ActiveX ProgIDs.  The
+        // MsTscAx aliases are retained only as a compatibility fallback for
+        // older Windows installations that registered a legacy control name.
         let controls = [
-            (w!("MsTscAx.MsTscAx.13"), "MsTscAx 13"),
-            (w!("MsTscAx.MsTscAx.12"), "MsTscAx 12"),
-            (w!("MsTscAx.MsTscAx.11"), "MsTscAx 11"),
-            (w!("MsTscAx.MsTscAx.10"), "MsTscAx 10"),
-            (w!("MsTscAx.MsTscAx.9"), "MsTscAx 9"),
-            (w!("MsTscAx.MsTscAx.8"), "MsTscAx 8"),
-            (w!("MsTscAx.MsTscAx.7"), "MsTscAx 7"),
-            (w!("MsTscAx.MsTscAx.6"), "MsTscAx 6"),
-            (w!("MsTscAx.MsTscAx"), "MsTscAx"),
+            (
+                w!("MsRdpClient12NotSafeForScripting"),
+                "Microsoft RDP client 12",
+            ),
+            (
+                w!("MsRdpClient11NotSafeForScripting"),
+                "Microsoft RDP client 11",
+            ),
+            (
+                w!("MsRdpClient10NotSafeForScripting"),
+                "Microsoft RDP client 10",
+            ),
+            (
+                w!("MsRdpClient9NotSafeForScripting"),
+                "Microsoft RDP client 9",
+            ),
+            (
+                w!("MsRdpClient8NotSafeForScripting"),
+                "Microsoft RDP client 8",
+            ),
+            (
+                w!("MsRdpClient7NotSafeForScripting"),
+                "Microsoft RDP client 7",
+            ),
+            (
+                w!("MsRdpClient6NotSafeForScripting"),
+                "Microsoft RDP client 6",
+            ),
+            (
+                w!("MsRdpClient5NotSafeForScripting"),
+                "Microsoft RDP client 5",
+            ),
+            (w!("MsRdpClient"), "Microsoft RDP client"),
+            (w!("MsTscAx.MsTscAx"), "legacy MsTscAx"),
         ];
         let mut last_error: Option<String> = None;
         for (control, name) in controls {
@@ -448,6 +505,7 @@ mod windows_host {
 
     fn configure_control(
         window: HWND,
+        parent: HWND,
         host: &str,
         port: u16,
         username: &str,
@@ -466,6 +524,7 @@ mod windows_host {
         let _ = put_property(&control, "AllowCredentialSaving", false.into());
         let _ = put_property(&control, "ConnectingText", "正在连接远程桌面…".into());
         let _ = put_property(&control, "DisconnectedText", "远程桌面连接已断开".into());
+        let _ = put_property(&control, "UIParentWindowHandle", (parent.0 as i64).into());
 
         let advanced = latest_advanced_settings(&control)?;
         put_property(&advanced, "RDPPort", i32::from(port).into())?;
@@ -638,6 +697,7 @@ mod windows_host {
             "AdvancedSettings4",
             "AdvancedSettings3",
             "AdvancedSettings2",
+            "AdvancedSettings",
         ] {
             if let Ok(settings) = get_dispatch_property(control, name) {
                 return Ok(settings);

@@ -186,7 +186,7 @@ function HighlightSetsEditor({
     };
     onChange({
       activeHighlightSetId: id,
-      highlightSets: [...sets, highlightSet],
+      highlightSets: [...sets.map((set) => ({ ...set, enabled: false })), highlightSet],
     });
     setExpandedSetIds((current) => new Set(current).add(id));
   };
@@ -203,9 +203,7 @@ function HighlightSetsEditor({
   const removeSet = (setId: string) => {
     const remainingSets = sets.filter((set) => set.id !== setId);
     onChange({
-      activeHighlightSetId: activeSetId === setId
-        ? remainingSets.find((set) => set.enabled)?.id ?? null
-        : activeSetId,
+      activeHighlightSetId: activeSetId === setId ? null : activeSetId,
       highlightSets: remainingSets,
     });
     setExpandedSetIds((current) => {
@@ -219,13 +217,10 @@ function HighlightSetsEditor({
     const target = sets.find((set) => set.id === setId);
     if (!target) return;
     const enabled = !target.enabled;
-    const highlightSets = sets.map((set) => set.id === setId ? { ...set, enabled } : set);
-    const activeHighlightSetId = enabled
-      ? activeSetId ?? setId
-      : activeSetId === setId
-        ? highlightSets.find((set) => set.enabled)?.id ?? null
-        : activeSetId;
-    onChange({ activeHighlightSetId, highlightSets });
+    onChange({
+      activeHighlightSetId: enabled ? setId : null,
+      highlightSets: sets.map((set) => ({ ...set, enabled: enabled && set.id === setId })),
+    });
   };
 
   return (
@@ -233,7 +228,7 @@ function HighlightSetsEditor({
       <div className="highlight-rules-intro">
         <div>
           <strong>按场景组织颜色规则</strong>
-          <small>先启用需要的突显集，再选择其中一套作为当前终端规则。所有集默认折叠。</small>
+          <small>启用一套突显集即可应用它的规则；启用新集会自动停用其它集。所有集默认折叠。</small>
         </div>
         <button className="highlight-add-button" onClick={addSet} type="button">新建突显集</button>
       </div>
@@ -283,14 +278,6 @@ function HighlightSetsEditor({
                     role="switch"
                     type="button"
                   ><span /></button>
-                  <button
-                    aria-pressed={active}
-                    className="highlight-set-use-button"
-                    data-active={active}
-                    disabled={!set.enabled}
-                    onClick={() => onChange({ activeHighlightSetId: set.id })}
-                    type="button"
-                  >{active ? "使用中" : "使用"}</button>
                 </header>
                 <div aria-hidden={!expanded} className="highlight-set-body" data-expanded={expanded} inert={!expanded}>
                   <div className="highlight-set-content">

@@ -125,6 +125,10 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       const editable = target?.closest("input, textarea, select, [contenteditable='true']");
       if (editable && !target?.closest(".xterm")) return;
 
+      // Settings owns its own page and keyboard navigation. Workspace commands
+      // must not mutate the hidden session layout while the user is editing it.
+      if (settingsOpen) return;
+
       const command = keybindingCommands.find((item) =>
         matchesKeyboardShortcut(event, settings.keybindings[item.id]),
       );
@@ -151,6 +155,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   }, [
     activeTerminalId,
     dialogOpen,
+    settingsOpen,
     settings.keybindings,
     synchronizedInput.disable,
     synchronizedInput.enable,

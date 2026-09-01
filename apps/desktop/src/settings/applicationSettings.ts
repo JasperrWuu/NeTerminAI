@@ -68,11 +68,10 @@ function normalizeSettings(value: unknown): ApplicationSettings {
   const keybindings = asRecord(root?.keybindings);
   const defaults = defaultApplicationSettings;
 
-  const highlightSets = normalizeHighlightSets(terminal, defaults.terminal.highlightSets);
-  const requestedHighlightSetId = stringValue(terminal?.activeHighlightSetId);
-  const activeHighlightSetId = highlightSets.some((set) => set.id === requestedHighlightSetId && set.enabled)
-    ? requestedHighlightSetId
-    : highlightSets.find((set) => set.enabled)?.id ?? null;
+  const highlightSelection = normalizeTerminalHighlightSelection(
+    normalizeHighlightSets(terminal, defaults.terminal.highlightSets),
+    stringValue(terminal?.activeHighlightSetId),
+  );
 
   return {
     appearance: {
@@ -106,8 +105,7 @@ function normalizeSettings(value: unknown): ApplicationSettings {
         || terminal?.colorScheme === "paper"
         ? terminal.colorScheme
         : defaults.terminal.colorScheme,
-      activeHighlightSetId,
-      highlightSets,
+      ...highlightSelection,
     },
     keybindings: normalizeKeybindings(keybindings),
   };
@@ -132,6 +130,22 @@ function normalizeHighlightSets(
   }
 
   return defaults;
+}
+
+export function normalizeTerminalHighlightSelection(
+  highlightSets: TerminalHighlightSet[],
+  requestedHighlightSetId: string | null,
+) {
+  const activeHighlightSetId = highlightSets.some((set) => set.id === requestedHighlightSetId)
+    ? requestedHighlightSetId
+    : highlightSets.find((set) => set.enabled)?.id ?? null;
+  return {
+    activeHighlightSetId,
+    highlightSets: highlightSets.map((set) => ({
+      ...set,
+      enabled: set.id === activeHighlightSetId,
+    })),
+  };
 }
 
 function normalizeHighlightSet(value: unknown): TerminalHighlightSet[] {

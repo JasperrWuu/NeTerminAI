@@ -512,15 +512,17 @@ button:focus-visible,
   flex-direction: column;
   min-width: 280px;
   overflow: hidden;
+  position: relative;
 }
 
 .workspace-session-layer {
   display: flex;
-  flex: 1;
+  inset: 0;
   min-height: 0;
   min-width: 0;
-  position: relative;
+  position: absolute;
   transition: opacity var(--motion-selection) var(--ease-out);
+  z-index: 0;
 }
 
 .workspace-session-layer[data-visible="false"] {
@@ -984,9 +986,8 @@ button:focus-visible,
 }
 
 .terminal-container {
-  height: 100%;
-  padding: 10px 10px 12px;
-  width: 100%;
+  inset: 10px 10px 18px;
+  position: absolute;
 }
 
 .terminal-container .xterm {

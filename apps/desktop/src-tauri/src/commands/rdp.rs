@@ -134,6 +134,27 @@ pub async fn close_rdp(
     .await
 }
 
+#[tauri::command]
+pub async fn focus_rdp(
+    app: AppHandle,
+    state: State<'_, RdpManager>,
+    session_id: String,
+) -> Result<(), String> {
+    let manager = state.inner().clone();
+    on_main_thread(app, "RDP 聚焦", move |_app| {
+        #[cfg(windows)]
+        {
+            manager.focus(&session_id)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = session_id;
+            manager.unsupported()
+        }
+    })
+    .await
+}
+
 async fn on_main_thread<T, F>(
     app: AppHandle,
     label: &'static str,

@@ -31,6 +31,7 @@ pub fn run() {
             commands::rdp::create_rdp,
             commands::rdp::get_rdp_status,
             commands::rdp::resize_rdp,
+            commands::rdp::focus_rdp,
             commands::rdp::close_rdp,
         ])
         .run(tauri::generate_context!())
