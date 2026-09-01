@@ -18,8 +18,9 @@ import { TerminalPane } from "../terminal/TerminalPane";
 import { WorkspaceArea } from "../workspace/WorkspaceArea";
 import { useWorkspaceTabs } from "../workspace/useWorkspaceTabs";
 import type { WorkspaceTab } from "../workspace/types";
-import { TerminalSettingsView } from "../settings/TerminalSettingsView";
-import { KeyboardShortcutsView } from "../settings/KeyboardShortcutsView";
+import { SettingsPage } from "../settings/SettingsPage";
+import { SettingsSidebar } from "../settings/SettingsSidebar";
+import type { SettingsSection } from "../settings/types";
 import { keybindingCommands, matchesKeyboardShortcut } from "../settings/keybindings";
 import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../connections/SessionFolderDialog";
@@ -67,6 +68,8 @@ const panelCopy: Record<ActivityId, { title: string; description: string }> = {
 
 export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [activity, setActivity] = useState<ActivityId>("connections");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("terminal");
   const [tabDragging, setTabDragging] = useState(false);
   const workspaceTabs = useWorkspaceTabs();
   const connectionLibrary = useConnectionLibrary();
@@ -109,6 +112,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
   const closeSshDialog = useCallback(() => setSshDialog({ open: false }), []);
   const closeRdpDialog = useCallback(() => setRdpDialog({ open: false }), []);
+  const openSettings = useCallback((section: SettingsSection) => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+    if (!preferences.leftSidebarOpen) preferences.toggleLeftSidebar();
+  }, [preferences.leftSidebarOpen, preferences.toggleLeftSidebar]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -129,6 +137,10 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       } else if (command.id === "stopSynchronizedInput") {
         synchronizedInput.disable();
         synchronizedInput.focus(activeTerminalId);
+      } else if (command.id === "balanceWorkspace") {
+        workspaceTabs.balanceWorkspace();
+      } else if (command.id === "collapseWorkspace") {
+        workspaceTabs.collapseWorkspace();
       } else {
         workspaceTabs.activateNextSession();
       }
@@ -144,6 +156,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     synchronizedInput.enable,
     synchronizedInput.focus,
     workspaceTabs.activateNextSession,
+    workspaceTabs.balanceWorkspace,
+    workspaceTabs.collapseWorkspace,
   ]);
   const openSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") workspaceTabs.openTelnet(session);
@@ -204,7 +218,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     if (tab.kind === "localTerminal") {
       return (
         <TerminalPane
-          active={active}
+          active={active && !settingsOpen}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
           onInput={synchronizedInput.routeInput}
@@ -221,7 +235,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     if (tab.kind === "telnet") {
       return (
         <TerminalPane
-          active={active}
+          active={active && !settingsOpen}
           connection={tab.connection}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
@@ -238,7 +252,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     if (tab.kind === "serial") {
       return (
         <TerminalPane
-          active={active}
+          active={active && !settingsOpen}
           connection={tab.connection}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
@@ -255,7 +269,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     if (tab.kind === "ssh") {
       return (
         <TerminalPane
-          active={active}
+          active={active && !settingsOpen}
           connection={tab.connection}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
@@ -270,31 +284,9 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       );
     }
     if (tab.kind === "rdp") {
-      return <RdpPane active={active && !dialogOpen && !tabDragging} connection={tab.connection} key={tab.id} />;
+      return <RdpPane active={active && !settingsOpen && !dialogOpen && !tabDragging} connection={tab.connection} key={tab.id} />;
     }
-    if (tab.section === "keyboard") {
-      return (
-        <KeyboardShortcutsView
-          active={active}
-          key={tab.id}
-          onChange={settings.updateKeybindings}
-          onOpenTerminalSettings={() => workspaceTabs.openSettings("terminal")}
-          onReset={settings.resetKeybindings}
-          settings={settings.keybindings}
-        />
-      );
-    }
-    return (
-      <TerminalSettingsView
-        active={active}
-        appearanceTheme={settings.appearance.theme}
-        key={tab.id}
-        onChange={settings.updateTerminal}
-        onOpenKeyboardShortcuts={() => workspaceTabs.openSettings("keyboard")}
-        onReset={settings.resetTerminal}
-        settings={settings.terminal}
-      />
-    );
+    return null;
   };
 
   return (
@@ -335,9 +327,10 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             {activities.map((item) => (
               <button
                 className="activity-button"
-                data-active={activity === item.id}
+                data-active={!settingsOpen && activity === item.id}
                 key={item.id}
                 onClick={() => {
+                  setSettingsOpen(false);
                   setActivity(item.id);
                   if (!preferences.leftSidebarOpen) preferences.toggleLeftSidebar();
                 }}
@@ -352,10 +345,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           <div className="activity-footer">
             <button
               className="activity-button"
-              data-active={workspaceTabs.tabs.some(
-                (tab) => tab.id === workspaceTabs.activeTabId && tab.kind === "settings",
-              )}
-              onClick={() => workspaceTabs.openSettings("terminal")}
+              data-active={settingsOpen}
+              onClick={() => settingsOpen ? setSettingsOpen(false) : openSettings(settingsSection)}
               title="设置"
               type="button"
             >
@@ -368,9 +359,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         {preferences.leftSidebarOpen && (
           <>
             <aside className="sidebar sidebar-left">
-              <PanelHeader title={activePanel.title} />
-              <div className="activity-panel-content" key={activity}>
-                {activity === "connections" ? (
+              <PanelHeader title={settingsOpen ? "设置" : activePanel.title} />
+              <div className="activity-panel-content" key={settingsOpen ? "settings" : activity}>
+                {settingsOpen ? (
+                  <SettingsSidebar section={settingsSection} onSelect={setSettingsSection} />
+                ) : activity === "connections" ? (
                   <ConnectionsSidebar
                     folders={connectionLibrary.folders}
                     sessions={connectionLibrary.sessions}
@@ -406,19 +399,34 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           </>
         )}
 
-        <main className="main-area">
-          <WorkspaceArea
-            activePaneId={workspaceTabs.activePaneId}
-            layout={workspaceTabs.layout}
-            onActivatePane={workspaceTabs.activatePane}
-            onActivateTab={workspaceTabs.activateTab}
-            onCloseTab={workspaceTabs.closeTab}
-            onMoveTab={workspaceTabs.moveTab}
-            onDraggingChange={setTabDragging}
-            renderTab={renderWorkspaceTab}
-            synchronizedTabIds={synchronizedTabIds}
-            tabs={workspaceTabs.tabs}
-          />
+        <main className="main-area" data-settings-open={settingsOpen}>
+          <div className="workspace-session-layer" data-visible={!settingsOpen}>
+            <WorkspaceArea
+              activePaneId={workspaceTabs.activePaneId}
+              layout={workspaceTabs.layout}
+              onActivatePane={workspaceTabs.activatePane}
+              onActivateTab={workspaceTabs.activateTab}
+              onCloseTab={workspaceTabs.closeTab}
+              onMoveTab={workspaceTabs.moveTab}
+              onDraggingChange={setTabDragging}
+              renderTab={renderWorkspaceTab}
+              synchronizedTabIds={synchronizedTabIds}
+              tabs={workspaceTabs.tabs}
+            />
+          </div>
+          {settingsOpen && (
+            <SettingsPage
+              appearanceTheme={settings.appearance.theme}
+              keybindings={settings.keybindings}
+              onChangeKeybindings={settings.updateKeybindings}
+              onChangeTerminal={settings.updateTerminal}
+              onResetKeybindings={settings.resetKeybindings}
+              onResetTerminal={settings.resetTerminal}
+              onSelectSection={setSettingsSection}
+              section={settingsSection}
+              terminal={settings.terminal}
+            />
+          )}
         </main>
 
         {preferences.rightSidebarOpen && (

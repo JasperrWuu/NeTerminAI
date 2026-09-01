@@ -13,7 +13,6 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 import { CloseIcon } from "../workbench/icons";
 
 interface TerminalSettingsViewProps {
-  active: boolean;
   appearanceTheme: AppearanceTheme;
   settings: TerminalSettings;
   onChange: (settings: Partial<TerminalSettings>) => void;
@@ -34,7 +33,6 @@ const colorSchemes: Array<{ id: TerminalColorScheme; name: string; description: 
 ];
 
 export function TerminalSettingsView({
-  active,
   appearanceTheme,
   settings,
   onChange,
@@ -44,7 +42,7 @@ export function TerminalSettingsView({
   const previewTheme = resolveTerminalTheme(settings.colorScheme, appearanceTheme);
 
   return (
-    <section className="settings-view workspace-view" aria-hidden={!active} data-active={active} aria-label="终端设置">
+    <section className="settings-view" aria-label="终端设置">
       <div className="settings-scroll-area">
         <header className="settings-heading">
           <div>
@@ -183,6 +181,7 @@ function HighlightSetsEditor({
     const highlightSet: TerminalHighlightSet = {
       id,
       name: `突显集 ${sets.length + 1}`,
+      enabled: true,
       rules: [],
     };
     onChange({
@@ -204,7 +203,9 @@ function HighlightSetsEditor({
   const removeSet = (setId: string) => {
     const remainingSets = sets.filter((set) => set.id !== setId);
     onChange({
-      activeHighlightSetId: activeSetId === setId ? remainingSets[0]?.id ?? null : activeSetId,
+      activeHighlightSetId: activeSetId === setId
+        ? remainingSets.find((set) => set.enabled)?.id ?? null
+        : activeSetId,
       highlightSets: remainingSets,
     });
     setExpandedSetIds((current) => {
@@ -214,12 +215,25 @@ function HighlightSetsEditor({
     });
   };
 
+  const toggleSetEnabled = (setId: string) => {
+    const target = sets.find((set) => set.id === setId);
+    if (!target) return;
+    const enabled = !target.enabled;
+    const highlightSets = sets.map((set) => set.id === setId ? { ...set, enabled } : set);
+    const activeHighlightSetId = enabled
+      ? activeSetId ?? setId
+      : activeSetId === setId
+        ? highlightSets.find((set) => set.enabled)?.id ?? null
+        : activeSetId;
+    onChange({ activeHighlightSetId, highlightSets });
+  };
+
   return (
     <div className="highlight-rules-editor">
       <div className="highlight-rules-intro">
         <div>
           <strong>按场景组织颜色规则</strong>
-          <small>每次启用一个突显集。所有集默认折叠，展开后可编辑其中的文本或正则规则。</small>
+          <small>先启用需要的突显集，再选择其中一套作为当前终端规则。所有集默认折叠。</small>
         </div>
         <button className="highlight-add-button" onClick={addSet} type="button">新建突显集</button>
       </div>
@@ -261,9 +275,19 @@ function HighlightSetsEditor({
                     </span>
                   </button>
                   <button
+                    aria-checked={set.enabled}
+                    aria-label={`${set.enabled ? "停用" : "启用"}${set.name}`}
+                    className="switch compact-switch highlight-set-enable"
+                    data-active={set.enabled}
+                    onClick={() => toggleSetEnabled(set.id)}
+                    role="switch"
+                    type="button"
+                  ><span /></button>
+                  <button
                     aria-pressed={active}
                     className="highlight-set-use-button"
                     data-active={active}
+                    disabled={!set.enabled}
                     onClick={() => onChange({ activeHighlightSetId: set.id })}
                     type="button"
                   >{active ? "使用中" : "使用"}</button>

@@ -514,6 +514,21 @@ button:focus-visible,
   overflow: hidden;
 }
 
+.workspace-session-layer {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+  transition: opacity var(--motion-selection) var(--ease-out);
+}
+
+.workspace-session-layer[data-visible="false"] {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 .workspace-layout {
   display: flex;
   flex: 1;

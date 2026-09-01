@@ -1,4 +1,4 @@
-import type { WorkspaceDropZone, WorkspaceLayoutNode, WorkspacePaneNode } from "./types";
+import type { WorkspaceDropZone, WorkspaceLayoutNode, WorkspacePaneNode, WorkspaceSplitDirection } from "./types";
 
 interface DropBounds {
   bottom: number;
@@ -61,6 +61,47 @@ export function findPaneContainingTab(
 export function collectVisibleTabIds(node: WorkspaceLayoutNode): string[] {
   if (node.type === "pane") return node.activeTabId ? [node.activeTabId] : [];
   return [...collectVisibleTabIds(node.first), ...collectVisibleTabIds(node.second)];
+}
+
+/**
+ * Creates a near-complete binary layout for the supplied tabs. Alternating the
+ * split direction at each level keeps the common 4-tab case as a 2×2 grid,
+ * while odd counts remain balanced without introducing empty panes.
+ */
+export function buildBalancedWorkspaceLayout(tabIds: readonly string[], depth = 0): WorkspaceLayoutNode {
+  if (tabIds.length <= 1) {
+    return {
+      type: "pane",
+      id: crypto.randomUUID(),
+      tabIds: [...tabIds],
+      activeTabId: tabIds[0] ?? null,
+    };
+  }
+
+  const splitIndex = Math.ceil(tabIds.length / 2);
+  const direction: WorkspaceSplitDirection = depth % 2 === 0 ? "row" : "column";
+  return {
+    type: "split",
+    id: crypto.randomUUID(),
+    direction,
+    first: buildBalancedWorkspaceLayout(tabIds.slice(0, splitIndex), depth + 1),
+    second: buildBalancedWorkspaceLayout(tabIds.slice(splitIndex), depth + 1),
+  };
+}
+
+export function collapseWorkspaceLayout(
+  tabIds: readonly string[],
+  activeTabId: string | null,
+): WorkspacePaneNode {
+  const nextActiveTabId = activeTabId && tabIds.includes(activeTabId)
+    ? activeTabId
+    : tabIds[0] ?? null;
+  return {
+    type: "pane",
+    id: crypto.randomUUID(),
+    tabIds: [...tabIds],
+    activeTabId: nextActiveTabId,
+  };
 }
 
 export function firstPane(node: WorkspaceLayoutNode): WorkspacePaneNode {

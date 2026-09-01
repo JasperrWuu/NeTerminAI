@@ -21,18 +21,35 @@ export const keybindingCommands: KeybindingCommand[] = [
   {
     id: "focusNextSession",
     label: "切换到下一个会话",
-    description: "按照会话创建顺序循环切换，不包含设置标签。",
+    description: "按照会话创建顺序循环切换当前会话。",
+  },
+  {
+    id: "balanceWorkspace",
+    label: "均衡分布所有会话",
+    description: "将所有会话均匀铺开，并交替使用左右与上下分区。",
+  },
+  {
+    id: "collapseWorkspace",
+    label: "合并所有分区",
+    description: "将所有会话收回到一个分区，保留会话标签。",
   },
 ];
 
 export function keyboardEventToShortcut(event: KeyboardEvent | ReactKeyboardEvent) {
   if (isModifierKey(event.key)) return null;
-  const key = normalizeKey(event.key);
+  const plusKey = event.key === "+"
+    || event.key === "Add"
+    || event.code === "NumpadAdd"
+    || (event.key === "=" && event.shiftKey && event.code === "Equal");
+  const key = normalizeKey(plusKey ? "+" : event.key);
   if (!key) return null;
 
   const modifiers = [
     event.ctrlKey ? "Ctrl" : null,
-    event.shiftKey ? "Shift" : null,
+    // On most keyboards `+` is produced with Shift+`=`, but users think of
+    // that gesture as Ctrl++. Keep the recorded shortcut compact and make it
+    // work for both the main keyboard and the numpad plus key.
+    event.shiftKey && !plusKey ? "Shift" : null,
     event.altKey ? "Alt" : null,
     event.metaKey ? "Meta" : null,
   ].filter(Boolean);
@@ -46,7 +63,13 @@ export function matchesKeyboardShortcut(event: KeyboardEvent, shortcut: string) 
 }
 
 export function shortcutParts(shortcut: string) {
-  return shortcut ? shortcut.split("+").filter(Boolean) : [];
+  if (!shortcut) return [];
+  // A plus key is also the delimiter, so `Ctrl++` needs one small piece of
+  // parsing instead of a plain split (which would drop the final key).
+  if (shortcut.endsWith("+")) {
+    return [...shortcut.slice(0, -1).split("+").filter(Boolean), "+"];
+  }
+  return shortcut.split("+").filter(Boolean);
 }
 
 export function isTerminalControlShortcut(shortcut: string) {

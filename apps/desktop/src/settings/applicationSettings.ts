@@ -22,6 +22,7 @@ export const defaultApplicationSettings: ApplicationSettings = {
     highlightSets: [{
       id: "default-highlight-set",
       name: "默认突显集",
+      enabled: true,
       rules: [],
     }],
   },
@@ -29,6 +30,8 @@ export const defaultApplicationSettings: ApplicationSettings = {
     synchronizeVisibleTerminals: "Ctrl+Alt+I",
     stopSynchronizedInput: "Ctrl+Alt+Shift+I",
     focusNextSession: "Ctrl+Tab",
+    balanceWorkspace: "Ctrl++",
+    collapseWorkspace: "Ctrl+-",
   },
 };
 
@@ -67,9 +70,9 @@ function normalizeSettings(value: unknown): ApplicationSettings {
 
   const highlightSets = normalizeHighlightSets(terminal, defaults.terminal.highlightSets);
   const requestedHighlightSetId = stringValue(terminal?.activeHighlightSetId);
-  const activeHighlightSetId = highlightSets.some((set) => set.id === requestedHighlightSetId)
+  const activeHighlightSetId = highlightSets.some((set) => set.id === requestedHighlightSetId && set.enabled)
     ? requestedHighlightSetId
-    : highlightSets[0]?.id ?? null;
+    : highlightSets.find((set) => set.enabled)?.id ?? null;
 
   return {
     appearance: {
@@ -123,6 +126,7 @@ function normalizeHighlightSets(
     return [{
       id: "migrated-highlight-set",
       name: "我的突显集",
+      enabled: true,
       rules: legacyRules,
     }];
   }
@@ -138,6 +142,7 @@ function normalizeHighlightSet(value: unknown): TerminalHighlightSet[] {
   return [{
     id: set.id,
     name,
+    enabled: typeof set.enabled === "boolean" ? set.enabled : true,
     rules: set.rules.flatMap(normalizeHighlightRule),
   }];
 }
@@ -150,6 +155,8 @@ function normalizeKeybindings(value: Record<string, unknown> | null): Keybinding
     stopSynchronizedInput: stringValue(value?.stopSynchronizedInput)
       ?? defaults.stopSynchronizedInput,
     focusNextSession: stringValue(value?.focusNextSession) ?? defaults.focusNextSession,
+    balanceWorkspace: stringValue(value?.balanceWorkspace) ?? defaults.balanceWorkspace,
+    collapseWorkspace: stringValue(value?.collapseWorkspace) ?? defaults.collapseWorkspace,
   };
 
   const usesLegacyTerminalControlDefaults = settings.synchronizeVisibleTerminals === "Ctrl+L"

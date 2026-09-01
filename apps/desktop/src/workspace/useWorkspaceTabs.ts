@@ -6,13 +6,14 @@ import {
   findPane,
   findPaneContainingTab,
   firstPane,
+  buildBalancedWorkspaceLayout,
+  collapseWorkspaceLayout,
   removeTabFromPane,
   replacePane,
   updatePane,
 } from "./layout";
 import type {
   LocalTerminalTab,
-  SettingsSection,
   WorkspaceDropZone,
   WorkspaceLayoutNode,
   WorkspacePaneNode,
@@ -80,37 +81,25 @@ export function useWorkspaceTabs() {
     addTab((tabs) => createLocalTerminalTab(tabId, profileId, tabs));
   }, [addTab]);
 
-  const openSettings = useCallback((section: SettingsSection) => {
+  const balanceWorkspace = useCallback(() => {
     setWorkspace((current) => {
-      const existing = current.tabs.find(
-        (tab) => tab.kind === "settings" && tab.section === section,
-      );
-      if (existing) {
-        const pane = findPaneContainingTab(current.layout, existing.id);
-        if (!pane) return current;
-        return {
-          ...current,
-          layout: updatePane(current.layout, pane.id, (item) => ({ ...item, activeTabId: existing.id })),
-          activePaneId: pane.id,
-        };
-      }
-
-      const tab: WorkspaceTab = {
-        id: crypto.randomUUID(),
-        kind: "settings",
-        section,
-        title: section === "terminal" ? "终端设置" : "键盘快捷键",
-      };
-      const paneId = findPane(current.layout, current.activePaneId)?.id ?? firstPane(current.layout).id;
+      const tabIds = current.tabs.map((tab) => tab.id);
+      const activeTabId = findPane(current.layout, current.activePaneId)?.activeTabId ?? tabIds[0] ?? null;
+      const layout = buildBalancedWorkspaceLayout(tabIds);
+      const activePane = activeTabId ? findPaneContainingTab(layout, activeTabId) : firstPane(layout);
       return {
-        tabs: [...current.tabs, tab],
-        layout: updatePane(current.layout, paneId, (pane) => ({
-          ...pane,
-          tabIds: [...pane.tabIds, tab.id],
-          activeTabId: tab.id,
-        })),
-        activePaneId: paneId,
+        ...current,
+        layout,
+        activePaneId: activePane?.id ?? firstPane(layout).id,
       };
+    });
+  }, []);
+
+  const collapseWorkspace = useCallback(() => {
+    setWorkspace((current) => {
+      const activeTabId = findPane(current.layout, current.activePaneId)?.activeTabId ?? null;
+      const layout = collapseWorkspaceLayout(current.tabs.map((tab) => tab.id), activeTabId);
+      return { ...current, layout, activePaneId: layout.id };
     });
   }, []);
 
@@ -154,7 +143,7 @@ export function useWorkspaceTabs() {
 
   const activateNextSession = useCallback(() => {
     setWorkspace((current) => {
-      const sessions = current.tabs.filter((tab) => tab.kind !== "settings");
+      const sessions = current.tabs;
       if (sessions.length === 0) return current;
       const activePane = findPane(current.layout, current.activePaneId) ?? firstPane(current.layout);
       const activeIndex = sessions.findIndex((tab) => tab.id === activePane.activeTabId);
@@ -257,18 +246,21 @@ export function useWorkspaceTabs() {
     activateNextSession,
     activatePane,
     activateTab,
+    balanceWorkspace,
+    collapseWorkspace,
     createTerminal,
     openTelnet,
     openSerial,
     openSsh,
     openRdp,
-    openSettings,
     closeTab,
     moveTab,
   }), [
     activateNextSession,
     activatePane,
     activateTab,
+    balanceWorkspace,
+    collapseWorkspace,
     activePane.activeTabId,
     activePane.id,
     closeTab,
@@ -276,7 +268,6 @@ export function useWorkspaceTabs() {
     moveTab,
     openRdp,
     openSerial,
-    openSettings,
     openSsh,
     openTelnet,
     workspace.layout,

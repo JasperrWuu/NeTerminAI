@@ -11,7 +11,6 @@ import type { KeybindingCommandId, KeybindingSettings } from "./types";
 import { CloseIcon } from "../workbench/icons";
 
 interface KeyboardShortcutsViewProps {
-  active: boolean;
   settings: KeybindingSettings;
   onChange: (settings: Partial<KeybindingSettings>) => void;
   onOpenTerminalSettings: () => void;
@@ -24,7 +23,6 @@ interface KeybindingMessage {
 }
 
 export function KeyboardShortcutsView({
-  active,
   settings,
   onChange,
   onOpenTerminalSettings,
@@ -78,7 +76,7 @@ export function KeyboardShortcutsView({
   };
 
   return (
-    <section className="settings-view workspace-view" aria-hidden={!active} data-active={active} aria-label="键盘快捷键">
+    <section className="settings-view" aria-label="键盘快捷键">
       <div className="settings-scroll-area">
         <header className="settings-heading">
           <div>

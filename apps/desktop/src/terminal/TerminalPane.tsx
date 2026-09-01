@@ -58,7 +58,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   const onInputRef = useRef(props.onInput);
   const registerInputTargetRef = useRef(props.registerInputTarget);
   const activeHighlightRules = settings.highlightSets.find(
-    (set) => set.id === settings.activeHighlightSetId,
+    (set) => set.id === settings.activeHighlightSetId && set.enabled,
   )?.rules ?? [];
   const highlighterRef = useRef(new TerminalHighlightStream(activeHighlightRules));
   const [status, setStatus] = useState<"starting" | "ready" | "closed" | "error">("starting");

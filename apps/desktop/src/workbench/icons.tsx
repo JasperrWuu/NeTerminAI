@@ -51,6 +51,15 @@ export function SettingsIcon(props: IconProps) {
   );
 }
 
+export function KeyboardIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <rect height="13" rx="2" width="18" x="3" y="5.5" />
+      <path d="M6 9h.01M9 9h.01M12 9h.01M15 9h.01M6 12h.01M9 12h6" />
+    </IconFrame>
+  );
+}
+
 export function SidebarIcon(props: IconProps) {
   return (
     <IconFrame {...props}>

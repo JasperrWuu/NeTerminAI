@@ -11,13 +11,6 @@ export interface LocalTerminalTab extends WorkspaceTabBase {
   profileId: LocalTerminalProfileId;
 }
 
-export type SettingsSection = "terminal" | "keyboard";
-
-export interface SettingsTab extends WorkspaceTabBase {
-  kind: "settings";
-  section: SettingsSection;
-}
-
 export interface TelnetTab extends WorkspaceTabBase {
   kind: "telnet";
   connection: TelnetConnection;
@@ -38,7 +31,7 @@ export interface RdpTab extends WorkspaceTabBase {
   connection: RdpConnection;
 }
 
-export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SshTab | RdpTab | SettingsTab;
+export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SshTab | RdpTab;
 
 export type WorkspaceSplitDirection = "row" | "column";
 export type WorkspaceDropZone = "center" | "left" | "right" | "top" | "bottom";
