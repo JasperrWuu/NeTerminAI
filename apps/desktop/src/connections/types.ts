@@ -26,11 +26,14 @@ export interface SerialConnection {
   flowControl: SerialFlowControl;
 }
 
+export type SshAuthentication = "password" | "key" | "config";
+
 export interface SshConnection {
   name: string;
   host: string;
   port: number;
   username: string;
+  authentication: SshAuthentication;
   identityFile: string;
 }
 
@@ -89,6 +92,7 @@ export const emptySshConnection: SshConnection = {
   host: "",
   port: 22,
   username: "",
+  authentication: "password",
   identityFile: "",
 };
 

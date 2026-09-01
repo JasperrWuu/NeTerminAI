@@ -37,6 +37,14 @@ pub enum TerminalProfile {
     GitBash,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SshAuthentication {
+    Password,
+    Key,
+    Config,
+}
+
 struct TerminalSession {
     master: Box<dyn MasterPty + Send>,
     writer: Sender<TerminalWriterMessage>,
@@ -113,6 +121,7 @@ impl TerminalManager {
         host: String,
         port: u16,
         username: String,
+        authentication: SshAuthentication,
         identity_file: String,
         columns: u16,
         rows: u16,
@@ -120,18 +129,30 @@ impl TerminalManager {
     ) -> Result<(), String> {
         let host = host.trim();
         let username = username.trim();
+        let identity_file = identity_file.trim();
         if host.is_empty() || port == 0 {
             self.remove_if_connecting(&session_id, &cancellation);
             return Err("SSH 主机地址或端口无效".to_owned());
         }
-        if host.contains(['\r', '\n']) || username.contains(['\r', '\n']) {
+        if host.contains(['\r', '\n'])
+            || username.contains(['\r', '\n'])
+            || identity_file.contains(['\r', '\n'])
+        {
             self.remove_if_connecting(&session_id, &cancellation);
-            return Err("SSH 主机地址或账号包含无效换行符".to_owned());
+            return Err("SSH 连接信息包含无效换行符".to_owned());
+        }
+        if authentication == SshAuthentication::Password && username.is_empty() {
+            self.remove_if_connecting(&session_id, &cancellation);
+            return Err("密码认证需要填写 SSH 账号".to_owned());
+        }
+        if authentication == SshAuthentication::Key && identity_file.is_empty() {
+            self.remove_if_connecting(&session_id, &cancellation);
+            return Err("私钥认证需要选择私钥文件".to_owned());
         }
         self.create_command(
             app,
             session_id,
-            ssh_command(host, port, username, &identity_file),
+            ssh_command(host, port, username, authentication, identity_file),
             columns,
             rows,
             "ssh",
@@ -413,7 +434,13 @@ fn spawn_output_reader(
 }
 
 #[cfg(target_os = "windows")]
-fn ssh_command(host: &str, port: u16, username: &str, identity_file: &str) -> CommandBuilder {
+fn ssh_command(
+    host: &str,
+    port: u16,
+    username: &str,
+    authentication: SshAuthentication,
+    identity_file: &str,
+) -> CommandBuilder {
     let mut command = CommandBuilder::new(ssh_executable());
     command.arg("-p");
     command.arg(port.to_string());
@@ -421,10 +448,8 @@ fn ssh_command(host: &str, port: u16, username: &str, identity_file: &str) -> Co
     command.args(["-o", "ServerAliveInterval=15"]);
     command.args(["-o", "ServerAliveCountMax=3"]);
     command.args(["-o", "TCPKeepAlive=yes"]);
+    configure_ssh_authentication(&mut command, authentication, identity_file);
     command.arg("-tt");
-    if !identity_file.is_empty() {
-        command.args(["-i", identity_file]);
-    }
     command.arg("--");
     command.arg(if username.is_empty() {
         host.to_owned()
@@ -443,7 +468,13 @@ fn ssh_executable() -> std::path::PathBuf {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn ssh_command(host: &str, port: u16, username: &str, identity_file: &str) -> CommandBuilder {
+fn ssh_command(
+    host: &str,
+    port: u16,
+    username: &str,
+    authentication: SshAuthentication,
+    identity_file: &str,
+) -> CommandBuilder {
     let mut command = CommandBuilder::new("ssh");
     command.arg("-p");
     command.arg(port.to_string());
@@ -451,10 +482,8 @@ fn ssh_command(host: &str, port: u16, username: &str, identity_file: &str) -> Co
     command.args(["-o", "ServerAliveInterval=15"]);
     command.args(["-o", "ServerAliveCountMax=3"]);
     command.args(["-o", "TCPKeepAlive=yes"]);
+    configure_ssh_authentication(&mut command, authentication, identity_file);
     command.arg("-tt");
-    if !identity_file.is_empty() {
-        command.args(["-i", identity_file]);
-    }
     command.arg("--");
     command.arg(if username.is_empty() {
         host.to_owned()
@@ -462,6 +491,32 @@ fn ssh_command(host: &str, port: u16, username: &str, identity_file: &str) -> Co
         format!("{username}@{host}")
     });
     command
+}
+
+fn configure_ssh_authentication(
+    command: &mut CommandBuilder,
+    authentication: SshAuthentication,
+    identity_file: &str,
+) {
+    command.args(["-o", "BatchMode=no"]);
+    command.args(["-o", "NumberOfPasswordPrompts=3"]);
+    match authentication {
+        SshAuthentication::Password => {
+            command.args([
+                "-o",
+                "PreferredAuthentications=keyboard-interactive,password",
+            ]);
+            command.args(["-o", "PubkeyAuthentication=no"]);
+        }
+        SshAuthentication::Key => {
+            command.args(["-o", "PreferredAuthentications=publickey"]);
+            command.args(["-o", "IdentitiesOnly=yes"]);
+            if !identity_file.is_empty() {
+                command.args(["-i", identity_file]);
+            }
+        }
+        SshAuthentication::Config => {}
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -529,7 +584,13 @@ mod tests {
 
     #[test]
     fn ssh_command_preserves_security_and_keepalive_options() {
-        let command = ssh_command("server.example", 2222, "operator", "C:\\keys\\id_ed25519");
+        let command = ssh_command(
+            "server.example",
+            2222,
+            "operator",
+            SshAuthentication::Key,
+            "C:\\keys\\id_ed25519",
+        );
         let arguments = command
             .get_argv()
             .iter()
@@ -553,11 +614,45 @@ mod tests {
                 .windows(2)
                 .any(|pair| pair == ["-i", "C:\\keys\\id_ed25519"])
         );
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-o", "IdentitiesOnly=yes"])
+        );
         assert_eq!(arguments[arguments.len() - 2], "--");
         assert_eq!(
             arguments.last().map(String::as_str),
             Some("operator@server.example")
         );
+    }
+
+    #[test]
+    fn password_ssh_prefers_interactive_authentication_without_public_keys() {
+        let command = ssh_command(
+            "server.example",
+            22,
+            "operator",
+            SshAuthentication::Password,
+            "",
+        );
+        let arguments = command
+            .get_argv()
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(arguments.windows(2).any(|pair| {
+            pair == [
+                "-o",
+                "PreferredAuthentications=keyboard-interactive,password",
+            ]
+        }));
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-o", "PubkeyAuthentication=no"])
+        );
+        assert!(!arguments.iter().any(|argument| argument == "-i"));
     }
 
     #[test]

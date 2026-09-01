@@ -956,7 +956,12 @@
 .rdp-pane {
   background: var(--bg-canvas);
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   padding: 0;
+  width: 100%;
 }
 
 .rdp-pane[data-active="true"] { display: flex; }

@@ -40,6 +40,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
     let resizeFrame: number | undefined;
     let statusTimer: number | undefined;
     let disconnectedSince: number | undefined;
+    let lastRuntimeState: RdpRuntimeStatus["state"] | undefined;
 
     const syncBounds = (visible: boolean) => {
       if (!hostReadyRef.current || disposed) return;
@@ -78,6 +79,8 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
           try {
             const runtime = await invoke<RdpRuntimeStatus>("get_rdp_status", { sessionId });
             if (disposed) return;
+            if (runtime.state !== lastRuntimeState) syncBounds(activeRef.current);
+            lastRuntimeState = runtime.state;
             if (runtime.state === "connected") {
               disconnectedSince = undefined;
               setStatus("ready");

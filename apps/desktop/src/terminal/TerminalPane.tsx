@@ -345,8 +345,8 @@ function terminalCreateArguments(props: TerminalSessionProps, sessionId: string,
     return { sessionId, host, port, username, password, columns, rows };
   }
   if (props.sessionType === "ssh") {
-    const { host, port, username, identityFile } = props.connection;
-    return { sessionId, host, port, username, identityFile, columns, rows };
+    const { host, port, username, authentication, identityFile } = props.connection;
+    return { sessionId, host, port, username, authentication, identityFile, columns, rows };
   }
   const { portName, baudRate, dataBits, stopBits, parity, flowControl } = props.connection;
   return { sessionId, portName, baudRate, dataBits, stopBits, parity, flowControl };

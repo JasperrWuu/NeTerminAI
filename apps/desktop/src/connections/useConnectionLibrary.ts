@@ -44,7 +44,14 @@ function normalizeSession(session: SavedConnectionSession): SavedConnectionSessi
     return { ...session, folderId: session.folderId ?? null };
   }
   if (session.kind === "ssh") {
-    return { ...session, folderId: session.folderId ?? null, port: session.port || 22, identityFile: session.identityFile ?? "" };
+    const identityFile = session.identityFile ?? "";
+    return {
+      ...session,
+      folderId: session.folderId ?? null,
+      port: session.port || 22,
+      identityFile,
+      authentication: session.authentication ?? (identityFile ? "key" : "password"),
+    };
   }
   if (session.kind === "rdp") {
     const connection = { ...session } as SavedRdpSession & { displayMode?: unknown };
