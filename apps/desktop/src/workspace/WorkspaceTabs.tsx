@@ -5,6 +5,7 @@ import type { WorkspaceTab } from "./types";
 
 interface WorkspaceTabsProps {
   paneId: string;
+  paneActive: boolean;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
   synchronizedTabIds: ReadonlySet<string>;
@@ -15,6 +16,7 @@ interface WorkspaceTabsProps {
 
 export function WorkspaceTabs({
   paneId,
+  paneActive,
   tabs,
   activeTabId,
   synchronizedTabIds,
@@ -28,10 +30,24 @@ export function WorkspaceTabs({
 
   const positionActiveIndicator = useCallback((animated: boolean) => {
     const activeTab = activeTabId ? tabRefs.current.get(activeTabId) : undefined;
+    const tabList = tabListRef.current;
     const indicator = activeIndicatorRef.current;
-    if (!activeTab || !indicator) {
+    if (!activeTab || !indicator || !tabList) {
       if (indicator) indicator.dataset.visible = "false";
       return;
+    }
+
+    const visibleStart = tabList.scrollLeft;
+    const visibleEnd = visibleStart + tabList.clientWidth;
+    const tabStart = activeTab.offsetLeft;
+    const tabEnd = tabStart + activeTab.offsetWidth;
+    let scrolled = false;
+    if (tabStart < visibleStart) {
+      tabList.scrollTo({ left: tabStart, behavior: "auto" });
+      scrolled = true;
+    } else if (tabEnd > visibleEnd) {
+      tabList.scrollTo({ left: tabEnd - tabList.clientWidth, behavior: "auto" });
+      scrolled = true;
     }
 
     const nextTransform = `translateX(${activeTab.offsetLeft}px)`;
@@ -43,7 +59,7 @@ export function WorkspaceTabs({
     indicator.style.transform = nextTransform;
     indicator.dataset.visible = "true";
 
-    if (animated && !prefersReducedMotion() && currentTransform !== "none") {
+    if (animated && !scrolled && !prefersReducedMotion() && currentTransform !== "none") {
       indicator.animate(
         [{ transform: currentTransform }, { transform: nextTransform }],
         { duration: motion.duration.standard, easing: motion.easing.inOut },
@@ -64,7 +80,7 @@ export function WorkspaceTabs({
   }, [positionActiveIndicator]);
 
   return (
-    <div className="tabbar">
+    <div className="tabbar" data-active-pane={paneActive}>
       <div className="tab-list" ref={tabListRef} role="tablist" aria-label="工作区标签">
         <div aria-hidden="true" className="tab-active-indicator" ref={activeIndicatorRef} />
         {tabs.map((tab) => (

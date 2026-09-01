@@ -7,7 +7,7 @@ import "@xterm/xterm/css/xterm.css";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalClipboardAction } from "./clipboard";
-import { applyTerminalHighlights, compileTerminalHighlightRules } from "./highlighting";
+import { TerminalHighlightStream } from "./highlighting";
 import { resolveTerminalTheme } from "./themes";
 import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import type { TerminalInputTarget } from "./useSynchronizedInput";
@@ -57,7 +57,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   const activeRef = useRef(active);
   const onInputRef = useRef(props.onInput);
   const registerInputTargetRef = useRef(props.registerInputTarget);
-  const highlightRulesRef = useRef(compileTerminalHighlightRules(settings.highlightRules));
+  const highlighterRef = useRef(new TerminalHighlightStream(settings.highlightRules));
   const [status, setStatus] = useState<"starting" | "ready" | "closed" | "error">("starting");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -72,7 +72,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   }, [settings.colorScheme, theme]);
 
   useEffect(() => {
-    highlightRulesRef.current = compileTerminalHighlightRules(settings.highlightRules);
+    highlighterRef.current.setRules(settings.highlightRules);
   }, [settings.highlightRules]);
 
   useEffect(() => {
@@ -168,7 +168,7 @@ export function TerminalPane(props: TerminalPaneProps) {
         pendingOutputLength = 0;
         if (!disposed) {
           const text = outputDecoder.decode(combined, { stream: true });
-          terminal.write(applyTerminalHighlights(text, highlightRulesRef.current));
+          terminal.write(highlighterRef.current.write(text));
         }
       });
     };

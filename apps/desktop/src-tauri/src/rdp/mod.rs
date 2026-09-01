@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{
@@ -33,6 +33,22 @@ pub struct PhysicalRdpBounds {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpRuntimeStatus {
+    pub state: RdpRuntimeState,
+    pub disconnect_reason: Option<String>,
+}
+
+#[derive(Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RdpRuntimeState {
+    Initializing,
+    Connecting,
+    Connected,
+    Disconnected,
 }
 
 #[derive(Clone, Default)]
@@ -111,6 +127,32 @@ impl RdpManager {
         windows_host::close(self, session_id)
     }
 
+    #[cfg(windows)]
+    pub fn status(&self, session_id: &str) -> Result<RdpRuntimeStatus, String> {
+        let handle = {
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "RDP 会话状态不可用".to_owned())?;
+            match sessions.get(session_id) {
+                Some(RdpSessionState::Connecting(_)) => {
+                    return Ok(RdpRuntimeStatus {
+                        state: RdpRuntimeState::Initializing,
+                        disconnect_reason: None,
+                    });
+                }
+                Some(RdpSessionState::Connected { handle, .. }) => *handle,
+                None => {
+                    return Ok(RdpRuntimeStatus {
+                        state: RdpRuntimeState::Disconnected,
+                        disconnect_reason: Some("RDP 会话已关闭".to_owned()),
+                    });
+                }
+            }
+        };
+        windows_host::status(handle)
+    }
+
     #[cfg(not(windows))]
     pub fn unsupported(&self) -> Result<(), String> {
         Err("应用内 RDP 当前仅支持 Windows".to_owned())
@@ -174,7 +216,9 @@ impl RdpManager {
 
 #[cfg(windows)]
 mod windows_host {
-    use super::{PhysicalRdpBounds, RdpManager, RdpSessionState};
+    use super::{
+        PhysicalRdpBounds, RdpManager, RdpRuntimeState, RdpRuntimeStatus, RdpSessionState,
+    };
     use std::{
         cell::Cell,
         ffi::c_void,
@@ -235,26 +279,7 @@ mod windows_host {
         }
         ensure_ole_initialized()?;
 
-        let window = unsafe {
-            if !(atl_api()?.initialize)().as_bool() {
-                return Err("Windows RDP 宿主初始化失败".to_owned());
-            }
-            CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
-                w!("AtlAxWin"),
-                w!("MsRdpClient10NotSafeForScripting"),
-                WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
-                bounds.x,
-                bounds.y,
-                bounds.width,
-                bounds.height,
-                Some(parent),
-                None,
-                None,
-                None,
-            )
-            .map_err(|error| format!("无法创建应用内 RDP 视图：{error}"))?
-        };
+        let window = create_host_window(parent, bounds)?;
 
         if let Err(error) = configure_control(window, host, port, username, admin_session, bounds) {
             unsafe {
@@ -340,6 +365,72 @@ mod windows_host {
         Ok(())
     }
 
+    pub fn status(handle: isize) -> Result<RdpRuntimeStatus, String> {
+        let control = control_dispatch(HWND(handle as *mut c_void))?;
+        let connected = get_i16_property(&control, "Connected")?;
+        let state = match connected {
+            1 => RdpRuntimeState::Connected,
+            2 => RdpRuntimeState::Connecting,
+            _ => RdpRuntimeState::Disconnected,
+        };
+        let disconnect_reason = if connected == 0 {
+            get_i32_property(&control, "ExtendedDisconnectReason")
+                .ok()
+                .filter(|reason| *reason != 0)
+                .map(describe_disconnect_reason)
+        } else {
+            None
+        };
+        Ok(RdpRuntimeStatus {
+            state,
+            disconnect_reason,
+        })
+    }
+
+    fn create_host_window(parent: HWND, bounds: PhysicalRdpBounds) -> Result<HWND, String> {
+        unsafe {
+            if !(atl_api()?.initialize)().as_bool() {
+                return Err("Windows RDP 宿主初始化失败".to_owned());
+            }
+        }
+
+        let controls = [
+            w!("MsRdpClient12NotSafeForScripting"),
+            w!("MsRdpClient11NotSafeForScripting"),
+            w!("MsRdpClient10NotSafeForScripting"),
+            w!("MsRdpClient9NotSafeForScripting"),
+        ];
+        let mut last_error = None;
+        for control in controls {
+            let result = unsafe {
+                CreateWindowExW(
+                    WINDOW_EX_STYLE::default(),
+                    w!("AtlAxWin"),
+                    control,
+                    WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+                    bounds.x,
+                    bounds.y,
+                    bounds.width,
+                    bounds.height,
+                    Some(parent),
+                    None,
+                    None,
+                    None,
+                )
+            };
+            match result {
+                Ok(window) => return Ok(window),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(format!(
+            "无法创建应用内 RDP 视图：{}",
+            last_error
+                .map(|error| error.to_string())
+                .unwrap_or_else(|| "Windows 没有可用的远程桌面控件".to_owned())
+        ))
+    }
+
     fn configure_control(
         window: HWND,
         host: &str,
@@ -356,11 +447,18 @@ mod windows_host {
         put_property(&control, "DesktopWidth", bounds.width.max(640).into())?;
         put_property(&control, "DesktopHeight", bounds.height.max(480).into())?;
         put_property(&control, "ColorDepth", 32i32.into())?;
+        let _ = put_property(&control, "AllowPromptingForCredentials", true.into());
+        let _ = put_property(&control, "AllowCredentialSaving", false.into());
+        let _ = put_property(&control, "ConnectingText", "正在连接远程桌面…".into());
+        let _ = put_property(&control, "DisconnectedText", "远程桌面连接已断开".into());
 
-        let advanced = get_dispatch_property(&control, "AdvancedSettings2")?;
+        let advanced = latest_advanced_settings(&control)?;
         put_property(&advanced, "RDPPort", i32::from(port).into())?;
         let _ = put_property(&advanced, "SmartSizing", true.into());
         let _ = put_property(&advanced, "RedirectClipboard", true.into());
+        let _ = put_property(&advanced, "EnableCredSspSupport", true.into());
+        let _ = put_property(&advanced, "PromptForCredentials", true.into());
+        let _ = put_property(&advanced, "PromptForCredsOnClient", true.into());
         if admin_session {
             let _ = put_property(&advanced, "ConnectToAdministerServer", true.into());
         }
@@ -464,6 +562,11 @@ mod windows_host {
     }
 
     fn get_dispatch_property(dispatch: &IDispatch, name: &str) -> Result<IDispatch, String> {
+        let result = get_property(dispatch, name)?;
+        IDispatch::try_from(&result).map_err(|error| format!("RDP 属性 {name} 类型无效：{error}"))
+    }
+
+    fn get_property(dispatch: &IDispatch, name: &str) -> Result<VARIANT, String> {
         let id = dispatch_id(dispatch, name)?;
         let iid = GUID::default();
         let parameters = DISPPARAMS::default();
@@ -482,7 +585,44 @@ mod windows_host {
                 )
                 .map_err(|error| format!("无法读取 RDP 属性 {name}：{error}"))?;
         }
-        IDispatch::try_from(&result).map_err(|error| format!("RDP 属性 {name} 类型无效：{error}"))
+        Ok(result)
+    }
+
+    fn get_i16_property(dispatch: &IDispatch, name: &str) -> Result<i16, String> {
+        let result = get_property(dispatch, name)?;
+        if let Ok(value) = i16::try_from(&result) {
+            return Ok(value);
+        }
+        let value =
+            i32::try_from(&result).map_err(|error| format!("RDP 属性 {name} 类型无效：{error}"))?;
+        i16::try_from(value).map_err(|_| format!("RDP 属性 {name} 超出有效范围"))
+    }
+
+    fn get_i32_property(dispatch: &IDispatch, name: &str) -> Result<i32, String> {
+        let result = get_property(dispatch, name)?;
+        i32::try_from(&result).map_err(|error| format!("RDP 属性 {name} 类型无效：{error}"))
+    }
+
+    fn latest_advanced_settings(control: &IDispatch) -> Result<IDispatch, String> {
+        for name in [
+            "AdvancedSettings9",
+            "AdvancedSettings8",
+            "AdvancedSettings7",
+            "AdvancedSettings6",
+            "AdvancedSettings5",
+            "AdvancedSettings4",
+            "AdvancedSettings3",
+            "AdvancedSettings2",
+        ] {
+            if let Ok(settings) = get_dispatch_property(control, name) {
+                return Ok(settings);
+            }
+        }
+        Err("Windows RDP 控件没有返回高级设置接口".to_owned())
+    }
+
+    fn describe_disconnect_reason(reason: i32) -> String {
+        format!("Windows 远程桌面已断开（扩展代码 {reason}）")
     }
 
     fn invoke_method(dispatch: &IDispatch, name: &str) -> Result<(), String> {
@@ -558,6 +698,21 @@ mod tests {
 
         assert!(cancellation.load(Ordering::Acquire));
         assert!(manager.sessions.lock().expect("read sessions").is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn reports_rdp_lifecycle_before_the_native_control_is_ready() {
+        let manager = RdpManager::default();
+        manager.begin("pending-status").expect("begin session");
+
+        let pending = manager.status("pending-status").expect("pending status");
+        assert_eq!(pending.state, RdpRuntimeState::Initializing);
+
+        manager.close("pending-status").expect("close session");
+        let closed = manager.status("pending-status").expect("closed status");
+        assert_eq!(closed.state, RdpRuntimeState::Disconnected);
+        assert!(closed.disconnect_reason.is_some());
     }
 
     #[cfg(windows)]

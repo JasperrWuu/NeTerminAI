@@ -15,7 +15,7 @@
 .telnet-profile-icon {
   color: var(--protocol-telnet);
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 780;
   letter-spacing: -0.03em;
 }
@@ -23,7 +23,7 @@
 .serial-profile-icon {
   color: var(--protocol-serial);
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 780;
   letter-spacing: -0.04em;
 }
@@ -31,7 +31,7 @@
 .ssh-profile-icon {
   color: var(--protocol-ssh);
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 780;
   letter-spacing: -0.04em;
 }
@@ -39,7 +39,7 @@
 .rdp-profile-icon {
   color: var(--protocol-rdp);
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 780;
   letter-spacing: -0.05em;
 }
@@ -173,7 +173,7 @@
 }
 
 .folder-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 620;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -187,7 +187,7 @@
   border: 1px solid var(--icon-border);
   color: var(--text-secondary);
   display: flex;
-  font-size: 9px;
+  font-size: 11px;
   height: 18px;
   justify-content: center;
   min-width: 18px;
@@ -237,15 +237,15 @@
 }
 
 .empty-folder-hint {
-  color: var(--text-tertiary);
-  font-size: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
   margin: 0;
   padding: 7px 8px 8px;
 }
 
 .ungrouped-label {
-  color: var(--text-tertiary);
-  font-size: 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 7px 8px 5px;
@@ -271,14 +271,14 @@
 }
 
 .saved-connection-main .connection-name small {
-  color: var(--text-tertiary);
-  font-size: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
   font-weight: 450;
 }
 
 .session-mode {
-  color: var(--text-tertiary);
-  font-size: 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
   padding-right: 1px;
 }
 
@@ -363,12 +363,12 @@
 .serial-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-serial) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-serial) 30%, transparent); }
 .ssh-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-ssh) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-ssh) 30%, transparent); }
 .rdp-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-rdp) 30%, transparent); }
-.connection-create-card strong { align-self: end; color: var(--text-primary); font-size: 11px; font-weight: 640; }
-.connection-create-card small { color: var(--text-tertiary); font-size: 9px; }
+.connection-create-card strong { align-self: end; color: var(--text-primary); font-size: 13px; font-weight: 640; }
+.connection-create-card small { color: var(--text-secondary); font-size: 11px; }
 
 .connection-gesture-hint {
-  color: var(--text-tertiary);
-  font-size: 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
   margin: 5px 8px 0 48px;
 }
 
@@ -410,7 +410,7 @@
   display: flex;
   flex: 0 0 40px;
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
   height: 40px;
   justify-content: center;
@@ -425,8 +425,8 @@
 }
 
 .connection-dialog-header p {
-  color: var(--text-tertiary);
-  font-size: 11px;
+  color: var(--text-secondary);
+  font-size: 13px;
   line-height: 1.5;
   margin: 4px 0 0;
 }
@@ -435,21 +435,21 @@
   background: color-mix(in srgb, #d08a57 14%, transparent);
   border-color: color-mix(in srgb, #d08a57 25%, transparent);
   color: #d08a57;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .ssh-dialog-icon {
   background: color-mix(in srgb, #5d9fd5 14%, transparent);
   border-color: color-mix(in srgb, #5d9fd5 25%, transparent);
   color: #5d9fd5;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .rdp-dialog-icon {
   background: color-mix(in srgb, #9a7bd0 14%, transparent);
   border-color: color-mix(in srgb, #9a7bd0 25%, transparent);
   color: #9a7bd0;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .dialog-note {
@@ -462,8 +462,8 @@
   padding: 10px 12px;
 }
 
-.dialog-note strong { font-size: 10px; font-weight: 620; }
-.dialog-note span { color: var(--text-tertiary); font-size: 9px; line-height: 1.5; }
+.dialog-note strong { font-size: 12px; font-weight: 620; }
+.dialog-note span { color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
 
 .connection-form-grid {
   display: grid;
@@ -493,7 +493,7 @@
 
 .form-field > span {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 560;
 }
 
@@ -507,7 +507,7 @@
   background: transparent;
   border: 0;
   color: var(--accent-strong);
-  font-size: 9px;
+  font-size: 11px;
   margin: -4px -3px;
   min-height: 24px;
   padding: 0 3px;
@@ -518,8 +518,8 @@
 }
 
 .field-hint {
-  color: var(--text-tertiary);
-  font-size: 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
   line-height: 1.35;
   margin-top: -2px;
   overflow: hidden;
@@ -535,14 +535,14 @@
 
 .option-field legend {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 560;
   margin-bottom: 6px;
   padding: 0;
 }
 
 .option-field .segmented-control { width: 100%; }
-.option-field .segmented-control button { font-size: 10px; height: 28px; }
+.option-field .segmented-control button { font-size: 12px; height: 30px; }
 
 .form-field input {
   background: var(--bg-hover);
@@ -665,7 +665,7 @@
   border-radius: 7px;
   color: var(--text-primary);
   font: inherit;
-  font-size: 11px;
+  font-size: 13px;
   height: 31px;
   min-width: 0;
   outline: none;
@@ -682,7 +682,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
   border-radius: 7px;
   color: var(--accent-strong);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 620;
   height: 31px;
   padding: 0 10px;
@@ -716,7 +716,7 @@
 
 .folder-picker-option-check {
   color: var(--accent-strong);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -744,13 +744,13 @@
 }
 
 .check-row strong {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 580;
 }
 
 .check-row small {
-  color: var(--text-tertiary);
-  font-size: 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -815,21 +815,21 @@
   color: var(--protocol-rdp);
   display: flex;
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 780;
   height: 22px;
   justify-content: center;
   width: 30px;
 }
 
-.rdp-session-title { color: var(--text-primary); font-size: 11px; font-weight: 620; }
-.rdp-session-address { color: var(--text-tertiary); font-size: 10px; }
+.rdp-session-title { color: var(--text-primary); font-size: 13px; font-weight: 620; }
+.rdp-session-address { color: var(--text-secondary); font-size: 12px; }
 .rdp-session-spacer { flex: 1; }
 .rdp-session-state {
   align-items: center;
   color: var(--text-tertiary);
   display: flex;
-  font-size: 9px;
+  font-size: 11px;
   gap: 6px;
 }
 .rdp-session-state i {
@@ -838,6 +838,7 @@
   height: 5px;
   width: 5px;
 }
+.rdp-session-state[data-status="initializing"] i,
 .rdp-session-state[data-status="connecting"] i { background: var(--warning); }
 .rdp-session-state[data-status="error"] { color: #d75c4a; }
 .rdp-session-state[data-status="error"] i { background: #d75c4a; }
@@ -876,18 +877,19 @@
   display: flex;
   flex: 0 0 46px;
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 760;
   height: 46px;
   justify-content: center;
 }
 
 .rdp-status-copy { min-width: 0; }
-.rdp-status-copy .eyebrow { color: var(--accent-strong); font-size: 9px; font-weight: 650; }
+.rdp-status-copy .eyebrow { color: var(--accent-strong); font-size: 11px; font-weight: 650; }
 .rdp-status-copy h1 { font-size: 20px; letter-spacing: -0.02em; margin: 5px 0 2px; }
-.rdp-status-copy > p { color: var(--text-secondary); font-size: 11px; margin: 0; }
-.rdp-launch-state { color: var(--text-tertiary); font-size: 10px; line-height: 1.55; margin: 14px 0; min-height: 31px; }
+.rdp-status-copy > p { color: var(--text-secondary); font-size: 13px; margin: 0; }
+.rdp-launch-state { color: var(--text-secondary); font-size: 12px; line-height: 1.55; margin: 14px 0; min-height: 37px; }
 .rdp-status-card[data-status="error"] .rdp-launch-state { color: #d75c4a; }
+.rdp-retry-button { margin-top: 2px; }
 
 @media (max-width: 620px) {
   .dialog-scrim {

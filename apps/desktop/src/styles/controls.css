@@ -5,8 +5,8 @@
   color: var(--text-secondary);
   flex: 0 0 auto;
   font: inherit;
-  font-size: 12px;
-  height: 32px;
+  font-size: 13px;
+  height: 34px;
   padding: 0 12px;
   transition:
     background-color var(--motion-fast) ease,
@@ -54,8 +54,8 @@
   color: var(--text-tertiary);
   flex: 1;
   font: inherit;
-  font-size: 12px;
-  height: 27px;
+  font-size: 13px;
+  height: 29px;
   min-width: 0;
   padding: 0 10px;
   position: relative;

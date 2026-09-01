@@ -262,6 +262,7 @@ function WorkspacePane({ node, ...props }: Omit<LayoutNodeProps, "node"> & { nod
     >
       <WorkspaceTabs
         activeTabId={node.activeTabId}
+        paneActive={props.activePaneId === node.id}
         synchronizedTabIds={props.synchronizedTabIds}
         onActivate={props.onActivateTab}
         onClose={props.onCloseTab}

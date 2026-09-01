@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Manager, State};
 
-use crate::rdp::{RdpBounds, RdpManager};
+use crate::rdp::{RdpBounds, RdpManager, RdpRuntimeStatus};
 
 use super::run_blocking;
 
@@ -92,6 +92,28 @@ pub async fn resize_rdp(
 }
 
 #[tauri::command]
+pub async fn get_rdp_status(
+    app: AppHandle,
+    state: State<'_, RdpManager>,
+    session_id: String,
+) -> Result<RdpRuntimeStatus, String> {
+    let manager = state.inner().clone();
+    on_main_thread(app, "RDP 状态读取", move |_app| {
+        #[cfg(windows)]
+        {
+            manager.status(&session_id)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = session_id;
+            manager.unsupported()?;
+            unreachable!()
+        }
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn close_rdp(
     app: AppHandle,
     state: State<'_, RdpManager>,
@@ -112,9 +134,14 @@ pub async fn close_rdp(
     .await
 }
 
-async fn on_main_thread<F>(app: AppHandle, label: &'static str, operation: F) -> Result<(), String>
+async fn on_main_thread<T, F>(
+    app: AppHandle,
+    label: &'static str,
+    operation: F,
+) -> Result<T, String>
 where
-    F: FnOnce(AppHandle) -> Result<(), String> + Send + 'static,
+    T: Send + 'static,
+    F: FnOnce(AppHandle) -> Result<T, String> + Send + 'static,
 {
     run_blocking(label, move || {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);

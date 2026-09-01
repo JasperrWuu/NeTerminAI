@@ -29,6 +29,7 @@ pub fn run() {
             commands::ssh::resize_ssh,
             commands::ssh::close_ssh,
             commands::rdp::create_rdp,
+            commands::rdp::get_rdp_status,
             commands::rdp::resize_rdp,
             commands::rdp::close_rdp,
         ])

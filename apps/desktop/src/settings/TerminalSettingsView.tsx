@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   AppearanceTheme,
   TerminalColorScheme,
@@ -165,19 +166,41 @@ function HighlightRulesEditor({
   onChange: (rules: TerminalHighlightRule[]) => void;
   rules: TerminalHighlightRule[];
 }) {
+  const [expandedRuleIds, setExpandedRuleIds] = useState<ReadonlySet<string>>(() => new Set());
+
   const updateRule = (ruleId: string, patch: Partial<TerminalHighlightRule>) => {
     onChange(rules.map((rule) => rule.id === ruleId ? { ...rule, ...patch } : rule));
   };
 
   const addRule = () => {
+    const id = crypto.randomUUID();
     onChange([...rules, {
-      id: crypto.randomUUID(),
+      id,
       enabled: true,
       matchMode: "text",
       pattern: "",
       color: "#FFB86C",
       caseSensitive: false,
     }]);
+    setExpandedRuleIds((current) => new Set(current).add(id));
+  };
+
+  const toggleRule = (ruleId: string) => {
+    setExpandedRuleIds((current) => {
+      const next = new Set(current);
+      if (next.has(ruleId)) next.delete(ruleId);
+      else next.add(ruleId);
+      return next;
+    });
+  };
+
+  const removeRule = (ruleId: string) => {
+    onChange(rules.filter((item) => item.id !== ruleId));
+    setExpandedRuleIds((current) => {
+      const next = new Set(current);
+      next.delete(ruleId);
+      return next;
+    });
   };
 
   return (
@@ -197,9 +220,30 @@ function HighlightRulesEditor({
           {rules.map((rule, index) => {
             const regexValid = rule.matchMode !== "regex" || isValidRegex(rule.pattern);
             const colorValid = isValidHexColor(rule.color);
+            const expanded = expandedRuleIds.has(rule.id);
             return (
-              <section className="highlight-rule" data-enabled={rule.enabled} key={rule.id}>
+              <section
+                className="highlight-rule"
+                data-enabled={rule.enabled}
+                data-expanded={expanded}
+                key={rule.id}
+              >
                 <header>
+                  <button
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? "折叠" : "展开"}规则 ${index + 1}`}
+                    className="highlight-rule-disclosure"
+                    onClick={() => toggleRule(rule.id)}
+                    type="button"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 16 16"><path d="m5.5 6.5 2.5 2.5 2.5-2.5" /></svg>
+                    <i style={{ background: colorValid ? rule.color : "transparent" }} />
+                    <span>
+                      <strong>{rule.pattern || `规则 ${index + 1}`}</strong>
+                      <small>{rule.matchMode === "text" ? "文本" : "正则"}</small>
+                    </span>
+                  </button>
+                  <span className="highlight-rule-spacer" />
                   <button
                     aria-checked={rule.enabled}
                     aria-label={`启用规则 ${index + 1}`}
@@ -209,16 +253,15 @@ function HighlightRulesEditor({
                     role="switch"
                     type="button"
                   ><span /></button>
-                  <strong>规则 {index + 1}</strong>
-                  <span className="highlight-rule-spacer" />
                   <button
                     aria-label={`删除规则 ${index + 1}`}
                     className="highlight-remove-button"
-                    onClick={() => onChange(rules.filter((item) => item.id !== rule.id))}
+                    onClick={() => removeRule(rule.id)}
                     type="button"
                   ><CloseIcon /></button>
                 </header>
-                <div className="highlight-rule-grid">
+                <div aria-hidden={!expanded} className="highlight-rule-body" data-expanded={expanded}>
+                  <div className="highlight-rule-grid">
                   <label className="highlight-match-mode">
                     <span>匹配方式</span>
                     <SegmentedControl
@@ -269,6 +312,7 @@ function HighlightRulesEditor({
                     />
                     <span>区分大小写</span>
                   </label>
+                  </div>
                 </div>
               </section>
             );

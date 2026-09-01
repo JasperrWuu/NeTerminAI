@@ -10,12 +10,20 @@ interface RdpBounds {
   height: number;
 }
 
+interface RdpRuntimeStatus {
+  state: "initializing" | "connecting" | "connected" | "disconnected";
+  disconnectReason: string | null;
+}
+
+type RdpViewStatus = "initializing" | "connecting" | "ready" | "error";
+
 export function RdpPane({ active, connection }: { active: boolean; connection: RdpConnection }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const readyRef = useRef(false);
+  const hostReadyRef = useRef(false);
   const activeRef = useRef(active);
-  const [status, setStatus] = useState<"connecting" | "ready" | "error">("connecting");
+  const [attempt, setAttempt] = useState(0);
+  const [status, setStatus] = useState<RdpViewStatus>("initializing");
   const [error, setError] = useState("");
 
   activeRef.current = active;
@@ -25,14 +33,16 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
     if (!viewport) return;
     const sessionId = crypto.randomUUID();
     sessionIdRef.current = sessionId;
-    readyRef.current = false;
-    setStatus("connecting");
+    hostReadyRef.current = false;
+    setStatus("initializing");
     setError("");
     let disposed = false;
     let resizeFrame: number | undefined;
+    let statusTimer: number | undefined;
+    let disconnectedSince: number | undefined;
 
     const syncBounds = (visible: boolean) => {
-      if (!readyRef.current || disposed) return;
+      if (!hostReadyRef.current || disposed) return;
       invokeInBackground("resize_rdp", { sessionId, bounds: readBounds(viewport), visible });
     };
     const scheduleResize = () => {
@@ -60,9 +70,40 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
           await invoke("close_rdp", { sessionId });
           return;
         }
-        readyRef.current = true;
-        setStatus("ready");
+        hostReadyRef.current = true;
+        setStatus("connecting");
         syncBounds(activeRef.current);
+        const pollStatus = async () => {
+          if (disposed) return;
+          try {
+            const runtime = await invoke<RdpRuntimeStatus>("get_rdp_status", { sessionId });
+            if (disposed) return;
+            if (runtime.state === "connected") {
+              disconnectedSince = undefined;
+              setStatus("ready");
+            } else if (runtime.state === "disconnected") {
+              disconnectedSince ??= performance.now();
+              if (runtime.disconnectReason || performance.now() - disconnectedSince > 15_000) {
+                setStatus("error");
+                setError(runtime.disconnectReason || "连接没有建立。请确认虚拟机已开启远程桌面，并检查地址、端口和网络策略。");
+                invokeInBackground("resize_rdp", { sessionId, bounds: readBounds(viewport), visible: false });
+                return;
+              }
+              setStatus("connecting");
+            } else {
+              disconnectedSince = undefined;
+              setStatus(runtime.state === "initializing" ? "initializing" : "connecting");
+            }
+            statusTimer = window.setTimeout(pollStatus, 650);
+          } catch (reason) {
+            if (!disposed) {
+              setStatus("error");
+              setError(String(reason));
+              invokeInBackground("resize_rdp", { sessionId, bounds: readBounds(viewport), visible: false });
+            }
+          }
+        };
+        void pollStatus();
       } catch (reason) {
         if (!disposed) {
           setStatus("error");
@@ -74,19 +115,20 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
 
     return () => {
       disposed = true;
-      readyRef.current = false;
+      hostReadyRef.current = false;
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleResize);
       if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
+      if (statusTimer !== undefined) window.clearTimeout(statusTimer);
       if (sessionIdRef.current === sessionId) sessionIdRef.current = null;
       invokeInBackground("close_rdp", { sessionId });
     };
-  }, [connection]);
+  }, [attempt, connection]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
     const sessionId = sessionIdRef.current;
-    if (!viewport || !sessionId || !readyRef.current) return;
+    if (!viewport || !sessionId || !hostReadyRef.current) return;
     invokeInBackground("resize_rdp", { sessionId, bounds: readBounds(viewport), visible: active });
   }, [active, status]);
 
@@ -98,7 +140,7 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
         <span className="rdp-session-address">{connection.host}:{connection.port}</span>
         <span className="rdp-session-spacer" />
         <span className="rdp-session-state" data-status={status}>
-          <i />{status === "connecting" ? "正在初始化" : status === "ready" ? "RDP 控件运行中" : "连接失败"}
+          <i />{rdpStatusLabel(status)}
         </span>
       </header>
       <div className="rdp-native-viewport" ref={viewportRef}>
@@ -110,14 +152,30 @@ export function RdpPane({ active, connection }: { active: boolean; connection: R
               <h1>{connection.name.trim() || connection.host}</h1>
               <p>{connection.host}:{connection.port}{connection.username ? ` · ${connection.username}` : ""}</p>
               <div className="rdp-launch-state" aria-live="polite">
-                {status === "connecting" ? "正在初始化 Windows 远程桌面控件…" : error || "无法创建应用内远程桌面"}
+                {status === "initializing"
+                  ? "正在初始化 Windows 远程桌面控件…"
+                  : status === "connecting"
+                    ? "正在建立连接；如需凭据，Windows 会在此窗口内提示。"
+                    : error || "无法创建应用内远程桌面"}
               </div>
+              {status === "error" && (
+                <button className="secondary-button rdp-retry-button" onClick={() => setAttempt((current) => current + 1)} type="button">
+                  重新连接
+                </button>
+              )}
             </div>
           </div>
         )}
       </div>
     </section>
   );
+}
+
+function rdpStatusLabel(status: RdpViewStatus) {
+  if (status === "initializing") return "正在初始化";
+  if (status === "connecting") return "正在连接";
+  if (status === "ready") return "已连接";
+  return "连接失败";
 }
 
 function readBounds(element: HTMLElement): RdpBounds {

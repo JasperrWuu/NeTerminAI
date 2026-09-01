@@ -1,9 +1,11 @@
 :root {
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-family-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-family-ui);
   font-synthesis: none;
+  font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
 
-  --font-size-ui: 13px;
+  --font-size-ui: 14px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
@@ -26,12 +28,13 @@
   --icon-surface: rgba(255, 255, 255, 0.055);
   --icon-border: rgba(255, 255, 255, 0.11);
   --text-primary: #f1f2f4;
-  --text-secondary: #9b9da3;
-  --text-tertiary: #6f7178;
+  --text-secondary: #b2b5bc;
+  --text-tertiary: #888b93;
   --accent: #75a7ff;
   --accent-strong: #8bb5ff;
   --accent-soft: rgba(117, 167, 255, 0.13);
   --success: #65c88a;
+  --warning: #e3aa5f;
   --shadow-panel: 0 14px 36px rgba(0, 0, 0, 0.18);
 }
 
@@ -49,12 +52,13 @@
   --icon-surface: rgba(78, 63, 51, 0.055);
   --icon-border: rgba(78, 63, 51, 0.13);
   --text-primary: #2d2926;
-  --text-secondary: #6f6760;
-  --text-tertiary: #958b82;
+  --text-secondary: #665f59;
+  --text-tertiary: #7f756d;
   --accent: #c96442;
   --accent-strong: #b65335;
   --accent-soft: rgba(201, 100, 66, 0.12);
   --success: #4f7754;
+  --warning: #a76532;
   --shadow-panel: 0 14px 36px rgba(78, 63, 51, 0.09);
 }
 
@@ -75,6 +79,7 @@ body {
   background: var(--bg-canvas);
   color: var(--text-primary);
   font-size: var(--font-size-ui);
+  line-height: 1.45;
 }
 
 button {
@@ -147,14 +152,14 @@ button:focus-visible,
 }
 
 .brand-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 620;
   letter-spacing: -0.01em;
 }
 
 .titlebar-center {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 520;
 }
 
@@ -340,7 +345,7 @@ button:focus-visible,
 
 .panel-title {
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.055em;
   text-transform: uppercase;
@@ -379,7 +384,7 @@ button:focus-visible,
 
 .connection-group-label {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.06em;
   padding: 0 8px 8px;
@@ -394,7 +399,7 @@ button:focus-visible,
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
-  height: 34px;
+  min-height: 38px;
   padding: 0 9px;
   text-align: left;
   transition:
@@ -420,7 +425,7 @@ button:focus-visible,
   color: var(--accent-strong);
   display: flex;
   font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   height: 22px;
   justify-content: center;
@@ -428,7 +433,7 @@ button:focus-visible,
 }
 
 .connection-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 560;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -437,12 +442,12 @@ button:focus-visible,
 
 .connection-kind {
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .empty-panel p {
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
   margin: 18px 0 0;
   max-width: 24ch;
@@ -544,17 +549,26 @@ button:focus-visible,
 }
 
 .workspace-pane::after {
-  border: 1px solid transparent;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
   content: "";
-  inset: 0;
+  height: 2px;
+  left: 10px;
+  opacity: 0;
   pointer-events: none;
   position: absolute;
-  transition: border-color var(--motion-fast) ease;
+  right: 10px;
+  top: 0;
+  transform: scaleX(0.72);
+  transition:
+    opacity var(--motion-fast) ease,
+    transform var(--motion-selection) var(--ease-out);
   z-index: 25;
 }
 
 .workspace-pane[data-active="true"]::after {
-  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  opacity: 0.72;
+  transform: scaleX(1);
 }
 
 .workspace-pane-content {
@@ -606,15 +620,19 @@ button:focus-visible,
   gap: 4px;
   height: 34px;
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   position: relative;
+  scrollbar-width: none;
 }
 
+.tab-list::-webkit-scrollbar { display: none; }
+
 .tab-active-indicator {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: 9px;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--text-primary) 10%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated) 84%, var(--accent-soft));
+  border: 0;
+  border-radius: 8px 8px 3px 3px;
+  box-shadow: none;
   left: 0;
   opacity: 0;
   pointer-events: none;
@@ -623,6 +641,10 @@ button:focus-visible,
   transform-origin: left center;
   will-change: transform;
   z-index: 0;
+}
+
+.tabbar[data-active-pane="true"] .tab-active-indicator {
+  box-shadow: inset 0 -2px color-mix(in srgb, var(--accent) 82%, transparent);
 }
 
 .tab-active-indicator[data-visible="true"] {
@@ -635,7 +657,7 @@ button:focus-visible,
   border: 1px solid transparent;
   border-radius: 8px;
   display: flex;
-  flex: 0 1 158px;
+  flex: 0 0 158px;
   height: 32px;
   min-width: 76px;
   position: relative;
@@ -674,7 +696,7 @@ button:focus-visible,
 }
 
 .tab-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 560;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -802,7 +824,7 @@ button:focus-visible,
   box-shadow: var(--shadow-panel);
   color: var(--text-primary);
   display: flex;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 580;
   gap: 8px;
   height: 34px;
@@ -851,7 +873,7 @@ button:focus-visible,
   border: 1px solid var(--border-strong);
   border-radius: 12px;
   color: var(--text-primary);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 620;
   padding: 5px 9px;
 }
@@ -873,7 +895,7 @@ button:focus-visible,
 }
 
 .empty-pane span { font-size: 13px; font-weight: 590; }
-.empty-pane small { color: var(--text-tertiary); font-size: 10px; }
+.empty-pane small { color: var(--text-secondary); font-size: 12px; }
 
 .workspace-content {
   display: flex;
@@ -973,7 +995,7 @@ button:focus-visible,
   border-radius: 13px;
   color: var(--accent-strong);
   display: flex;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 620;
   gap: 5px;
   height: 26px;
@@ -1003,7 +1025,7 @@ button:focus-visible,
   box-shadow: var(--shadow-panel);
   color: var(--text-secondary);
   display: flex;
-  font-size: 12px;
+  font-size: 13px;
   left: 50%;
   max-width: min(440px, calc(100% - 40px));
   min-height: 34px;
@@ -1069,14 +1091,14 @@ button:focus-visible,
 }
 
 .assistant-empty h2 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 620;
   margin: 0;
 }
 
 .assistant-empty p {
-  color: var(--text-tertiary);
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
   line-height: 1.6;
   margin: 8px 0 0;
   max-width: 25ch;
@@ -1086,7 +1108,7 @@ button:focus-visible,
   background: var(--bg-panel-solid);
   border-top: 1px solid var(--separator);
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   gap: 14px;
   padding: 0 10px;
 }
