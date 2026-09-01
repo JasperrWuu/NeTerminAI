@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FolderPicker } from "../connections/FolderPicker";
@@ -13,6 +13,7 @@ import type {
   SerialStopBits,
 } from "../connections/types";
 import { SegmentedControl } from "../ui/SegmentedControl";
+import { SerialPortPicker } from "./SerialPortPicker";
 
 interface SerialConnectionDialogProps {
   folders: ConnectionFolder[];
@@ -29,7 +30,6 @@ export function SerialConnectionDialog({ folders, initialSession, onCancel, onCr
   const [folderId, setFolderId] = useState(initialSession?.folderId ?? "");
   const [ports, setPorts] = useState<string[]>([]);
   const [portsLoading, setPortsLoading] = useState(true);
-  const portInputRef = useRef<HTMLInputElement>(null);
 
   const loadPorts = useCallback(async () => {
     setPortsLoading(true);
@@ -43,7 +43,6 @@ export function SerialConnectionDialog({ folders, initialSession, onCancel, onCr
   }, []);
 
   useEffect(() => {
-    portInputRef.current?.focus();
     void loadPorts();
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") onCancel(); };
     window.addEventListener("keydown", close);
@@ -69,10 +68,14 @@ export function SerialConnectionDialog({ folders, initialSession, onCancel, onCr
         <div className="connection-form-grid">
           <label className="form-field form-field-wide"><span>会话名称</span><input onChange={(event) => setField("name", event.target.value)} placeholder="例如：防火墙 Console" value={connection.name} /></label>
           <div className="form-field">
-            <span className="field-label-row"><label htmlFor="serial-port-name">串口</label><button className="inline-field-button" disabled={portsLoading} onClick={() => void loadPorts()} type="button">{portsLoading ? "检测中" : "刷新"}</button></span>
-            <input id="serial-port-name" list="serial-port-options" onChange={(event) => setField("portName", event.target.value)} placeholder="COM1" ref={portInputRef} required value={connection.portName} />
-            <datalist id="serial-port-options">{ports.map((port) => <option key={port} value={port} />)}</datalist>
-            <small aria-live="polite" className="field-hint">{portsLoading ? "正在读取设备…" : ports.length > 0 ? `已检测到 ${ports.join("、")}` : "未检测到设备，也可手动输入端口"}</small>
+            <span>串口</span>
+            <SerialPortPicker
+              loading={portsLoading}
+              onChange={(portName) => setField("portName", portName)}
+              onRefresh={() => void loadPorts()}
+              ports={ports}
+              value={connection.portName}
+            />
           </div>
           <label className="form-field"><span>波特率</span><input inputMode="numeric" min={1} onChange={(event) => setField("baudRate", Number(event.target.value))} required type="number" value={connection.baudRate} /></label>
           <OptionField label="数据位"><SegmentedControl compact items={[5, 6, 7, 8].map((value) => ({ value: value as SerialDataBits, label: String(value) }))} onChange={(value) => setField("dataBits", value)} value={connection.dataBits} /></OptionField>

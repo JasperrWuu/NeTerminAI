@@ -20,7 +20,7 @@ React UI → Tauri Commands / Events → Rust Application Core → PTY / Telnet 
 
 写入按会话顺序串行化，终端输出不经过 React 全局状态，而是在视图层按动画帧合并。尺寸同步和关闭属于后台维护操作，其竞态错误会被本地收口；连接、认证和用户输入错误仍会明确显示在对应终端中。
 
-RDP 的宿主创建与远端连接是两个不同阶段。Rust 端读取 Windows ActiveX 控件的真实连接状态和扩展断开原因，React 端只负责轮询并展示 `Initializing / Connecting / Connected / Disconnected`，不能把 `Connect()` 已返回误判为连接成功。
+RDP 的宿主创建与远端连接是两个不同阶段。Rust 端按系统已注册的 `MsTscAx.MsTscAx.*` ProgID 从新到旧探测 ActiveX 控件，并在使用前验证 `Server` 属性，避免把无效 ATL 宿主误当作 RDP 控件。连接后读取控件的真实状态和扩展断开原因；React 端只负责轮询并展示 `Initializing / Connecting / Connected / Disconnected`，不能把 `Connect()` 已返回误判为连接成功。
 
 ## 本地终端链路
 
@@ -51,7 +51,7 @@ TelnetManager 将连接建立、读取、顺序写入和关闭分离。协议状
 
 ## 设置与布局
 
-- `ApplicationSettings` 保存主题、终端字体、光标、缓冲、ANSI 配色和文字着色规则。这些是用户设置，未来可导入、导出或同步。
+- `ApplicationSettings` 保存主题、终端字体、光标、缓冲、ANSI 配色以及终端突显集。突显集拥有稳定 ID、名称和有序规则，同一时间只有一个活动集；旧版单层规则在读取时迁移为一个集合。这些是用户设置，未来可导入、导出或同步。
 - `WorkbenchPreferences` 保存侧栏开关和宽度。这些是当前设备、当前窗口的布局偏好。
 - 持久化设置在进入 React 状态前会按字段校验和迁移，损坏或旧版本数据不会把非法值传给 xterm.js。
 - 终端外观变更直接更新 xterm.js 渲染选项，不销毁或重建底层 PTY 会话。

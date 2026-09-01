@@ -57,7 +57,10 @@ export function TerminalPane(props: TerminalPaneProps) {
   const activeRef = useRef(active);
   const onInputRef = useRef(props.onInput);
   const registerInputTargetRef = useRef(props.registerInputTarget);
-  const highlighterRef = useRef(new TerminalHighlightStream(settings.highlightRules));
+  const activeHighlightRules = settings.highlightSets.find(
+    (set) => set.id === settings.activeHighlightSetId,
+  )?.rules ?? [];
+  const highlighterRef = useRef(new TerminalHighlightStream(activeHighlightRules));
   const [status, setStatus] = useState<"starting" | "ready" | "closed" | "error">("starting");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -72,8 +75,8 @@ export function TerminalPane(props: TerminalPaneProps) {
   }, [settings.colorScheme, theme]);
 
   useEffect(() => {
-    highlighterRef.current.setRules(settings.highlightRules);
-  }, [settings.highlightRules]);
+    highlighterRef.current.setRules(activeHighlightRules);
+  }, [activeHighlightRules]);
 
   useEffect(() => {
     const terminal = terminalRef.current;

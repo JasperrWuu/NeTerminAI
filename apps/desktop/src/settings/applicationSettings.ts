@@ -1,4 +1,9 @@
-import type { ApplicationSettings, KeybindingSettings, TerminalHighlightRule } from "./types";
+import type {
+  ApplicationSettings,
+  KeybindingSettings,
+  TerminalHighlightRule,
+  TerminalHighlightSet,
+} from "./types";
 
 const STORAGE_KEY = "neterminai.application.settings.v1";
 
@@ -13,7 +18,12 @@ export const defaultApplicationSettings: ApplicationSettings = {
     cursorBlink: true,
     scrollback: 10_000,
     colorScheme: "adaptive",
-    highlightRules: [],
+    activeHighlightSetId: "default-highlight-set",
+    highlightSets: [{
+      id: "default-highlight-set",
+      name: "默认突显集",
+      rules: [],
+    }],
   },
   keybindings: {
     synchronizeVisibleTerminals: "Ctrl+Alt+I",
@@ -55,6 +65,12 @@ function normalizeSettings(value: unknown): ApplicationSettings {
   const keybindings = asRecord(root?.keybindings);
   const defaults = defaultApplicationSettings;
 
+  const highlightSets = normalizeHighlightSets(terminal, defaults.terminal.highlightSets);
+  const requestedHighlightSetId = stringValue(terminal?.activeHighlightSetId);
+  const activeHighlightSetId = highlightSets.some((set) => set.id === requestedHighlightSetId)
+    ? requestedHighlightSetId
+    : highlightSets[0]?.id ?? null;
+
   return {
     appearance: {
       theme: appearance?.theme === "light" || appearance?.theme === "dark"
@@ -87,12 +103,43 @@ function normalizeSettings(value: unknown): ApplicationSettings {
         || terminal?.colorScheme === "paper"
         ? terminal.colorScheme
         : defaults.terminal.colorScheme,
-      highlightRules: Array.isArray(terminal?.highlightRules)
-        ? terminal.highlightRules.flatMap(normalizeHighlightRule)
-        : defaults.terminal.highlightRules,
+      activeHighlightSetId,
+      highlightSets,
     },
     keybindings: normalizeKeybindings(keybindings),
   };
+}
+
+function normalizeHighlightSets(
+  terminal: Record<string, unknown> | null,
+  defaults: TerminalHighlightSet[],
+) {
+  if (Array.isArray(terminal?.highlightSets)) {
+    return terminal.highlightSets.flatMap(normalizeHighlightSet);
+  }
+
+  if (Array.isArray(terminal?.highlightRules)) {
+    const legacyRules = terminal.highlightRules.flatMap(normalizeHighlightRule);
+    return [{
+      id: "migrated-highlight-set",
+      name: "我的突显集",
+      rules: legacyRules,
+    }];
+  }
+
+  return defaults;
+}
+
+function normalizeHighlightSet(value: unknown): TerminalHighlightSet[] {
+  const set = asRecord(value);
+  if (!set || typeof set.id !== "string") return [];
+  const name = nonEmptyString(set.name);
+  if (!name || !Array.isArray(set.rules)) return [];
+  return [{
+    id: set.id,
+    name,
+    rules: set.rules.flatMap(normalizeHighlightRule),
+  }];
 }
 
 function normalizeKeybindings(value: Record<string, unknown> | null): KeybindingSettings {

@@ -19,6 +19,12 @@ export interface TerminalHighlightRule {
   caseSensitive: boolean;
 }
 
+export interface TerminalHighlightSet {
+  id: string;
+  name: string;
+  rules: TerminalHighlightRule[];
+}
+
 export interface AppearanceSettings {
   theme: AppearanceTheme;
 }
@@ -31,7 +37,8 @@ export interface TerminalSettings {
   cursorBlink: boolean;
   scrollback: number;
   colorScheme: TerminalColorScheme;
-  highlightRules: TerminalHighlightRule[];
+  activeHighlightSetId: string | null;
+  highlightSets: TerminalHighlightSet[];
 }
 
 export interface ApplicationSettings {

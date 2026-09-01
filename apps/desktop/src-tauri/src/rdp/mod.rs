@@ -227,6 +227,8 @@ mod windows_host {
             atomic::{AtomicBool, Ordering},
         },
     };
+    #[cfg(test)]
+    use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CLSIDFromProgID, CoCreateInstance};
     use windows::{
         Win32::{
             Foundation::HWND,
@@ -395,13 +397,18 @@ mod windows_host {
         }
 
         let controls = [
-            w!("MsRdpClient12NotSafeForScripting"),
-            w!("MsRdpClient11NotSafeForScripting"),
-            w!("MsRdpClient10NotSafeForScripting"),
-            w!("MsRdpClient9NotSafeForScripting"),
+            (w!("MsTscAx.MsTscAx.13"), "MsTscAx 13"),
+            (w!("MsTscAx.MsTscAx.12"), "MsTscAx 12"),
+            (w!("MsTscAx.MsTscAx.11"), "MsTscAx 11"),
+            (w!("MsTscAx.MsTscAx.10"), "MsTscAx 10"),
+            (w!("MsTscAx.MsTscAx.9"), "MsTscAx 9"),
+            (w!("MsTscAx.MsTscAx.8"), "MsTscAx 8"),
+            (w!("MsTscAx.MsTscAx.7"), "MsTscAx 7"),
+            (w!("MsTscAx.MsTscAx.6"), "MsTscAx 6"),
+            (w!("MsTscAx.MsTscAx"), "MsTscAx"),
         ];
-        let mut last_error = None;
-        for control in controls {
+        let mut last_error: Option<String> = None;
+        for (control, name) in controls {
             let result = unsafe {
                 CreateWindowExW(
                     WINDOW_EX_STYLE::default(),
@@ -419,15 +426,23 @@ mod windows_host {
                 )
             };
             match result {
-                Ok(window) => return Ok(window),
-                Err(error) => last_error = Some(error),
+                Ok(window) => match control_dispatch(window)
+                    .and_then(|dispatch| dispatch_id(&dispatch, "Server").map(|_| ()))
+                {
+                    Ok(()) => return Ok(window),
+                    Err(error) => {
+                        unsafe {
+                            let _ = DestroyWindow(window);
+                        }
+                        last_error = Some(format!("{name} 不可用：{error}"));
+                    }
+                },
+                Err(error) => last_error = Some(format!("{name} 创建失败：{error}")),
             }
         }
         Err(format!(
             "无法创建应用内 RDP 视图：{}",
-            last_error
-                .map(|error| error.to_string())
-                .unwrap_or_else(|| "Windows 没有可用的远程桌面控件".to_owned())
+            last_error.unwrap_or_else(|| "Windows 没有可用的远程桌面控件".to_owned())
         ))
     }
 
@@ -519,6 +534,16 @@ mod windows_host {
         })
         .as_ref()
         .map_err(Clone::clone)
+    }
+
+    #[cfg(test)]
+    pub(super) fn registered_control_accepts_server() -> Result<(), String> {
+        ensure_ole_initialized()?;
+        let class_id = unsafe { CLSIDFromProgID(w!("MsTscAx.MsTscAx")) }
+            .map_err(|error| format!("Windows 没有注册 RDP ActiveX 控件：{error}"))?;
+        let control: IDispatch = unsafe { CoCreateInstance(&class_id, None, CLSCTX_INPROC_SERVER) }
+            .map_err(|error| format!("无法创建 RDP ActiveX 控件：{error}"))?;
+        put_property(&control, "Server", "127.0.0.1".into())
     }
 
     fn ensure_ole_initialized() -> Result<(), String> {
@@ -719,6 +744,13 @@ mod tests {
     #[test]
     fn loads_windows_rdp_host_exports() {
         windows_host::atl_api().expect("load ATL RDP hosting exports");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn registered_rdp_control_accepts_server_property() {
+        windows_host::registered_control_accepts_server()
+            .expect("registered RDP control should accept Server");
     }
 
     #[cfg(windows)]

@@ -55,6 +55,7 @@ export class TerminalHighlightStream {
 
   setRules(rules: TerminalHighlightRule[]) {
     this.rules = compileTerminalHighlightRules(rules);
+    this.currentLine = "";
   }
 
   write(data: string) {
