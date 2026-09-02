@@ -15,6 +15,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::connection_state::{ConnectionErrorKind, ConnectionStateTracker, DisconnectReason};
 use crate::lifecycle::{
     AdmissionGate, AdmissionPermit, CancellationToken, CloseOnce, Lifecycle, LifecycleStage,
     WorkerKind, WorkerSupervisor,
@@ -59,6 +60,8 @@ pub(crate) struct SessionControl {
     cancellation: CancellationToken,
     close_once: CloseOnce,
     instance: Arc<()>,
+    connection_state: ConnectionStateTracker,
+    transition_lock: Mutex<()>,
 }
 
 struct TelnetResources {
@@ -151,38 +154,62 @@ impl StartGate {
 }
 
 impl SessionControl {
-    fn new() -> Self {
+    fn new(session_id: &str) -> Self {
         Self {
             lifecycle: Lifecycle::new(),
             cancellation: CancellationToken::new(),
             close_once: CloseOnce::default(),
             instance: Arc::new(()),
+            connection_state: ConnectionStateTracker::new(session_id),
+            transition_lock: Mutex::new(()),
         }
     }
 
-    fn request_close(&self) -> bool {
+    fn request_close_with(&self, reason: DisconnectReason) -> bool {
+        let _transition = lock_unpoisoned(&self.transition_lock);
         let first = self.close_once.request();
         self.cancellation.cancel();
         if first {
             let _ = self.lifecycle.begin_close();
+            self.connection_state.closing(reason);
         }
         first
     }
 
-    fn mark_failed(&self) {
+    fn mark_failed_with(
+        &self,
+        reason: DisconnectReason,
+        error: ConnectionErrorKind,
+        message: Option<String>,
+    ) {
+        let _transition = lock_unpoisoned(&self.transition_lock);
         if matches!(
             self.lifecycle.stage(),
             LifecycleStage::Starting | LifecycleStage::Running
         ) {
             let _ = self.lifecycle.transition(LifecycleStage::Failed);
+            self.connection_state.failed(reason, error, message);
         }
     }
 
     fn publish_running(&self) -> bool {
+        let _transition = lock_unpoisoned(&self.transition_lock);
         if self.close_once.is_requested() || self.cancellation.is_cancelled() {
             return false;
         }
-        self.lifecycle.transition(LifecycleStage::Running).is_ok()
+        if self.lifecycle.transition(LifecycleStage::Running).is_err() {
+            return false;
+        }
+        self.connection_state.connected()
+    }
+
+    fn mark_disconnected(&self, reason: DisconnectReason) {
+        let _transition = lock_unpoisoned(&self.transition_lock);
+        self.connection_state.disconnected(reason);
+    }
+
+    fn bind_app(&self, app: &AppHandle) {
+        self.connection_state.bind_app(app);
     }
 
     fn writable(&self) -> bool {
@@ -193,9 +220,9 @@ impl SessionControl {
 }
 
 impl TelnetRuntime {
-    fn new(permit: AdmissionPermit, sender: Sender<CleanupRequest>) -> Self {
+    fn new(session_id: &str, permit: AdmissionPermit, sender: Sender<CleanupRequest>) -> Self {
         Self {
-            control: Arc::new(SessionControl::new()),
+            control: Arc::new(SessionControl::new(session_id)),
             resources: Mutex::new(None),
             workers: WorkerSupervisor::new(),
             start_gate: Arc::new(StartGate::new()),
@@ -255,7 +282,11 @@ impl TelnetManager {
             .admission
             .try_enter()
             .ok_or_else(|| "应用正在退出，无法创建 Telnet 会话".to_owned())?;
-        let runtime = Arc::new(TelnetRuntime::new(permit, self.cleanup.sender.clone()));
+        let runtime = Arc::new(TelnetRuntime::new(
+            session_id,
+            permit,
+            self.cleanup.sender.clone(),
+        ));
         let mut sessions = lock_unpoisoned(&self.inner.sessions);
         if sessions.contains_key(session_id) {
             return Err("Telnet 会话已存在".to_owned());
@@ -282,19 +313,28 @@ impl TelnetManager {
         control: Arc<SessionControl>,
     ) -> Result<(), String> {
         let runtime = self.runtime_for_control(&session_id, &control)?;
+        runtime.control.bind_app(&app);
         let _guard = InitializationGuard(Arc::clone(&runtime));
         let stream = match connect(&host, port) {
             Ok(stream) => stream,
             Err(error) => {
-                runtime.control.mark_failed();
-                runtime.control.request_close();
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ConnectionFailed,
+                    ConnectionErrorKind::Connection,
+                    Some(error.clone()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ConnectionFailed);
                 runtime.queue_cleanup(&session_id);
                 return Err(error);
             }
         };
         if control.close_once.is_requested() || control.cancellation.is_cancelled() {
             let _ = stream.shutdown(Shutdown::Both);
-            runtime.control.request_close();
+            runtime
+                .control
+                .request_close_with(DisconnectReason::UserRequested);
             runtime.queue_cleanup(&session_id);
             return Err("Telnet 连接已取消".to_owned());
         }
@@ -302,8 +342,14 @@ impl TelnetManager {
             Ok(reader) => reader,
             Err(error) => {
                 let _ = stream.shutdown(Shutdown::Both);
-                runtime.control.mark_failed();
-                runtime.control.request_close();
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ReadFailed,
+                    ConnectionErrorKind::Transport,
+                    Some(error.to_string()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ReadFailed);
                 runtime.queue_cleanup(&session_id);
                 return Err(format!("无法读取 Telnet 连接：{error}"));
             }
@@ -312,8 +358,14 @@ impl TelnetManager {
             Ok(control_stream) => control_stream,
             Err(error) => {
                 let _ = stream.shutdown(Shutdown::Both);
-                runtime.control.mark_failed();
-                runtime.control.request_close();
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ConnectionFailed,
+                    ConnectionErrorKind::Transport,
+                    Some(error.to_string()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ConnectionFailed);
                 runtime.queue_cleanup(&session_id);
                 return Err(format!("无法管理 Telnet 连接：{error}"));
             }
@@ -345,7 +397,14 @@ impl TelnetManager {
             })
             .is_err()
         {
-            runtime.control.request_close();
+            runtime.control.mark_failed_with(
+                DisconnectReason::WriteFailed,
+                ConnectionErrorKind::Transport,
+                Some("Telnet 写入线程启动失败".to_owned()),
+            );
+            runtime
+                .control
+                .request_close_with(DisconnectReason::WriteFailed);
             runtime.start_gate.cancel();
             runtime.workers.stop_accepting();
             runtime.workers.request_shutdown();
@@ -383,7 +442,14 @@ impl TelnetManager {
             })
             .is_err()
         {
-            runtime.control.request_close();
+            runtime.control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("Telnet 读取线程启动失败".to_owned()),
+            );
+            runtime
+                .control
+                .request_close_with(DisconnectReason::ReadFailed);
             runtime.start_gate.cancel();
             runtime.workers.stop_accepting();
             runtime.workers.request_shutdown();
@@ -394,7 +460,9 @@ impl TelnetManager {
         }
 
         if !(self.is_current_starting(&session_id, &runtime) && runtime.control.publish_running()) {
-            runtime.control.request_close();
+            runtime
+                .control
+                .request_close_with(DisconnectReason::UserRequested);
             runtime.start_gate.cancel();
             runtime.workers.stop_accepting();
             runtime.workers.request_shutdown();
@@ -430,7 +498,9 @@ impl TelnetManager {
 
     pub(crate) fn close(&self, session_id: &str) -> Result<(), String> {
         let runtime = self.runtime(session_id)?;
-        runtime.control.request_close();
+        runtime
+            .control
+            .request_close_with(DisconnectReason::UserRequested);
         runtime.start_gate.cancel();
         self.mark_closing(session_id, &runtime);
         runtime.queue_cleanup(session_id);
@@ -451,7 +521,9 @@ impl TelnetManager {
             })
             .collect::<Vec<_>>();
         for runtime in &runtimes {
-            runtime.control.request_close();
+            runtime
+                .control
+                .request_close_with(DisconnectReason::ApplicationShutdown);
             runtime.start_gate.cancel();
         }
         for runtime in runtimes {
@@ -668,7 +740,9 @@ fn cleanup_one(
     if !runtime.begin_cleanup() {
         return false;
     }
-    runtime.control.request_close();
+    runtime
+        .control
+        .request_close_with(DisconnectReason::Unknown);
     runtime.start_gate.cancel();
     runtime.workers.stop_accepting();
     runtime.workers.request_shutdown();
@@ -680,6 +754,7 @@ fn cleanup_one(
         && report.timed_out == 0
         && runtime.workers.active_count() == 0;
     if complete {
+        runtime.control.mark_disconnected(DisconnectReason::Unknown);
         let _ = runtime.control.lifecycle.finish_close();
         runtime.finish_cleanup(true);
         let mut sessions = lock_unpoisoned(&inner.sessions);
@@ -719,13 +794,13 @@ fn run_writer(
                 if worker_cancel.is_cancelled() || !control.writable() {
                     break;
                 }
-                if stream
-                    .write_all(&bytes)
-                    .and_then(|_| stream.flush())
-                    .is_err()
-                {
-                    control.mark_failed();
-                    control.request_close();
+                if let Err(error) = stream.write_all(&bytes).and_then(|_| stream.flush()) {
+                    control.mark_failed_with(
+                        DisconnectReason::WriteFailed,
+                        ConnectionErrorKind::Transport,
+                        Some(error.to_string()),
+                    );
+                    control.request_close_with(DisconnectReason::WriteFailed);
                     let _ = cleanup_sender.send(CleanupRequest::Session {
                         session_id: session_id.clone(),
                         instance: Arc::clone(&control.instance),
@@ -766,13 +841,23 @@ fn run_reader(
     let mut prompt = String::new();
     let mut username_sent = credentials.username.is_empty();
     let mut password_sent = credentials.password.is_empty();
+    let mut terminal_reason = None;
+    let mut terminal_error = None;
 
     loop {
         if worker_cancel.is_cancelled() || control.cancellation.is_cancelled() {
             break;
         }
         let length = match reader.read(&mut buffer) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => {
+                terminal_reason = Some(DisconnectReason::RemoteClosed);
+                break;
+            }
+            Err(error) => {
+                terminal_reason = Some(DisconnectReason::ReadFailed);
+                terminal_error = Some(error.to_string());
+                break;
+            }
             Ok(length) => length,
         };
         let frame = protocol.decode(&buffer[..length]);
@@ -805,6 +890,8 @@ fn run_reader(
                 )
                 .is_err()
         {
+            terminal_reason = Some(DisconnectReason::ReadFailed);
+            terminal_error = Some("终端输出事件发送失败".to_owned());
             break;
         }
     }
@@ -815,8 +902,16 @@ fn run_reader(
                 session_id: session_id.clone(),
             },
         );
-        control.mark_failed();
-        control.request_close();
+        match terminal_reason.unwrap_or(DisconnectReason::Unknown) {
+            DisconnectReason::RemoteClosed => {
+                control.mark_disconnected(DisconnectReason::RemoteClosed);
+                control.request_close_with(DisconnectReason::RemoteClosed);
+            }
+            reason => {
+                control.mark_failed_with(reason, ConnectionErrorKind::Transport, terminal_error);
+                control.request_close_with(reason);
+            }
+        }
     }
     let _ = cleanup_sender.send(CleanupRequest::Session {
         session_id,
