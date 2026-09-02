@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use tauri::{AppHandle, Emitter};
 
+use crate::connection_state::{ConnectionErrorKind, ConnectionStateTracker, DisconnectReason};
 use crate::lifecycle::{
     AdmissionGate, AdmissionPermit, CancellationToken, CloseOnce, Lifecycle, LifecycleStage,
     WorkerKind, WorkerSupervisor,
@@ -57,6 +58,8 @@ pub(crate) struct SessionControl {
     cancellation: CancellationToken,
     close_once: CloseOnce,
     instance: Arc<()>,
+    connection_state: ConnectionStateTracker,
+    transition_lock: Mutex<()>,
 }
 
 struct SerialResources {
@@ -152,38 +155,62 @@ impl StartGate {
 }
 
 impl SessionControl {
-    fn new() -> Self {
+    fn new(session_id: &str) -> Self {
         Self {
             lifecycle: Lifecycle::new(),
             cancellation: CancellationToken::new(),
             close_once: CloseOnce::default(),
             instance: Arc::new(()),
+            connection_state: ConnectionStateTracker::new(session_id),
+            transition_lock: Mutex::new(()),
         }
     }
 
-    fn request_close(&self) -> bool {
+    fn request_close_with(&self, reason: DisconnectReason) -> bool {
+        let _transition = lock_unpoisoned(&self.transition_lock);
         let first = self.close_once.request();
         self.cancellation.cancel();
         if first {
             let _ = self.lifecycle.begin_close();
+            self.connection_state.closing(reason);
         }
         first
     }
 
-    fn mark_failed(&self) {
+    fn mark_failed_with(
+        &self,
+        reason: DisconnectReason,
+        error: ConnectionErrorKind,
+        message: Option<String>,
+    ) {
+        let _transition = lock_unpoisoned(&self.transition_lock);
         if matches!(
             self.lifecycle.stage(),
             LifecycleStage::Starting | LifecycleStage::Running
         ) {
             let _ = self.lifecycle.transition(LifecycleStage::Failed);
+            self.connection_state.failed(reason, error, message);
         }
     }
 
     fn publish_running(&self) -> bool {
+        let _transition = lock_unpoisoned(&self.transition_lock);
         if self.close_once.is_requested() || self.cancellation.is_cancelled() {
             return false;
         }
-        self.lifecycle.transition(LifecycleStage::Running).is_ok()
+        if self.lifecycle.transition(LifecycleStage::Running).is_err() {
+            return false;
+        }
+        self.connection_state.connected()
+    }
+
+    fn mark_disconnected(&self, reason: DisconnectReason) {
+        let _transition = lock_unpoisoned(&self.transition_lock);
+        self.connection_state.disconnected(reason);
+    }
+
+    fn bind_app(&self, app: &AppHandle) {
+        self.connection_state.bind_app(app);
     }
 
     fn writable(&self) -> bool {
@@ -194,9 +221,9 @@ impl SessionControl {
 }
 
 impl SerialRuntime {
-    fn new(permit: AdmissionPermit, sender: Sender<CleanupRequest>) -> Self {
+    fn new(session_id: &str, permit: AdmissionPermit, sender: Sender<CleanupRequest>) -> Self {
         Self {
-            control: Arc::new(SessionControl::new()),
+            control: Arc::new(SessionControl::new(session_id)),
             resources: Mutex::new(None),
             workers: WorkerSupervisor::new(),
             start_gate: Arc::new(StartGate::new()),
@@ -256,7 +283,11 @@ impl SerialManager {
             .admission
             .try_enter()
             .ok_or_else(|| "应用正在退出，无法创建串口会话".to_owned())?;
-        let runtime = Arc::new(SerialRuntime::new(permit, self.cleanup.sender.clone()));
+        let runtime = Arc::new(SerialRuntime::new(
+            session_id,
+            permit,
+            self.cleanup.sender.clone(),
+        ));
         let mut sessions = lock_unpoisoned(&self.inner.sessions);
         if sessions.contains_key(session_id) {
             return Err("串口会话已存在".to_owned());
@@ -283,12 +314,19 @@ impl SerialManager {
         control: Arc<SessionControl>,
     ) -> Result<(), String> {
         let runtime = self.runtime_for_control(&session_id, &control)?;
+        runtime.control.bind_app(&app);
         let _guard = InitializationGuard(Arc::clone(&runtime));
         let data_bits = match map_data_bits(data_bits) {
             Ok(value) => value,
             Err(error) => {
-                runtime.control.mark_failed();
-                runtime.control.request_close();
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ConnectionFailed,
+                    ConnectionErrorKind::Configuration,
+                    Some(error.clone()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ConnectionFailed);
                 runtime.queue_cleanup(&session_id);
                 return Err(error);
             }
@@ -296,8 +334,14 @@ impl SerialManager {
         let stop_bits = match map_stop_bits(stop_bits) {
             Ok(value) => value,
             Err(error) => {
-                runtime.control.mark_failed();
-                runtime.control.request_close();
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ConnectionFailed,
+                    ConnectionErrorKind::Configuration,
+                    Some(error.clone()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ConnectionFailed);
                 runtime.queue_cleanup(&session_id);
                 return Err(error);
             }
@@ -312,15 +356,23 @@ impl SerialManager {
         {
             Ok(port) => port,
             Err(error) => {
-                runtime.control.mark_failed();
-                runtime.control.request_close();
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ConnectionFailed,
+                    ConnectionErrorKind::Connection,
+                    Some(error.to_string()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ConnectionFailed);
                 runtime.queue_cleanup(&session_id);
                 return Err(format!("无法打开串口 {port_name}：{error}"));
             }
         };
         if control.close_once.is_requested() || control.cancellation.is_cancelled() {
             drop(port);
-            runtime.control.request_close();
+            runtime
+                .control
+                .request_close_with(DisconnectReason::UserRequested);
             runtime.queue_cleanup(&session_id);
             return Err("串口连接已取消".to_owned());
         }
@@ -328,8 +380,14 @@ impl SerialManager {
             Ok(reader) => reader,
             Err(error) => {
                 drop(port);
-                runtime.control.mark_failed();
-                runtime.control.request_close();
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ReadFailed,
+                    ConnectionErrorKind::Transport,
+                    Some(error.to_string()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ReadFailed);
                 runtime.queue_cleanup(&session_id);
                 return Err(format!("无法读取串口 {port_name}：{error}"));
             }
@@ -358,7 +416,14 @@ impl SerialManager {
             })
             .is_err()
         {
-            runtime.control.request_close();
+            runtime.control.mark_failed_with(
+                DisconnectReason::WriteFailed,
+                ConnectionErrorKind::Transport,
+                Some("串口写入线程启动失败".to_owned()),
+            );
+            runtime
+                .control
+                .request_close_with(DisconnectReason::WriteFailed);
             runtime.start_gate.cancel();
             let resources = lock_unpoisoned(&runtime.resources).take();
             drop(resources);
@@ -385,7 +450,14 @@ impl SerialManager {
             })
             .is_err()
         {
-            runtime.control.request_close();
+            runtime.control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("串口读取线程启动失败".to_owned()),
+            );
+            runtime
+                .control
+                .request_close_with(DisconnectReason::ReadFailed);
             runtime.start_gate.cancel();
             runtime.workers.stop_accepting();
             runtime.workers.request_shutdown();
@@ -396,7 +468,9 @@ impl SerialManager {
         }
 
         if !(self.is_current_starting(&session_id, &runtime) && runtime.control.publish_running()) {
-            runtime.control.request_close();
+            runtime
+                .control
+                .request_close_with(DisconnectReason::UserRequested);
             runtime.start_gate.cancel();
             runtime.workers.stop_accepting();
             runtime.workers.request_shutdown();
@@ -425,7 +499,9 @@ impl SerialManager {
 
     pub(crate) fn close(&self, session_id: &str) -> Result<(), String> {
         let runtime = self.runtime(session_id)?;
-        runtime.control.request_close();
+        runtime
+            .control
+            .request_close_with(DisconnectReason::UserRequested);
         runtime.start_gate.cancel();
         self.mark_closing(session_id, &runtime);
         runtime.queue_cleanup(session_id);
@@ -446,7 +522,9 @@ impl SerialManager {
             })
             .collect::<Vec<_>>();
         for runtime in &runtimes {
-            runtime.control.request_close();
+            runtime
+                .control
+                .request_close_with(DisconnectReason::ApplicationShutdown);
             runtime.start_gate.cancel();
         }
         for runtime in runtimes {
@@ -651,7 +729,9 @@ fn cleanup_one(
     if !runtime.begin_cleanup() {
         return false;
     }
-    runtime.control.request_close();
+    runtime
+        .control
+        .request_close_with(DisconnectReason::Unknown);
     runtime.start_gate.cancel();
     runtime.workers.stop_accepting();
     runtime.workers.request_shutdown();
@@ -663,6 +743,7 @@ fn cleanup_one(
         && report.timed_out == 0
         && runtime.workers.active_count() == 0;
     if complete {
+        runtime.control.mark_disconnected(DisconnectReason::Unknown);
         let _ = runtime.control.lifecycle.finish_close();
         runtime.finish_cleanup(true);
         let mut sessions = lock_unpoisoned(&inner.sessions);
@@ -701,9 +782,13 @@ fn run_writer(
                 if worker_cancel.is_cancelled() || !control.writable() {
                     break;
                 }
-                if port.write_all(&bytes).and_then(|_| port.flush()).is_err() {
-                    control.mark_failed();
-                    control.request_close();
+                if let Err(error) = port.write_all(&bytes).and_then(|_| port.flush()) {
+                    control.mark_failed_with(
+                        DisconnectReason::WriteFailed,
+                        ConnectionErrorKind::Transport,
+                        Some(error.to_string()),
+                    );
+                    control.request_close_with(DisconnectReason::WriteFailed);
                     let _ = cleanup_sender.send(CleanupRequest::Session {
                         session_id: session_id.clone(),
                         instance: Arc::clone(&control.instance),
@@ -730,6 +815,8 @@ fn run_reader(
         return;
     }
     let mut buffer = [0_u8; 8192];
+    let mut terminal_reason = None;
+    let mut terminal_error = None;
     loop {
         if worker_cancel.is_cancelled() || control.cancellation.is_cancelled() {
             break;
@@ -748,11 +835,26 @@ fn run_reader(
                         )
                         .is_err()
                 {
+                    terminal_reason = Some(DisconnectReason::ReadFailed);
+                    terminal_error = Some("终端输出事件发送失败".to_owned());
                     break;
                 }
             }
             Err(error) if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::Interrupted) => {}
-            Err(_) => break,
+            Err(error) => {
+                terminal_reason = Some(
+                    if matches!(
+                        error.kind(),
+                        ErrorKind::BrokenPipe | ErrorKind::NotConnected | ErrorKind::UnexpectedEof
+                    ) {
+                        DisconnectReason::DeviceDisconnected
+                    } else {
+                        DisconnectReason::ReadFailed
+                    },
+                );
+                terminal_error = Some(error.to_string());
+                break;
+            }
         }
     }
     if !control.close_once.is_requested() {
@@ -762,8 +864,16 @@ fn run_reader(
                 session_id: session_id.clone(),
             },
         );
-        control.mark_failed();
-        control.request_close();
+        match terminal_reason.unwrap_or(DisconnectReason::Unknown) {
+            DisconnectReason::DeviceDisconnected => {
+                control.mark_disconnected(DisconnectReason::DeviceDisconnected);
+                control.request_close_with(DisconnectReason::DeviceDisconnected);
+            }
+            reason => {
+                control.mark_failed_with(reason, ConnectionErrorKind::Transport, terminal_error);
+                control.request_close_with(reason);
+            }
+        }
     }
     let _ = cleanup_sender.send(CleanupRequest::Session {
         session_id,
