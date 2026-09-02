@@ -165,7 +165,6 @@ export function TerminalPane(props: TerminalPaneProps) {
         })
         .catch((error) => {
           if (!disposed) {
-            setStatus("error");
             setErrorMessage(String(error));
           }
         });

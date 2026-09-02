@@ -156,12 +156,14 @@ impl StartGate {
 
 impl SessionControl {
     fn new(session_id: &str) -> Self {
+        let instance = Arc::new(());
+        let instance_token = format!("{:p}", Arc::as_ptr(&instance));
         Self {
             lifecycle: Lifecycle::new(),
             cancellation: CancellationToken::new(),
             close_once: CloseOnce::default(),
-            instance: Arc::new(()),
-            connection_state: ConnectionStateTracker::new(session_id),
+            instance,
+            connection_state: ConnectionStateTracker::new(session_id, "serial", instance_token),
             transition_lock: Mutex::new(()),
         }
     }

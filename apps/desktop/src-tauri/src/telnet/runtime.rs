@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
     net::{Shutdown, TcpStream, ToSocketAddrs},
     sync::{
         Arc, Mutex, PoisonError,
@@ -155,12 +155,14 @@ impl StartGate {
 
 impl SessionControl {
     fn new(session_id: &str) -> Self {
+        let instance = Arc::new(());
+        let instance_token = format!("{:p}", Arc::as_ptr(&instance));
         Self {
             lifecycle: Lifecycle::new(),
             cancellation: CancellationToken::new(),
             close_once: CloseOnce::default(),
-            instance: Arc::new(()),
-            connection_state: ConnectionStateTracker::new(session_id),
+            instance,
+            connection_state: ConnectionStateTracker::new(session_id, "telnet", instance_token),
             transition_lock: Mutex::new(()),
         }
     }
@@ -317,17 +319,16 @@ impl TelnetManager {
         let _guard = InitializationGuard(Arc::clone(&runtime));
         let stream = match connect(&host, port) {
             Ok(stream) => stream,
-            Err(error) => {
+            Err(failure) => {
+                let reason = failure.reason;
                 runtime.control.mark_failed_with(
-                    DisconnectReason::ConnectionFailed,
-                    ConnectionErrorKind::Connection,
-                    Some(error.clone()),
+                    reason,
+                    failure.error,
+                    Some(failure.message.clone()),
                 );
-                runtime
-                    .control
-                    .request_close_with(DisconnectReason::ConnectionFailed);
+                runtime.control.request_close_with(reason);
                 runtime.queue_cleanup(&session_id);
-                return Err(error);
+                return Err(failure.message);
             }
         };
         if control.close_once.is_requested() || control.cancellation.is_cancelled() {
@@ -925,33 +926,81 @@ fn shutdown_resources(resources: TelnetResources) {
     let _ = resources.control.shutdown(Shutdown::Both);
 }
 
-fn connect(host: &str, port: u16) -> Result<TcpStream, String> {
+#[derive(Debug)]
+struct TelnetConnectFailure {
+    reason: DisconnectReason,
+    error: ConnectionErrorKind,
+    message: String,
+}
+
+impl TelnetConnectFailure {
+    fn new(reason: DisconnectReason, error: ConnectionErrorKind, message: String) -> Self {
+        Self {
+            reason,
+            error,
+            message,
+        }
+    }
+}
+
+fn connect(host: &str, port: u16) -> Result<TcpStream, TelnetConnectFailure> {
     let host = host.trim();
     if host.is_empty() || port == 0 {
-        return Err("Telnet 主机地址或端口无效".to_owned());
+        return Err(TelnetConnectFailure::new(
+            DisconnectReason::ConnectionFailed,
+            ConnectionErrorKind::Configuration,
+            "Telnet 主机地址或端口无效".to_owned(),
+        ));
     }
     let address = format!("{host}:{port}");
-    let addresses = (host, port)
-        .to_socket_addrs()
-        .map_err(|error| format!("无法解析 Telnet 地址：{error}"))?;
+    let addresses = (host, port).to_socket_addrs().map_err(|error| {
+        TelnetConnectFailure::new(
+            DisconnectReason::ConnectionFailed,
+            ConnectionErrorKind::Connection,
+            format!("无法解析 Telnet 地址：{error}"),
+        )
+    })?;
     let mut last_error = None;
     for socket_address in addresses {
         match TcpStream::connect_timeout(&socket_address, Duration::from_secs(5)) {
             Ok(stream) => {
-                stream
-                    .set_nodelay(true)
-                    .map_err(|error| format!("无法配置 Telnet 连接：{error}"))?;
+                stream.set_nodelay(true).map_err(|error| {
+                    TelnetConnectFailure::new(
+                        DisconnectReason::ConnectionFailed,
+                        ConnectionErrorKind::Transport,
+                        format!("无法配置 Telnet 连接：{error}"),
+                    )
+                })?;
                 stream
                     .set_write_timeout(Some(Duration::from_secs(3)))
-                    .map_err(|error| format!("无法配置 Telnet 写入超时：{error}"))?;
+                    .map_err(|error| {
+                        TelnetConnectFailure::new(
+                            DisconnectReason::ConnectionFailed,
+                            ConnectionErrorKind::Transport,
+                            format!("无法配置 Telnet 写入超时：{error}"),
+                        )
+                    })?;
                 return Ok(stream);
             }
             Err(error) => last_error = Some(error),
         }
     }
-    Err(last_error.map_or_else(
-        || "没有找到可用的 Telnet 地址".to_owned(),
-        |error| format!("无法连接到 {address}：{error}"),
+    let Some(error) = last_error else {
+        return Err(TelnetConnectFailure::new(
+            DisconnectReason::ConnectionFailed,
+            ConnectionErrorKind::Connection,
+            "没有找到可用的 Telnet 地址".to_owned(),
+        ));
+    };
+    let reason = if error.kind() == ErrorKind::TimedOut {
+        DisconnectReason::Timeout
+    } else {
+        DisconnectReason::ConnectionFailed
+    };
+    Err(TelnetConnectFailure::new(
+        reason,
+        ConnectionErrorKind::Connection,
+        format!("无法连接到 {address}：{error}"),
     ))
 }
 
@@ -977,6 +1026,13 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_endpoint_is_reported_as_configuration_failure() {
+        let failure = connect("", 23).expect_err("empty host must fail");
+        assert_eq!(failure.reason, DisconnectReason::ConnectionFailed);
+        assert_eq!(failure.error, ConnectionErrorKind::Configuration);
+    }
 
     #[test]
     fn duplicate_session_ids_are_rejected_until_old_runtime_is_reclaimed() {

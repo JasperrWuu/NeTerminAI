@@ -29,6 +29,9 @@ pub(crate) enum DisconnectReason {
     ReadFailed,
     WriteFailed,
     Timeout,
+    /// Reserved for a parser that can report a protocol violation without
+    /// changing the current Telnet decoding path.
+    #[allow(dead_code)]
     ProtocolError,
     DeviceDisconnected,
     ApplicationShutdown,
@@ -40,6 +43,9 @@ pub(crate) enum DisconnectReason {
 pub(crate) enum ConnectionErrorKind {
     Connection,
     Transport,
+    /// Kept distinct so a future protocol-level error does not get flattened
+    /// into a generic transport failure.
+    #[allow(dead_code)]
     Protocol,
     Configuration,
 }
@@ -68,14 +74,22 @@ struct StateSnapshot {
 /// user close cannot overwrite one another's terminal reason.
 pub(crate) struct ConnectionStateTracker {
     session_id: String,
+    connection_type: &'static str,
+    instance_token: String,
     snapshot: Mutex<StateSnapshot>,
     app: Mutex<Option<AppHandle>>,
 }
 
 impl ConnectionStateTracker {
-    pub(crate) fn new(session_id: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        session_id: impl Into<String>,
+        connection_type: &'static str,
+        instance_token: impl Into<String>,
+    ) -> Self {
         Self {
             session_id: session_id.into(),
+            connection_type,
+            instance_token: instance_token.into(),
             snapshot: Mutex::new(StateSnapshot {
                 state: ConnectionState::Connecting,
                 reason: None,
@@ -94,9 +108,11 @@ impl ConnectionStateTracker {
             return;
         }
         snapshot.initial_emitted = true;
+        self.log_locked(&snapshot);
         self.emit_locked(&snapshot);
     }
 
+    #[cfg(test)]
     pub(crate) fn state(&self) -> ConnectionState {
         lock_unpoisoned(&self.snapshot).state
     }
@@ -110,6 +126,7 @@ impl ConnectionStateTracker {
         snapshot.reason = None;
         snapshot.error = None;
         snapshot.message = None;
+        self.log_locked(&snapshot);
         self.emit_locked(&snapshot);
         true
     }
@@ -126,6 +143,7 @@ impl ConnectionStateTracker {
         snapshot.reason = Some(reason);
         snapshot.error = None;
         snapshot.message = None;
+        self.log_locked(&snapshot);
         self.emit_locked(&snapshot);
         true
     }
@@ -147,6 +165,7 @@ impl ConnectionStateTracker {
         snapshot.reason = Some(reason);
         snapshot.error = Some(error);
         snapshot.message = message;
+        self.log_locked(&snapshot);
         self.emit_locked(&snapshot);
         true
     }
@@ -168,6 +187,7 @@ impl ConnectionStateTracker {
         snapshot.reason = Some(reason);
         snapshot.error = None;
         snapshot.message = None;
+        self.log_locked(&snapshot);
         self.emit_locked(&snapshot);
         true
     }
@@ -187,6 +207,21 @@ impl ConnectionStateTracker {
             },
         );
     }
+
+    fn log_locked(&self, snapshot: &StateSnapshot) {
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "[connection-state] session={} instance={} type={} state={:?} reason={:?} error={:?}",
+            self.session_id,
+            self.instance_token,
+            self.connection_type,
+            snapshot.state,
+            snapshot.reason,
+            snapshot.error,
+        );
+        #[cfg(not(debug_assertions))]
+        let _ = snapshot;
+    }
 }
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -199,7 +234,7 @@ mod tests {
 
     #[test]
     fn state_tracker_allows_only_forward_runtime_states() {
-        let tracker = ConnectionStateTracker::new("session-1");
+        let tracker = ConnectionStateTracker::new("session-1", "test", "instance-1");
         assert_eq!(tracker.state(), ConnectionState::Connecting);
         assert!(tracker.connected());
         assert!(!tracker.connected());
@@ -216,7 +251,7 @@ mod tests {
 
     #[test]
     fn first_terminal_outcome_is_preserved() {
-        let tracker = ConnectionStateTracker::new("session-2");
+        let tracker = ConnectionStateTracker::new("session-2", "test", "instance-2");
         assert!(tracker.failed(
             DisconnectReason::ConnectionFailed,
             ConnectionErrorKind::Connection,
@@ -228,7 +263,7 @@ mod tests {
 
     #[test]
     fn close_reason_is_preserved_when_cleanup_finishes() {
-        let tracker = ConnectionStateTracker::new("session-3");
+        let tracker = ConnectionStateTracker::new("session-3", "test", "instance-3");
         assert!(tracker.closing(DisconnectReason::ApplicationShutdown));
         assert!(tracker.disconnected(DisconnectReason::Unknown));
         assert_eq!(tracker.state(), ConnectionState::Disconnected);
