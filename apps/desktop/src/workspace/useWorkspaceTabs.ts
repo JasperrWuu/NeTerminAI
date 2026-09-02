@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
+import type { RdpConnection, SerialConnection, TelnetConnection } from "../connections/types";
 import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import {
@@ -173,13 +173,6 @@ export function useWorkspaceTabs() {
     title: connection.name.trim() || connection.portName,
   })), [addTab]);
 
-  const openSsh = useCallback((connection: SshConnection) => addTab(() => ({
-    id: crypto.randomUUID(),
-    kind: "ssh",
-    connection,
-    title: connection.name.trim() || `${connection.host}:${connection.port}`,
-  })), [addTab]);
-
   const openRdp = useCallback((connection: RdpConnection) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "rdp",
@@ -310,7 +303,6 @@ export function useWorkspaceTabs() {
     createTerminal,
     openTelnet,
     openSerial,
-    openSsh,
     openRdp,
     closeTab,
     moveTab,
@@ -330,7 +322,6 @@ export function useWorkspaceTabs() {
     moveTab,
     openRdp,
     openSerial,
-    openSsh,
     openTelnet,
     workspace.layout,
     workspace.tabs,

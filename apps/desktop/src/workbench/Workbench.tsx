@@ -27,10 +27,9 @@ import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../connections/SessionFolderDialog";
 import { ConnectionsSidebar } from "../connections/ConnectionsSidebar";
 import { SerialConnectionDialog } from "../serial/SerialConnectionDialog";
-import { SshConnectionDialog } from "../ssh/SshConnectionDialog";
 import { RdpConnectionDialog } from "../rdp/RdpConnectionDialog";
 import { RdpPane } from "../rdp/RdpPane";
-import type { ConnectionFolder, SavedConnectionSession, SavedRdpSession, SavedSerialSession, SavedSshSession, SavedTelnetSession } from "../connections/types";
+import type { ConnectionFolder, SavedConnectionSession, SavedRdpSession, SavedSerialSession, SavedTelnetSession } from "../connections/types";
 import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 import { collectVisibleTabIds } from "../workspace/layout";
 import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
@@ -82,13 +81,12 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     open: boolean;
     session?: SavedSerialSession;
   }>({ open: false });
-  const [sshDialog, setSshDialog] = useState<{ open: boolean; session?: SavedSshSession }>({ open: false });
   const [rdpDialog, setRdpDialog] = useState<{ open: boolean; session?: SavedRdpSession }>({ open: false });
   const [folderDialog, setFolderDialog] = useState<{
     open: boolean;
     folder?: ConnectionFolder;
   }>({ open: false });
-  const dialogOpen = telnetDialog.open || serialDialog.open || sshDialog.open || rdpDialog.open || folderDialog.open;
+  const dialogOpen = telnetDialog.open || serialDialog.open || rdpDialog.open || folderDialog.open;
   const visibleTabIds = useMemo(
     () => collectVisibleTabIds(workspaceTabs.layout),
     [workspaceTabs.layout],
@@ -111,7 +109,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
-  const closeSshDialog = useCallback(() => setSshDialog({ open: false }), []);
   const closeRdpDialog = useCallback(() => setRdpDialog({ open: false }), []);
   const openSettings = useCallback((section: SettingsSection) => {
     setSettingsSection(section);
@@ -168,13 +165,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const openSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") workspaceTabs.openTelnet(session);
     else if (session.kind === "serial") workspaceTabs.openSerial(session);
-    else if (session.kind === "ssh") workspaceTabs.openSsh(session);
     else workspaceTabs.openRdp(session);
   };
   const editSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") setTelnetDialog({ open: true, session });
     else if (session.kind === "serial") setSerialDialog({ open: true, session });
-    else if (session.kind === "ssh") setSshDialog({ open: true, session });
     else setRdpDialog({ open: true, session });
   };
 
@@ -271,25 +266,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           onInput={synchronizedInput.routeInput}
           registerInputTarget={synchronizedInput.registerTarget}
           sessionType="serial"
-          settings={settings.terminal}
-          synchronizedInput={synchronizedTabIds.has(tab.id)}
-          tabId={tab.id}
-          theme={settings.appearance.theme}
-        />
-      );
-    }
-    if (tab.kind === "ssh") {
-      return (
-        <TerminalPane
-          active={active && !settingsOpen}
-          connectionId={tab.id}
-          paneId={paneId}
-          connection={tab.connection}
-          key={tab.id}
-          onActivate={() => workspaceTabs.activatePane(paneId)}
-          onInput={synchronizedInput.routeInput}
-          registerInputTarget={synchronizedInput.registerTarget}
-          sessionType="ssh"
           settings={settings.terminal}
           synchronizedInput={synchronizedTabIds.has(tab.id)}
           tabId={tab.id}
@@ -401,7 +377,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                     onCreateLocal={workspaceTabs.createTerminal}
                     onCreateTelnet={() => setTelnetDialog({ open: true })}
                     onCreateSerial={() => setSerialDialog({ open: true })}
-                    onCreateSsh={() => setSshDialog({ open: true })}
                     onCreateRdp={() => setRdpDialog({ open: true })}
                     onEdit={editSavedConnection}
                     onRemoveFolder={connectionLibrary.removeFolder}
@@ -536,19 +511,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           }}
         />
       )}
-      {sshDialog.open && (
-        <SshConnectionDialog
-          folders={connectionLibrary.folders}
-          initialSession={sshDialog.session}
-          onCancel={closeSshDialog}
-          onCreateFolder={connectionLibrary.createFolder}
-          onSubmit={(connection, save, folderId) => {
-            if (save) connectionLibrary.saveSsh(connection, folderId, sshDialog.session?.id);
-            if (!sshDialog.session) workspaceTabs.openSsh(connection);
-            closeSshDialog();
-          }}
-        />
-      )}
       {rdpDialog.open && (
         <RdpConnectionDialog
           folders={connectionLibrary.folders}
@@ -672,6 +634,5 @@ function EmptyPanel({ description }: { description: string }) {
 function isCharacterTerminal(tab: WorkspaceTab) {
   return tab.kind === "localTerminal"
     || tab.kind === "telnet"
-    || tab.kind === "serial"
-    || tab.kind === "ssh";
+    || tab.kind === "serial";
 }

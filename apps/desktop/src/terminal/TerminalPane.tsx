@@ -8,7 +8,7 @@ import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalClipboardAction } from "./clipboard";
 import { TerminalHighlightStream } from "./highlighting";
 import { resolveTerminalTheme } from "./themes";
-import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, TelnetConnection } from "../connections/types";
 import type { TerminalInputTarget } from "./useSynchronizedInput";
 import { terminalFontStack } from "./fontStack";
 import { TerminalRuntimeController } from "./TerminalRuntimeController";
@@ -29,8 +29,7 @@ interface TerminalPaneCommonProps {
 type TerminalSessionProps =
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
   | { sessionType: "telnet"; connection: TelnetConnection }
-  | { sessionType: "serial"; connection: SerialConnection }
-  | { sessionType: "ssh"; connection: SshConnection };
+  | { sessionType: "serial"; connection: SerialConnection };
 
 type TerminalPaneProps = TerminalPaneCommonProps & TerminalSessionProps;
 
@@ -308,10 +307,6 @@ function terminalCreateArguments(props: TerminalSessionProps, sessionId: string,
   if (props.sessionType === "telnet") {
     const { host, port, username, password } = props.connection;
     return { sessionId, host, port, username, password, columns, rows };
-  }
-  if (props.sessionType === "ssh") {
-    const { host, port, username, authentication, identityFile } = props.connection;
-    return { sessionId, host, port, username, authentication, identityFile, columns, rows };
   }
   const { portName, baudRate, dataBits, stopBits, parity, flowControl } = props.connection;
   return { sessionId, portName, baudRate, dataBits, stopBits, parity, flowControl };

@@ -1,14 +1,12 @@
 :root {
   --protocol-telnet: #65c6aa;
   --protocol-serial: #e19b67;
-  --protocol-ssh: #6eb6f0;
   --protocol-rdp: #b494ea;
 }
 
 :root[data-theme="light"] {
   --protocol-telnet: #267c67;
   --protocol-serial: #a75b2d;
-  --protocol-ssh: #2779ad;
   --protocol-rdp: #7652ad;
 }
 
@@ -22,14 +20,6 @@
 
 .serial-profile-icon {
   color: var(--protocol-serial);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 10px;
-  font-weight: 780;
-  letter-spacing: -0.04em;
-}
-
-.ssh-profile-icon {
-  color: var(--protocol-ssh);
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 10px;
   font-weight: 780;
@@ -54,11 +44,6 @@
   border-color: color-mix(in srgb, var(--protocol-serial) 34%, transparent);
 }
 
-.ssh-profile-icon {
-  background: color-mix(in srgb, var(--protocol-ssh) 16%, transparent);
-  border-color: color-mix(in srgb, var(--protocol-ssh) 34%, transparent);
-}
-
 .rdp-profile-icon {
   background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent);
   border-color: color-mix(in srgb, var(--protocol-rdp) 34%, transparent);
@@ -66,7 +51,6 @@
 
 .telnet-tab-icon { color: var(--protocol-telnet); }
 .serial-tab-icon { color: var(--protocol-serial); }
-.ssh-tab-icon { color: var(--protocol-ssh); }
 .rdp-tab-icon { color: var(--protocol-rdp); }
 
 .remote-group-label {
@@ -359,7 +343,6 @@
 .connection-create-icon svg { height: 14px; width: 14px; }
 .telnet-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-telnet) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-telnet) 30%, transparent); }
 .serial-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-serial) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-serial) 30%, transparent); }
-.ssh-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-ssh) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-ssh) 30%, transparent); }
 .rdp-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-rdp) 30%, transparent); }
 .connection-create-card strong { align-self: end; color: var(--text-primary); font-size: 13px; font-weight: 640; }
 .connection-create-card small { color: var(--text-secondary); font-size: 11px; }
@@ -433,13 +416,6 @@
   background: color-mix(in srgb, #d08a57 14%, transparent);
   border-color: color-mix(in srgb, #d08a57 25%, transparent);
   color: #d08a57;
-  font-size: 10px;
-}
-
-.ssh-dialog-icon {
-  background: color-mix(in srgb, #5d9fd5 14%, transparent);
-  border-color: color-mix(in srgb, #5d9fd5 25%, transparent);
-  color: #5d9fd5;
   font-size: 10px;
 }
 

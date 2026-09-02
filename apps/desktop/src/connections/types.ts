@@ -26,17 +26,6 @@ export interface SerialConnection {
   flowControl: SerialFlowControl;
 }
 
-export type SshAuthentication = "password" | "key" | "config";
-
-export interface SshConnection {
-  name: string;
-  host: string;
-  port: number;
-  username: string;
-  authentication: SshAuthentication;
-  identityFile: string;
-}
-
 export interface RdpConnection {
   name: string;
   host: string;
@@ -59,15 +48,11 @@ export interface SavedSerialSession extends SerialConnection, SavedConnectionBas
   kind: "serial";
 }
 
-export interface SavedSshSession extends SshConnection, SavedConnectionBase {
-  kind: "ssh";
-}
-
 export interface SavedRdpSession extends RdpConnection, SavedConnectionBase {
   kind: "rdp";
 }
 
-export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession | SavedSshSession | SavedRdpSession;
+export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession | SavedRdpSession;
 
 export const emptyTelnetConnection: TelnetConnection = {
   name: "",
@@ -85,15 +70,6 @@ export const emptySerialConnection: SerialConnection = {
   stopBits: 1,
   parity: "none",
   flowControl: "none",
-};
-
-export const emptySshConnection: SshConnection = {
-  name: "",
-  host: "",
-  port: 22,
-  username: "",
-  authentication: "password",
-  identityFile: "",
 };
 
 export const emptyRdpConnection: RdpConnection = {

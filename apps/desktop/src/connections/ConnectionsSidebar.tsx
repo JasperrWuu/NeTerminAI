@@ -12,7 +12,6 @@ interface ConnectionsSidebarProps {
   onCreateLocal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
   onCreateSerial: () => void;
-  onCreateSsh: () => void;
   onCreateRdp: () => void;
   onEdit: (session: SavedConnectionSession) => void;
   onRemoveFolder: (folderId: string) => void;
@@ -28,7 +27,6 @@ export function ConnectionsSidebar({
   onCreateLocal,
   onCreateTelnet,
   onCreateSerial,
-  onCreateSsh,
   onCreateRdp,
   onEdit,
   onRemoveFolder,
@@ -99,7 +97,6 @@ export function ConnectionsSidebar({
       <div className="connection-group-label create-group-label">新建连接</div>
       <div className="connection-create-grid">
         <NewConnectionButton kind="telnet" label="Telnet" detail="TCP 终端" onClick={onCreateTelnet} />
-        <NewConnectionButton kind="ssh" label="SSH" detail="安全终端" onClick={onCreateSsh} />
         <NewConnectionButton kind="serial" label="串口" detail="本机 COM" onClick={onCreateSerial} />
         <NewConnectionButton kind="rdp" label="RDP" detail="远程桌面" onClick={onCreateRdp} />
       </div>
@@ -172,5 +169,5 @@ function sessionDescription(session: SavedConnectionSession) {
 function sessionMode(session: SavedConnectionSession) {
   if (session.kind === "serial") return "串口";
   if (session.kind === "rdp") return "RDP";
-  return session.kind === "ssh" ? "SSH" : "Telnet";
+  return "Telnet";
 }

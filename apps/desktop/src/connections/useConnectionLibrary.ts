@@ -4,11 +4,13 @@ import type {
   SavedConnectionSession,
   SavedRdpSession,
   SavedSerialSession,
-  SavedSshSession,
   SavedTelnetSession,
   RdpConnection,
+  SerialDataBits,
+  SerialFlowControl,
+  SerialParity,
   SerialConnection,
-  SshConnection,
+  SerialStopBits,
   TelnetConnection,
 } from "./types";
 
@@ -28,36 +30,92 @@ interface LegacyTelnetSession extends TelnetConnection {
   loginMode?: "usernamePassword" | "passwordOnly";
 }
 
-function normalizeSession(session: SavedConnectionSession): SavedConnectionSession | null {
-  if (session.kind === "serial") {
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
+}
+
+function stringValue(record: Record<string, unknown>, key: string, fallback = "") {
+  return typeof record[key] === "string" ? record[key] as string : fallback;
+}
+
+function numberValue(record: Record<string, unknown>, key: string, fallback: number) {
+  return typeof record[key] === "number" && Number.isFinite(record[key]) ? record[key] as number : fallback;
+}
+
+function booleanValue(record: Record<string, unknown>, key: string, fallback: boolean) {
+  return typeof record[key] === "boolean" ? record[key] as boolean : fallback;
+}
+
+function folderIdValue(record: Record<string, unknown>) {
+  return typeof record.folderId === "string" ? record.folderId : null;
+}
+
+function enumValue<T extends string | number>(value: unknown, allowed: readonly T[], fallback: T) {
+  return allowed.includes(value as T) ? value as T : fallback;
+}
+
+function normalizeSession(value: unknown): SavedConnectionSession | null {
+  const record = asRecord(value);
+  if (!record || typeof record.kind !== "string") return null;
+
+  // SSH is intentionally removed in SR-01. Returning null here drops the
+  // legacy record without carrying any of its credentials into the new model.
+  if (record.kind === "ssh") return null;
+
+  const id = stringValue(record, "id");
+  if (!id) return null;
+
+  if (record.kind === "serial") {
+    const portName = stringValue(record, "portName");
+    if (!portName) return null;
+    const name = stringValue(record, "name") || portName;
     return {
-      ...session,
-      folderId: session.folderId ?? null,
-      baudRate: session.baudRate || 9600,
-      dataBits: session.dataBits || 8,
-      stopBits: session.stopBits || 1,
-      parity: session.parity || "none",
-      flowControl: session.flowControl || "none",
+      id,
+      kind: "serial",
+      folderId: folderIdValue(record),
+      name,
+      portName,
+      baudRate: numberValue(record, "baudRate", 9600),
+      dataBits: enumValue<SerialDataBits>(numberValue(record, "dataBits", 8) as SerialDataBits, [5, 6, 7, 8], 8),
+      stopBits: enumValue<SerialStopBits>(numberValue(record, "stopBits", 1) as SerialStopBits, [1, 2], 1),
+      parity: enumValue<SerialParity>(stringValue(record, "parity", "none") as SerialParity, ["none", "odd", "even"], "none"),
+      flowControl: enumValue<SerialFlowControl>(stringValue(record, "flowControl", "none") as SerialFlowControl, ["none", "software", "hardware"], "none"),
     };
   }
-  if (session.kind === "telnet") {
-    return { ...session, folderId: session.folderId ?? null };
-  }
-  if (session.kind === "ssh") {
-    const identityFile = session.identityFile ?? "";
+
+  if (record.kind === "telnet") {
+    const host = stringValue(record, "host");
+    if (!host) return null;
+    const port = numberValue(record, "port", 23);
     return {
-      ...session,
-      folderId: session.folderId ?? null,
-      port: session.port || 22,
-      identityFile,
-      authentication: session.authentication ?? (identityFile ? "key" : "password"),
+      id,
+      kind: "telnet",
+      folderId: folderIdValue(record),
+      name: stringValue(record, "name") || `${host}:${port}`,
+      host,
+      port,
+      username: stringValue(record, "username"),
+      password: stringValue(record, "password"),
+      savesPassword: booleanValue(record, "savesPassword", false),
     };
   }
-  if (session.kind === "rdp") {
-    const connection = { ...session } as SavedRdpSession & { displayMode?: unknown };
-    delete connection.displayMode;
-    return { ...connection, folderId: session.folderId ?? null, port: session.port || 3389, adminSession: session.adminSession ?? false };
+
+  if (record.kind === "rdp") {
+    const host = stringValue(record, "host");
+    if (!host) return null;
+    const port = numberValue(record, "port", 3389);
+    return {
+      id,
+      kind: "rdp",
+      folderId: folderIdValue(record),
+      name: stringValue(record, "name") || `${host}:${port}`,
+      host,
+      port,
+      username: stringValue(record, "username"),
+      adminSession: booleanValue(record, "adminSession", false),
+    };
   }
+
   return null;
 }
 
@@ -79,7 +137,8 @@ function readLibrary(): ConnectionLibrary {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
     if (current) {
-      const library = JSON.parse(current) as ConnectionLibrary;
+      const library = asRecord(JSON.parse(current));
+      if (!library) return { folders: [], sessions: [] };
       return {
         folders: Array.isArray(library.folders) ? library.folders : [],
         sessions: Array.isArray(library.sessions)
@@ -161,20 +220,6 @@ export function useConnectionLibrary() {
     }));
   }, []);
 
-  const saveSsh = useCallback((connection: SshConnection, folderId: string | null, existingId?: string) => {
-    const session: SavedSshSession = {
-      ...connection,
-      id: existingId ?? crypto.randomUUID(),
-      kind: "ssh",
-      folderId,
-      name: connection.name.trim() || `${connection.host}:${connection.port}`,
-    };
-    setLibrary((current) => ({
-      ...current,
-      sessions: existingId ? current.sessions.map((item) => item.id === existingId ? session : item) : [...current.sessions, session],
-    }));
-  }, []);
-
   const saveRdp = useCallback((connection: RdpConnection, folderId: string | null, existingId?: string) => {
     const session: SavedRdpSession = {
       ...connection,
@@ -221,7 +266,6 @@ export function useConnectionLibrary() {
     sessions: library.sessions,
     saveTelnet,
     saveSerial,
-    saveSsh,
     saveRdp,
     removeSession,
     createFolder,
@@ -236,7 +280,6 @@ export function useConnectionLibrary() {
     renameFolder,
     saveRdp,
     saveSerial,
-    saveSsh,
     saveTelnet,
   ]);
 }

@@ -1,5 +1,5 @@
 import type { LocalTerminalProfileId } from "../terminal/profiles";
-import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
+import type { RdpConnection, SerialConnection, TelnetConnection } from "../connections/types";
 
 interface WorkspaceTabBase {
   id: string;
@@ -23,17 +23,12 @@ export interface SerialTab extends WorkspaceTabBase {
   connection: SerialConnection;
 }
 
-export interface SshTab extends WorkspaceTabBase {
-  kind: "ssh";
-  connection: SshConnection;
-}
-
 export interface RdpTab extends WorkspaceTabBase {
   kind: "rdp";
   connection: RdpConnection;
 }
 
-export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SshTab | RdpTab;
+export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | RdpTab;
 
 export type WorkspaceSplitDirection = "row" | "column";
 export type WorkspaceDropZone = "center" | "left" | "right" | "top" | "bottom";
