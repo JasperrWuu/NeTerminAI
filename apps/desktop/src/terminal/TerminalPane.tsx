@@ -11,7 +11,10 @@ import { resolveTerminalTheme } from "./themes";
 import type { SerialConnection, TelnetConnection } from "../connections/types";
 import type { TerminalInputTarget } from "./useSynchronizedInput";
 import { terminalFontStack } from "./fontStack";
-import { TerminalRuntimeController } from "./TerminalRuntimeController";
+import {
+  TerminalRuntimeController,
+  type TerminalConnectionStateEvent,
+} from "./TerminalRuntimeController";
 
 interface TerminalPaneCommonProps {
   active: boolean;
@@ -60,7 +63,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     (set) => set.id === settings.activeHighlightSetId && set.enabled,
   )?.rules ?? [];
   const highlighterRef = useRef(new TerminalHighlightStream(activeHighlightRules));
-  const [status, setStatus] = useState<"starting" | "ready" | "closed" | "error">("starting");
+  const [status, setStatus] = useState<"starting" | "ready" | "closing" | "closed" | "error">("starting");
   const [errorMessage, setErrorMessage] = useState("");
 
   activeRef.current = active;
@@ -207,15 +210,12 @@ export function TerminalPane(props: TerminalPaneProps) {
       getTerminalSize: () => ({ columns: terminal.cols, rows: terminal.rows }),
       createArguments: (sessionId, size) => terminalCreateArguments(props, sessionId, size.columns, size.rows),
       onOutput: (data) => enqueueOutput(decodeBase64(data)),
-      onExit: () => {
-        sessionReadyRef.current = false;
-        setStatus("closed");
+      onStateChange: (event) => {
+        applyConnectionState(event, props, setStatus, setErrorMessage, sessionReadyRef);
       },
       onReady: (sessionId) => {
-        sessionReadyRef.current = true;
         ptySessionIdRef.current = sessionId;
         container.closest<HTMLElement>(".terminal-pane")?.setAttribute("data-session-id", sessionId);
-        setStatus("ready");
         terminal.focus();
       },
       onError: (error) => {
@@ -320,14 +320,71 @@ function terminalAriaLabel(props: TerminalSessionProps) {
 
 function terminalStatusText(
   props: TerminalSessionProps,
-  status: "starting" | "ready" | "closed" | "error",
+  status: "starting" | "ready" | "closing" | "closed" | "error",
   errorMessage: string,
 ) {
   const protocol = props.sessionType === "local" ? "终端" : props.sessionType === "serial" ? "串口" : props.sessionType.toUpperCase();
   if (status === "error") return errorMessage || `${protocol}连接失败`;
   if (status === "closed") return props.sessionType === "local" ? "终端已关闭" : `${protocol}连接已关闭`;
+  if (status === "closing") return props.sessionType === "local" ? "正在关闭终端…" : `正在关闭${protocol}连接…`;
   if (status === "ready") return "";
   if (props.sessionType === "local") return "正在启动终端…";
   if (props.sessionType === "serial") return `正在打开 ${props.connection.portName}…`;
   return `正在连接 ${props.connection.host}:${props.connection.port}…`;
+}
+
+function applyConnectionState(
+  event: TerminalConnectionStateEvent,
+  props: TerminalSessionProps,
+  setStatus: (status: "starting" | "ready" | "closing" | "closed" | "error") => void,
+  setErrorMessage: (message: string) => void,
+  sessionReadyRef: { current: boolean },
+) {
+  switch (event.state) {
+    case "connecting":
+      sessionReadyRef.current = false;
+      setStatus("starting");
+      return;
+    case "connected":
+      sessionReadyRef.current = true;
+      setErrorMessage("");
+      setStatus("ready");
+      return;
+    case "closing":
+      sessionReadyRef.current = false;
+      setStatus("closing");
+      return;
+    case "disconnected":
+      sessionReadyRef.current = false;
+      setStatus("closed");
+      return;
+    case "failed":
+      sessionReadyRef.current = false;
+      setErrorMessage(event.message || connectionFailureText(props, event.reason));
+      setStatus("error");
+      return;
+  }
+}
+
+function connectionFailureText(
+  props: TerminalSessionProps,
+  reason: TerminalConnectionStateEvent["reason"],
+) {
+  const protocol = props.sessionType === "local" ? "终端" : props.sessionType === "serial" ? "串口" : "Telnet";
+  switch (reason) {
+    case "connectionFailed":
+      return `${protocol}连接失败`;
+    case "readFailed":
+      return `${protocol}读取失败`;
+    case "writeFailed":
+      return `${protocol}写入失败`;
+    case "deviceDisconnected":
+      return `${protocol}设备已断开`;
+    case "timeout":
+      return `${protocol}连接超时`;
+    case "protocolError":
+      return `${protocol}协议错误`;
+    default:
+      return `${protocol}连接失败`;
+  }
 }

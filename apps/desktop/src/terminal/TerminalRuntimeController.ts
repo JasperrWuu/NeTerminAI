@@ -7,8 +7,34 @@ interface TerminalOutputEvent {
   data: string;
 }
 
-interface TerminalExitEvent {
+export type TerminalConnectionState =
+  | "connecting"
+  | "connected"
+  | "closing"
+  | "disconnected"
+  | "failed";
+
+export type TerminalDisconnectReason =
+  | "userRequested"
+  | "remoteClosed"
+  | "processExited"
+  | "connectionFailed"
+  | "readFailed"
+  | "writeFailed"
+  | "timeout"
+  | "protocolError"
+  | "deviceDisconnected"
+  | "applicationShutdown"
+  | "unknown";
+
+export type TerminalConnectionError = "connection" | "transport" | "protocol" | "configuration";
+
+export interface TerminalConnectionStateEvent {
   sessionId: string;
+  state: TerminalConnectionState;
+  reason?: TerminalDisconnectReason;
+  error?: TerminalConnectionError;
+  message?: string;
 }
 
 interface TerminalSize {
@@ -26,8 +52,8 @@ export interface TerminalRuntimeControllerOptions {
   getTerminalSize: () => TerminalSize;
   createArguments: (sessionId: string, size: TerminalSize) => Record<string, unknown>;
   onOutput: (data: string) => void;
-  onExit: () => void;
   onReady: (sessionId: string) => void;
+  onStateChange: (event: TerminalConnectionStateEvent) => void;
   onError: (error: unknown) => void;
 }
 
@@ -47,6 +73,7 @@ export class TerminalRuntimeController {
   private started = false;
   private sessionEnded = false;
   private createSucceeded = false;
+  private connectionState: TerminalConnectionState = "connecting";
   private createPromise: Promise<void> | undefined;
   private closePromise: Promise<void> | undefined;
   private resizeObserver: ResizeObserver | undefined;
@@ -59,7 +86,10 @@ export class TerminalRuntimeController {
   }
 
   get isReady() {
-    return this.createSucceeded && !this.disposed && !this.sessionEnded;
+    return this.createSucceeded
+      && this.connectionState === "connected"
+      && !this.disposed
+      && !this.sessionEnded;
   }
 
   start() {
@@ -117,7 +147,7 @@ export class TerminalRuntimeController {
       this.options.fit();
       await this.registerOutputListener();
       if (this.disposed) return;
-      await this.registerExitListener();
+      await this.registerStateListener();
       if (this.disposed) return;
 
       const createPromise = invoke<void>(
@@ -155,12 +185,15 @@ export class TerminalRuntimeController {
     );
   }
 
-  private registerExitListener() {
+  private registerStateListener() {
     return this.trackRegistration(
-      listen<TerminalExitEvent>(`${this.options.eventPrefix}:exit`, ({ payload }) => {
+      listen<TerminalConnectionStateEvent>("connection:state", ({ payload }) => {
         if (this.disposed || payload.sessionId !== this.sessionId) return;
-        this.sessionEnded = true;
-        this.options.onExit();
+        this.connectionState = payload.state;
+        if (payload.state === "failed" || payload.state === "disconnected") {
+          this.sessionEnded = true;
+        }
+        this.options.onStateChange(payload);
       }).then((unlisten) => {
         if (this.disposed) {
           unlisten();
