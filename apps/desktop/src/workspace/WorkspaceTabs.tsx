@@ -156,8 +156,6 @@ function WorkspaceTabIcon({ kind }: { kind: WorkspaceTab["kind"] }) {
         <svg viewBox="0 0 20 20"><path d="m4.5 6 3.5 4-3.5 4M10 14h5.5" /></svg>
       ) : kind === "serial" ? (
         <svg viewBox="0 0 20 20"><path d="M6 5.5h8v4a4 4 0 0 1-8 0v-4ZM8 3.5v2m4-2v2M10 13.5v3" /></svg>
-      ) : kind === "rdp" ? (
-        <svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="10" rx="2" /><path d="M7 17h6m-3-3v3" /></svg>
       ) : (
         <svg viewBox="0 0 20 20"><path d="M4 6h8m3 0h1M4 10h2m3 0h7M4 14h6m3 0h3" /><circle cx="13.5" cy="6" r="1.5" /><circle cx="7.5" cy="10" r="1.5" /><circle cx="11.5" cy="14" r="1.5" /></svg>
       )}

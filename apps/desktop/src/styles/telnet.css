@@ -1,13 +1,11 @@
 :root {
   --protocol-telnet: #65c6aa;
   --protocol-serial: #e19b67;
-  --protocol-rdp: #b494ea;
 }
 
 :root[data-theme="light"] {
   --protocol-telnet: #267c67;
   --protocol-serial: #a75b2d;
-  --protocol-rdp: #7652ad;
 }
 
 .telnet-profile-icon {
@@ -26,14 +24,6 @@
   letter-spacing: -0.04em;
 }
 
-.rdp-profile-icon {
-  color: var(--protocol-rdp);
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 10px;
-  font-weight: 780;
-  letter-spacing: -0.05em;
-}
-
 .telnet-profile-icon {
   background: color-mix(in srgb, var(--protocol-telnet) 16%, transparent);
   border-color: color-mix(in srgb, var(--protocol-telnet) 34%, transparent);
@@ -44,14 +34,8 @@
   border-color: color-mix(in srgb, var(--protocol-serial) 34%, transparent);
 }
 
-.rdp-profile-icon {
-  background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent);
-  border-color: color-mix(in srgb, var(--protocol-rdp) 34%, transparent);
-}
-
 .telnet-tab-icon { color: var(--protocol-telnet); }
 .serial-tab-icon { color: var(--protocol-serial); }
-.rdp-tab-icon { color: var(--protocol-rdp); }
 
 .remote-group-label {
   align-items: center;
@@ -343,7 +327,6 @@
 .connection-create-icon svg { height: 14px; width: 14px; }
 .telnet-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-telnet) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-telnet) 30%, transparent); }
 .serial-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-serial) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-serial) 30%, transparent); }
-.rdp-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-rdp) 30%, transparent); }
 .connection-create-card strong { align-self: end; color: var(--text-primary); font-size: 13px; font-weight: 640; }
 .connection-create-card small { color: var(--text-secondary); font-size: 11px; }
 
@@ -416,13 +399,6 @@
   background: color-mix(in srgb, #d08a57 14%, transparent);
   border-color: color-mix(in srgb, #d08a57 25%, transparent);
   color: #d08a57;
-  font-size: 10px;
-}
-
-.rdp-dialog-icon {
-  background: color-mix(in srgb, #9a7bd0 14%, transparent);
-  border-color: color-mix(in srgb, #9a7bd0 25%, transparent);
-  color: #9a7bd0;
   font-size: 10px;
 }
 
@@ -926,113 +902,6 @@
 .folder-dialog-body {
   padding: 3px 24px 22px;
 }
-
-.rdp-pane {
-  background: var(--bg-canvas);
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0;
-  width: 100%;
-}
-
-.rdp-pane[data-active="true"] { display: flex; }
-
-.rdp-session-toolbar {
-  align-items: center;
-  background: var(--bg-panel-solid);
-  border-bottom: 1px solid var(--separator);
-  display: flex;
-  flex: 0 0 38px;
-  gap: 8px;
-  padding: 0 10px;
-}
-
-.rdp-session-badge {
-  align-items: center;
-  background: color-mix(in srgb, var(--protocol-rdp) 16%, transparent);
-  border: 1px solid color-mix(in srgb, var(--protocol-rdp) 34%, transparent);
-  border-radius: 6px;
-  color: var(--protocol-rdp);
-  display: flex;
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 10px;
-  font-weight: 780;
-  height: 22px;
-  justify-content: center;
-  width: 30px;
-}
-
-.rdp-session-title { color: var(--text-primary); font-size: 13px; font-weight: 620; }
-.rdp-session-address { color: var(--text-secondary); font-size: 12px; }
-.rdp-session-spacer { flex: 1; }
-.rdp-session-state {
-  align-items: center;
-  color: var(--text-tertiary);
-  display: flex;
-  font-size: 11px;
-  gap: 6px;
-}
-.rdp-session-state i {
-  background: var(--accent);
-  border-radius: 50%;
-  height: 5px;
-  width: 5px;
-}
-.rdp-session-state[data-status="initializing"] i,
-.rdp-session-state[data-status="connecting"] i { background: var(--warning); }
-.rdp-session-state[data-status="error"] { color: #d75c4a; }
-.rdp-session-state[data-status="error"] i { background: #d75c4a; }
-
-.rdp-native-viewport {
-  align-items: center;
-  background: #090a0c;
-  display: flex;
-  flex: 1;
-  justify-content: center;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-}
-
-:root[data-theme="light"] .rdp-native-viewport { background: #e9e5dc; }
-
-.rdp-status-card {
-  align-items: flex-start;
-  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
-  border: 1px solid var(--border-subtle);
-  border-radius: 18px;
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.13);
-  display: flex;
-  gap: 18px;
-  max-width: 520px;
-  padding: 24px;
-  width: 100%;
-}
-
-.rdp-status-icon {
-  align-items: center;
-  background: color-mix(in srgb, #9a7bd0 14%, transparent);
-  border-radius: 12px;
-  color: #9a7bd0;
-  display: flex;
-  flex: 0 0 46px;
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 11px;
-  font-weight: 760;
-  height: 46px;
-  justify-content: center;
-}
-
-.rdp-status-copy { min-width: 0; }
-.rdp-status-copy .eyebrow { color: var(--accent-strong); font-size: 11px; font-weight: 650; }
-.rdp-status-copy h1 { font-size: 20px; letter-spacing: -0.02em; margin: 5px 0 2px; }
-.rdp-status-copy > p { color: var(--text-secondary); font-size: 13px; margin: 0; }
-.rdp-launch-state { color: var(--text-secondary); font-size: 12px; line-height: 1.55; margin: 14px 0; min-height: 37px; }
-.rdp-status-card[data-status="error"] .rdp-launch-state { color: #d75c4a; }
-.rdp-retry-button { margin-top: 2px; }
 
 @media (max-width: 620px) {
   .dialog-scrim {

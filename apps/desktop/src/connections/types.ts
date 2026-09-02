@@ -26,14 +26,6 @@ export interface SerialConnection {
   flowControl: SerialFlowControl;
 }
 
-export interface RdpConnection {
-  name: string;
-  host: string;
-  port: number;
-  username: string;
-  adminSession: boolean;
-}
-
 interface SavedConnectionBase {
   id: string;
   folderId: string | null;
@@ -48,11 +40,7 @@ export interface SavedSerialSession extends SerialConnection, SavedConnectionBas
   kind: "serial";
 }
 
-export interface SavedRdpSession extends RdpConnection, SavedConnectionBase {
-  kind: "rdp";
-}
-
-export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession | SavedRdpSession;
+export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession;
 
 export const emptyTelnetConnection: TelnetConnection = {
   name: "",
@@ -70,12 +58,4 @@ export const emptySerialConnection: SerialConnection = {
   stopBits: 1,
   parity: "none",
   flowControl: "none",
-};
-
-export const emptyRdpConnection: RdpConnection = {
-  name: "",
-  host: "",
-  port: 3389,
-  username: "",
-  adminSession: false,
 };

@@ -1,5 +1,4 @@
 pub mod fonts;
-pub mod rdp;
 pub mod serial;
 pub mod telnet;
 pub mod terminal;

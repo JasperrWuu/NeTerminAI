@@ -2,10 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ConnectionFolder,
   SavedConnectionSession,
-  SavedRdpSession,
   SavedSerialSession,
   SavedTelnetSession,
-  RdpConnection,
   SerialDataBits,
   SerialFlowControl,
   SerialParity,
@@ -58,9 +56,9 @@ function normalizeSession(value: unknown): SavedConnectionSession | null {
   const record = asRecord(value);
   if (!record || typeof record.kind !== "string") return null;
 
-  // SSH is intentionally removed in SR-01. Returning null here drops the
-  // legacy record without carrying any of its credentials into the new model.
-  if (record.kind === "ssh") return null;
+  // Removed protocol records are discarded individually so valid sessions in
+  // the same library remain available after a product-scope migration.
+  if (record.kind === "ssh" || record.kind === "rdp") return null;
 
   const id = stringValue(record, "id");
   if (!id) return null;
@@ -97,22 +95,6 @@ function normalizeSession(value: unknown): SavedConnectionSession | null {
       username: stringValue(record, "username"),
       password: stringValue(record, "password"),
       savesPassword: booleanValue(record, "savesPassword", false),
-    };
-  }
-
-  if (record.kind === "rdp") {
-    const host = stringValue(record, "host");
-    if (!host) return null;
-    const port = numberValue(record, "port", 3389);
-    return {
-      id,
-      kind: "rdp",
-      folderId: folderIdValue(record),
-      name: stringValue(record, "name") || `${host}:${port}`,
-      host,
-      port,
-      username: stringValue(record, "username"),
-      adminSession: booleanValue(record, "adminSession", false),
     };
   }
 
@@ -220,20 +202,6 @@ export function useConnectionLibrary() {
     }));
   }, []);
 
-  const saveRdp = useCallback((connection: RdpConnection, folderId: string | null, existingId?: string) => {
-    const session: SavedRdpSession = {
-      ...connection,
-      id: existingId ?? crypto.randomUUID(),
-      kind: "rdp",
-      folderId,
-      name: connection.name.trim() || `${connection.host}:${connection.port}`,
-    };
-    setLibrary((current) => ({
-      ...current,
-      sessions: existingId ? current.sessions.map((item) => item.id === existingId ? session : item) : [...current.sessions, session],
-    }));
-  }, []);
-
   const removeSession = useCallback((sessionId: string) => {
     setLibrary((current) => ({
       ...current,
@@ -266,7 +234,6 @@ export function useConnectionLibrary() {
     sessions: library.sessions,
     saveTelnet,
     saveSerial,
-    saveRdp,
     removeSession,
     createFolder,
     renameFolder,
@@ -278,7 +245,6 @@ export function useConnectionLibrary() {
     removeFolder,
     removeSession,
     renameFolder,
-    saveRdp,
     saveSerial,
     saveTelnet,
   ]);

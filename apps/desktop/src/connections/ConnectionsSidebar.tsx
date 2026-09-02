@@ -12,7 +12,6 @@ interface ConnectionsSidebarProps {
   onCreateLocal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
   onCreateSerial: () => void;
-  onCreateRdp: () => void;
   onEdit: (session: SavedConnectionSession) => void;
   onRemoveFolder: (folderId: string) => void;
   onRemoveSession: (sessionId: string) => void;
@@ -27,7 +26,6 @@ export function ConnectionsSidebar({
   onCreateLocal,
   onCreateTelnet,
   onCreateSerial,
-  onCreateRdp,
   onEdit,
   onRemoveFolder,
   onRemoveSession,
@@ -98,7 +96,6 @@ export function ConnectionsSidebar({
       <div className="connection-create-grid">
         <NewConnectionButton kind="telnet" label="Telnet" detail="TCP 终端" onClick={onCreateTelnet} />
         <NewConnectionButton kind="serial" label="串口" detail="本机 COM" onClick={onCreateSerial} />
-        <NewConnectionButton kind="rdp" label="RDP" detail="远程桌面" onClick={onCreateRdp} />
       </div>
       {sessions.length > 0 && <p className="connection-gesture-hint">单击编辑 · 双击连接</p>}
     </div>
@@ -157,8 +154,7 @@ function NewConnectionButton({ kind, label, detail, onClick }: { kind: SavedConn
 
 function sessionProtocol(session: SavedConnectionSession) {
   if (session.kind === "telnet") return "TEL";
-  if (session.kind === "serial") return "COM";
-  return session.kind.toUpperCase();
+  return "COM";
 }
 
 function sessionDescription(session: SavedConnectionSession) {
@@ -168,6 +164,5 @@ function sessionDescription(session: SavedConnectionSession) {
 
 function sessionMode(session: SavedConnectionSession) {
   if (session.kind === "serial") return "串口";
-  if (session.kind === "rdp") return "RDP";
   return "Telnet";
 }

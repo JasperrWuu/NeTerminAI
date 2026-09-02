@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { RdpConnection, SerialConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, TelnetConnection } from "../connections/types";
 import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import {
@@ -173,13 +173,6 @@ export function useWorkspaceTabs() {
     title: connection.name.trim() || connection.portName,
   })), [addTab]);
 
-  const openRdp = useCallback((connection: RdpConnection) => addTab(() => ({
-    id: crypto.randomUUID(),
-    kind: "rdp",
-    connection,
-    title: connection.name.trim() || `${connection.host}:${connection.port}`,
-  })), [addTab]);
-
   const activateTab = useCallback((paneId: string, tabId: string) => {
     setWorkspace((current) => ({
       ...current,
@@ -303,7 +296,6 @@ export function useWorkspaceTabs() {
     createTerminal,
     openTelnet,
     openSerial,
-    openRdp,
     closeTab,
     moveTab,
     resizeSplit,
@@ -320,7 +312,6 @@ export function useWorkspaceTabs() {
     closeTab,
     createTerminal,
     moveTab,
-    openRdp,
     openSerial,
     openTelnet,
     workspace.layout,

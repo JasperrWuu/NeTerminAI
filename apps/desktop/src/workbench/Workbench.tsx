@@ -27,9 +27,7 @@ import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../connections/SessionFolderDialog";
 import { ConnectionsSidebar } from "../connections/ConnectionsSidebar";
 import { SerialConnectionDialog } from "../serial/SerialConnectionDialog";
-import { RdpConnectionDialog } from "../rdp/RdpConnectionDialog";
-import { RdpPane } from "../rdp/RdpPane";
-import type { ConnectionFolder, SavedConnectionSession, SavedRdpSession, SavedSerialSession, SavedTelnetSession } from "../connections/types";
+import type { ConnectionFolder, SavedConnectionSession, SavedSerialSession, SavedTelnetSession } from "../connections/types";
 import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 import { collectVisibleTabIds } from "../workspace/layout";
 import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
@@ -81,12 +79,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     open: boolean;
     session?: SavedSerialSession;
   }>({ open: false });
-  const [rdpDialog, setRdpDialog] = useState<{ open: boolean; session?: SavedRdpSession }>({ open: false });
   const [folderDialog, setFolderDialog] = useState<{
     open: boolean;
     folder?: ConnectionFolder;
   }>({ open: false });
-  const dialogOpen = telnetDialog.open || serialDialog.open || rdpDialog.open || folderDialog.open;
+  const dialogOpen = telnetDialog.open || serialDialog.open || folderDialog.open;
   const visibleTabIds = useMemo(
     () => collectVisibleTabIds(workspaceTabs.layout),
     [workspaceTabs.layout],
@@ -109,7 +106,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
-  const closeRdpDialog = useCallback(() => setRdpDialog({ open: false }), []);
   const openSettings = useCallback((section: SettingsSection) => {
     setSettingsSection(section);
     setSettingsOpen(true);
@@ -164,13 +160,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   ]);
   const openSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") workspaceTabs.openTelnet(session);
-    else if (session.kind === "serial") workspaceTabs.openSerial(session);
-    else workspaceTabs.openRdp(session);
+    else workspaceTabs.openSerial(session);
   };
   const editSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") setTelnetDialog({ open: true, session });
-    else if (session.kind === "serial") setSerialDialog({ open: true, session });
-    else setRdpDialog({ open: true, session });
+    else setSerialDialog({ open: true, session });
   };
 
   const getLeftSidebarMaximum = () =>
@@ -273,9 +267,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         />
       );
     }
-    if (tab.kind === "rdp") {
-      return <RdpPane active={active && !settingsOpen && !dialogOpen && !tabDragging} connection={tab.connection} connectionId={tab.id} key={tab.id} paneId={paneId} tabId={tab.id} />;
-    }
     return null;
   };
 
@@ -377,7 +368,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                     onCreateLocal={workspaceTabs.createTerminal}
                     onCreateTelnet={() => setTelnetDialog({ open: true })}
                     onCreateSerial={() => setSerialDialog({ open: true })}
-                    onCreateRdp={() => setRdpDialog({ open: true })}
                     onEdit={editSavedConnection}
                     onRemoveFolder={connectionLibrary.removeFolder}
                     onRemoveSession={connectionLibrary.removeSession}
@@ -508,19 +498,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             if (save) connectionLibrary.saveSerial(connection, folderId, serialDialog.session?.id);
             if (!serialDialog.session) workspaceTabs.openSerial(connection);
             closeSerialDialog();
-          }}
-        />
-      )}
-      {rdpDialog.open && (
-        <RdpConnectionDialog
-          folders={connectionLibrary.folders}
-          initialSession={rdpDialog.session}
-          onCancel={closeRdpDialog}
-          onCreateFolder={connectionLibrary.createFolder}
-          onSubmit={(connection, save, folderId) => {
-            if (save) connectionLibrary.saveRdp(connection, folderId, rdpDialog.session?.id);
-            if (!rdpDialog.session) workspaceTabs.openRdp(connection);
-            closeRdpDialog();
           }}
         />
       )}
