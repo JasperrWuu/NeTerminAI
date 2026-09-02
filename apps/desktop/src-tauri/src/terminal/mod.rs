@@ -698,6 +698,19 @@ fn cleanup_one(
             _ => return true,
         }
     };
+    {
+        let mut sessions = lock_unpoisoned(&inner.sessions);
+        if matches!(
+            sessions.get(session_id),
+            Some(SessionState::Starting(current) | SessionState::Running(current))
+                if Arc::ptr_eq(current, &runtime)
+        ) {
+            sessions.insert(
+                session_id.to_owned(),
+                SessionState::Closing(Arc::clone(&runtime)),
+            );
+        }
+    }
     if !runtime.try_begin_cleanup() {
         return false;
     }
@@ -727,6 +740,7 @@ fn cleanup_one(
         }
         true
     } else {
+        lifecycle_log(session_id, "local", "cleanup timeout");
         runtime.finish_cleanup(false);
         false
     }
@@ -830,21 +844,45 @@ fn shutdown_terminal_resources(mut resources: TerminalResources) {
 fn shell_command(profile: TerminalProfile) -> CommandBuilder {
     #[cfg(target_os = "windows")]
     {
-        let mut command = match profile {
-            TerminalProfile::PowerShell => CommandBuilder::new("powershell.exe"),
+        match profile {
+            TerminalProfile::PowerShell => {
+                let mut command = CommandBuilder::new("powershell.exe");
+                command.arg("-NoLogo");
+                command
+            }
             TerminalProfile::CommandPrompt => CommandBuilder::new("cmd.exe"),
             TerminalProfile::GitBash => {
-                CommandBuilder::new("C:\\Program Files\\Git\\bin\\bash.exe")
+                let mut command = CommandBuilder::new(git_bash_executable());
+                command.arg("--login");
+                command.arg("-i");
+                command
             }
-        };
-        command.arg("-NoLogo");
-        command
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = profile;
-        CommandBuilder::new("sh")
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned());
+        CommandBuilder::new(shell)
     }
+}
+
+#[cfg(target_os = "windows")]
+fn git_bash_executable() -> std::path::PathBuf {
+    let candidates = [
+        std::env::var_os("ProgramFiles")
+            .map(|root| std::path::PathBuf::from(root).join("Git/bin/bash.exe")),
+        std::env::var_os("ProgramFiles(x86)")
+            .map(|root| std::path::PathBuf::from(root).join("Git/bin/bash.exe")),
+        std::env::var_os("LOCALAPPDATA")
+            .map(|root| std::path::PathBuf::from(root).join("Programs/Git/bin/bash.exe")),
+    ];
+
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| std::path::PathBuf::from("bash.exe"))
 }
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -861,6 +899,7 @@ fn lifecycle_log(session_id: &str, connection_type: &str, stage: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{thread, time::Duration};
 
     #[test]
     fn begin_rejects_duplicate_session_ids_without_replacing_runtime() {
@@ -868,6 +907,19 @@ mod tests {
         let first = manager.begin("same").expect("first session");
         assert!(manager.begin("same").is_err());
         assert!(!first.cancellation.is_cancelled());
+    }
+
+    #[test]
+    fn shutdown_closes_admission_and_reclaims_ready_starting_sessions() {
+        let manager = TerminalManager::default();
+        let control = manager.begin("shutdown").expect("session");
+        let runtime = manager
+            .runtime_for_control("shutdown", &control)
+            .expect("runtime");
+        runtime.finish_initialization();
+        manager.shutdown(Instant::now() + Duration::from_secs(1));
+        assert!(lock_unpoisoned(&manager.inner.sessions).is_empty());
+        assert!(manager.begin("after-shutdown").is_err());
     }
 
     #[test]
@@ -888,5 +940,42 @@ mod tests {
         let token = CancellationToken::new();
         token.cancel();
         assert!(!gate.wait(&token));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn local_profiles_keep_their_existing_shell_commands() {
+        let powershell = shell_command(TerminalProfile::PowerShell);
+        let command_prompt = shell_command(TerminalProfile::CommandPrompt);
+        let git_bash = shell_command(TerminalProfile::GitBash);
+
+        assert_eq!(powershell.get_argv()[0].to_string_lossy(), "powershell.exe");
+        assert_eq!(command_prompt.get_argv()[0].to_string_lossy(), "cmd.exe");
+        assert!(
+            git_bash.get_argv()[0]
+                .to_string_lossy()
+                .ends_with("bash.exe")
+        );
+        assert_eq!(git_bash.get_argv()[1].to_string_lossy(), "--login");
+        assert_eq!(git_bash.get_argv()[2].to_string_lossy(), "-i");
+    }
+
+    #[test]
+    fn cleanup_reclaims_a_closed_runtime_after_initialization_finishes() {
+        let manager = TerminalManager::default();
+        let control = manager.begin("cleanup").expect("session");
+        let runtime = manager
+            .runtime_for_control("cleanup", &control)
+            .expect("runtime");
+        runtime.finish_initialization();
+        manager.close("cleanup").expect("close");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < deadline {
+            if lock_unpoisoned(&manager.inner.sessions).is_empty() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("closed runtime was not reclaimed");
     }
 }

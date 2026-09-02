@@ -635,6 +635,19 @@ fn cleanup_one(
             _ => return true,
         }
     };
+    {
+        let mut sessions = lock_unpoisoned(&inner.sessions);
+        if matches!(
+            sessions.get(session_id),
+            Some(SessionState::Starting(current) | SessionState::Running(current))
+                if Arc::ptr_eq(current, &runtime)
+        ) {
+            sessions.insert(
+                session_id.to_owned(),
+                SessionState::Closing(Arc::clone(&runtime)),
+            );
+        }
+    }
     if !runtime.begin_cleanup() {
         return false;
     }
@@ -664,6 +677,7 @@ fn cleanup_one(
         }
         true
     } else {
+        lifecycle_log(session_id, "serial", "cleanup timeout");
         runtime.finish_cleanup(false);
         false
     }
@@ -822,6 +836,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn duplicate_session_ids_are_rejected() {
+        let manager = SerialManager::default();
+        let control = manager.begin("same").expect("session");
+        assert!(manager.begin("same").is_err());
+        assert!(!control.cancellation.is_cancelled());
+    }
+
+    #[test]
     fn validates_serial_word_size() {
         assert!(matches!(map_data_bits(8), Ok(DataBits::Eight)));
         assert!(map_data_bits(9).is_err());
@@ -837,5 +859,37 @@ mod tests {
         assert!(control.close_once.is_requested());
         assert!(control.cancellation.is_cancelled());
         assert_eq!(control.lifecycle.stage(), LifecycleStage::Closing);
+    }
+
+    #[test]
+    fn cleanup_reclaims_a_closed_runtime_after_initialization_finishes() {
+        let manager = SerialManager::default();
+        let control = manager.begin("cleanup").expect("session");
+        let runtime = manager
+            .runtime_for_control("cleanup", &control)
+            .expect("runtime");
+        runtime.finish_initialization();
+        manager.close("cleanup").expect("close");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < deadline {
+            if lock_unpoisoned(&manager.inner.sessions).is_empty() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        panic!("closed runtime was not reclaimed");
+    }
+
+    #[test]
+    fn shutdown_closes_admission_and_reclaims_ready_starting_sessions() {
+        let manager = SerialManager::default();
+        let control = manager.begin("shutdown").expect("session");
+        let runtime = manager
+            .runtime_for_control("shutdown", &control)
+            .expect("runtime");
+        runtime.finish_initialization();
+        manager.shutdown(Instant::now() + Duration::from_secs(1));
+        assert!(lock_unpoisoned(&manager.inner.sessions).is_empty());
+        assert!(manager.begin("after-shutdown").is_err());
     }
 }
