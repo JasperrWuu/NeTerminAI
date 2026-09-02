@@ -172,7 +172,9 @@ export class TerminalRuntimeController {
   private registerOutputListener() {
     return this.trackRegistration(
       listen<TerminalOutputEvent>(`${this.options.eventPrefix}:output`, ({ payload }) => {
-        if (!this.disposed && payload.sessionId === this.sessionId) {
+        if (!this.disposed
+          && this.connectionState === "connected"
+          && payload.sessionId === this.sessionId) {
           this.options.onOutput(payload.data);
         }
       }).then((unlisten) => {
@@ -189,6 +191,7 @@ export class TerminalRuntimeController {
     return this.trackRegistration(
       listen<TerminalConnectionStateEvent>("connection:state", ({ payload }) => {
         if (this.disposed || payload.sessionId !== this.sessionId) return;
+        if (this.sessionEnded) return;
         this.connectionState = payload.state;
         if (payload.state === "failed" || payload.state === "disconnected") {
           this.sessionEnded = true;

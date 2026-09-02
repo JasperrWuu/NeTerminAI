@@ -191,6 +191,7 @@ impl SessionControl {
             LifecycleStage::Starting | LifecycleStage::Running
         ) {
             let _ = self.lifecycle.transition(LifecycleStage::Failed);
+            self.cancellation.cancel();
             self.connection_state.failed(reason, error, message);
         }
     }
@@ -208,6 +209,9 @@ impl SessionControl {
 
     fn mark_disconnected(&self, reason: DisconnectReason) {
         let _transition = lock_unpoisoned(&self.transition_lock);
+        self.close_once.request();
+        self.cancellation.cancel();
+        let _ = self.lifecycle.begin_close();
         self.connection_state.disconnected(reason);
     }
 
@@ -869,7 +873,6 @@ fn run_reader(
         match terminal_reason.unwrap_or(DisconnectReason::Unknown) {
             DisconnectReason::DeviceDisconnected => {
                 control.mark_disconnected(DisconnectReason::DeviceDisconnected);
-                control.request_close_with(DisconnectReason::DeviceDisconnected);
             }
             reason => {
                 control.mark_failed_with(reason, ConnectionErrorKind::Transport, terminal_error);
