@@ -6,14 +6,15 @@
 
 ## 当前增量
 
-应用外壳、本地 PowerShell/CMD/Git Bash、Telnet、串口、SSH 与应用内 RDP 已经建立。会话支持分区化保存，工作区标签支持递归的左右/上下分屏，终端外观、可切换突显集与工作台快捷键可以由用户自定义；可见字符终端支持同步输入。
+应用外壳、本地 PowerShell/CMD/Git Bash、Telnet 与串口已经建立。会话支持分区化保存，工作区标签支持递归的左右/上下分屏，终端外观、可切换突显集与工作台快捷键可以由用户自定义；可见字符终端支持同步输入。
+
+第一阶段产品主线为：Local Terminal、Telnet、Serial；Tile Layout / Pane 与 AI Assistant 作为后续增量规划。
 
 ## 后续顺序
 
-1. 继续验证真实网络设备与 RDP 环境兼容性
-2. 完善可保存的工作区布局
-3. AI 上下文与命令建议
-4. FTP、Syslog 与文本工具
+1. 完善可保存的工作区布局与 Tile Layout / Pane 体验
+2. AI 上下文与命令建议
+3. FTP、Syslog 与文本工具
 
 ## 非目标
 
