@@ -2,6 +2,8 @@ use tauri::Manager;
 
 mod commands;
 #[allow(dead_code)]
+pub(crate) mod connection_state;
+#[allow(dead_code)]
 pub(crate) mod lifecycle;
 mod serial;
 mod shutdown;
