@@ -465,6 +465,10 @@ impl TelnetManager {
         }
     }
 
+    pub(crate) fn stop_cleanup(&self) {
+        self.cleanup.stop_and_join();
+    }
+
     fn runtime(&self, session_id: &str) -> Result<Arc<TelnetRuntime>, String> {
         let sessions = lock_unpoisoned(&self.inner.sessions);
         match sessions.get(session_id) {
@@ -582,6 +586,12 @@ impl CleanupCoordinator {
 
 impl Drop for CleanupCoordinator {
     fn drop(&mut self) {
+        self.stop_and_join();
+    }
+}
+
+impl CleanupCoordinator {
+    fn stop_and_join(&self) {
         self.stop.store(true, Ordering::Release);
         let _ = self.sender.send(CleanupRequest::Stop);
         if let Some(join) = lock_unpoisoned(&self.join).take()

@@ -507,6 +507,10 @@ impl TerminalManager {
         }
     }
 
+    pub(crate) fn stop_cleanup(&self) {
+        self.cleanup.stop_and_join();
+    }
+
     fn runtime_for_control(
         &self,
         session_id: &str,
@@ -628,6 +632,12 @@ impl CleanupCoordinator {
 
 impl Drop for CleanupCoordinator {
     fn drop(&mut self) {
+        self.stop_and_join();
+    }
+}
+
+impl CleanupCoordinator {
+    fn stop_and_join(&self) {
         self.stop.store(true, Ordering::Release);
         let _ = self.sender.send(CleanupRequest::Stop);
         if let Some(join) = lock_unpoisoned(&self.join).take()

@@ -1,8 +1,10 @@
+use tauri::Manager;
+
 mod commands;
-// P1-01 introduces lifecycle primitives before they are wired into runtime managers in P1-02+.
 #[allow(dead_code)]
 pub(crate) mod lifecycle;
 mod serial;
+mod shutdown;
 mod telnet;
 mod terminal;
 
@@ -12,6 +14,7 @@ pub fn run() {
         .manage(terminal::TerminalManager::default())
         .manage(telnet::TelnetManager::default())
         .manage(serial::SerialManager::default())
+        .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![
             commands::terminal::create_terminal,
             commands::terminal::write_terminal,
@@ -27,6 +30,17 @@ pub fn run() {
             commands::serial::list_serial_ports,
             commands::fonts::list_system_fonts,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run NeTerminAI");
+        .build(tauri::generate_context!())
+        .expect("failed to build NeTerminAI")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let coordinator = app.state::<shutdown::ShutdownCoordinator>();
+                if coordinator.begin() {
+                    api.prevent_exit();
+                    coordinator.start(app.clone());
+                } else if coordinator.is_running() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
