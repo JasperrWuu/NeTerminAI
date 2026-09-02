@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -11,8 +10,8 @@ import { TerminalHighlightStream } from "./highlighting";
 import { resolveTerminalTheme } from "./themes";
 import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import type { TerminalInputTarget } from "./useSynchronizedInput";
-import { invokeInBackground } from "../platform/tauri";
 import { terminalFontStack } from "./fontStack";
+import { TerminalRuntimeController } from "./TerminalRuntimeController";
 
 interface TerminalPaneCommonProps {
   active: boolean;
@@ -35,9 +34,6 @@ type TerminalSessionProps =
 
 type TerminalPaneProps = TerminalPaneCommonProps & TerminalSessionProps;
 
-interface TerminalOutput { sessionId: string; data: string; }
-interface TerminalExit { sessionId: string; }
-
 function decodeBase64(value: string) {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
@@ -55,6 +51,7 @@ export function TerminalPane(props: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const runtimeControllerRef = useRef<TerminalRuntimeController | null>(null);
   const sessionReadyRef = useRef(false);
   const ptySessionIdRef = useRef<string | null>(null);
   const activeRef = useRef(active);
@@ -94,15 +91,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     terminal.options.scrollback = settings.scrollback;
 
     if (active) {
-      fitAddon.fit();
-      const sessionId = ptySessionIdRef.current;
-      if (supportsResize && sessionReadyRef.current && sessionId) {
-        invokeInBackground(`resize_${commandPrefix}`, {
-          sessionId,
-          columns: terminal.cols,
-          rows: terminal.rows,
-        });
-      }
+      runtimeControllerRef.current?.resize();
     }
   }, [active, commandPrefix, settings, supportsResize]);
 
@@ -110,18 +99,9 @@ export function TerminalPane(props: TerminalPaneProps) {
     if (!active) return;
     const frame = requestAnimationFrame(() => {
       const terminal = terminalRef.current;
-      const fitAddon = fitAddonRef.current;
-      if (!terminal || !fitAddon) return;
-      fitAddon.fit();
+      if (!terminal) return;
+      runtimeControllerRef.current?.resize();
       terminal.focus();
-      const sessionId = ptySessionIdRef.current;
-      if (supportsResize && sessionReadyRef.current && sessionId) {
-        invokeInBackground(`resize_${commandPrefix}`, {
-          sessionId,
-          columns: terminal.cols,
-          rows: terminal.rows,
-        });
-      }
     });
     return () => cancelAnimationFrame(frame);
   }, [active, commandPrefix, supportsResize]);
@@ -129,9 +109,6 @@ export function TerminalPane(props: TerminalPaneProps) {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const sessionId = crypto.randomUUID();
-    ptySessionIdRef.current = sessionId;
-    container.closest<HTMLElement>(".terminal-pane")?.setAttribute("data-session-id", sessionId);
     const terminal = new Terminal({
       allowTransparency: false,
       cursorBlink: settings.cursorBlink,
@@ -150,11 +127,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     fitAddonRef.current = fitAddon;
 
     let disposed = false;
-    let sessionEnded = false;
-    let unlistenOutput: (() => void) | undefined;
-    let unlistenExit: (() => void) | undefined;
     let outputFrame: number | undefined;
-    let resizeFrame: number | undefined;
     let pendingOutput: Uint8Array[] = [];
     let pendingOutputLength = 0;
     const outputDecoder = new TextDecoder();
@@ -179,28 +152,13 @@ export function TerminalPane(props: TerminalPaneProps) {
         }
       });
     };
-    const resize = () => {
-      resizeFrame = undefined;
-      if (disposed || !activeRef.current) return;
-      fitAddon.fit();
-      if (supportsResize && sessionReadyRef.current) {
-        invokeInBackground(`resize_${commandPrefix}`, {
-          sessionId,
-          columns: terminal.cols,
-          rows: terminal.rows,
-        });
-      }
-    };
-    const resizeObserver = new ResizeObserver(() => {
-      if (resizeFrame === undefined) resizeFrame = requestAnimationFrame(resize);
-    });
-    resizeObserver.observe(container);
     const writeInput = (data: string) => {
       if (!sessionReadyRef.current) return;
       writeQueue = writeQueue
         .then(async () => {
           if (!disposed && sessionReadyRef.current) {
-            await invoke(`write_${commandPrefix}`, { sessionId, data });
+            const sessionId = ptySessionIdRef.current;
+            if (sessionId) await invoke(`write_${commandPrefix}`, { sessionId, data });
           }
         })
         .catch((error) => {
@@ -240,55 +198,53 @@ export function TerminalPane(props: TerminalPaneProps) {
       return false;
     });
 
-    const start = async () => {
-      try {
-        fitAddon.fit();
-        unlistenOutput = await listen<TerminalOutput>(`${eventPrefix}:output`, ({ payload }) => {
-          if (payload.sessionId === sessionId) enqueueOutput(decodeBase64(payload.data));
-        });
-        unlistenExit = await listen<TerminalExit>(`${eventPrefix}:exit`, ({ payload }) => {
-          if (payload.sessionId === sessionId && !disposed) {
-            sessionEnded = true;
-            sessionReadyRef.current = false;
-            setStatus("closed");
-          }
-        });
-        const createArguments = terminalCreateArguments(props, sessionId, terminal.cols, terminal.rows);
-        await invoke(`create_${commandPrefix}`, createArguments);
-        if (disposed) {
-          await invoke(`close_${commandPrefix}`, { sessionId });
-          return;
-        }
-        if (sessionEnded) return;
+    const controller = new TerminalRuntimeController({
+      commandPrefix,
+      eventPrefix,
+      container,
+      supportsResize,
+      isActive: () => activeRef.current,
+      fit: () => fitAddon.fit(),
+      getTerminalSize: () => ({ columns: terminal.cols, rows: terminal.rows }),
+      createArguments: (sessionId, size) => terminalCreateArguments(props, sessionId, size.columns, size.rows),
+      onOutput: (data) => enqueueOutput(decodeBase64(data)),
+      onExit: () => {
+        sessionReadyRef.current = false;
+        setStatus("closed");
+      },
+      onReady: (sessionId) => {
         sessionReadyRef.current = true;
+        ptySessionIdRef.current = sessionId;
+        container.closest<HTMLElement>(".terminal-pane")?.setAttribute("data-session-id", sessionId);
         setStatus("ready");
         terminal.focus();
-      } catch (error) {
+      },
+      onError: (error) => {
         if (!disposed) {
           setStatus("error");
           setErrorMessage(String(error));
         }
-      }
-    };
-    void start();
+      },
+    });
+    runtimeControllerRef.current = controller;
+    ptySessionIdRef.current = controller.id;
+    container.closest<HTMLElement>(".terminal-pane")?.setAttribute("data-session-id", controller.id);
+    controller.start();
 
     return () => {
       disposed = true;
       sessionReadyRef.current = false;
-      resizeObserver.disconnect();
       if (outputFrame !== undefined) cancelAnimationFrame(outputFrame);
-      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       pendingOutput = [];
+      controller.dispose();
       inputSubscription.dispose();
       unregisterInputTarget();
-      unlistenOutput?.();
-      unlistenExit?.();
       terminal.dispose();
+      if (runtimeControllerRef.current === controller) runtimeControllerRef.current = null;
       terminalRef.current = null;
       fitAddonRef.current = null;
       container.closest<HTMLElement>(".terminal-pane")?.removeAttribute("data-session-id");
-      if (ptySessionIdRef.current === sessionId) ptySessionIdRef.current = null;
-      invokeInBackground(`close_${commandPrefix}`, { sessionId });
+      if (ptySessionIdRef.current === controller.id) ptySessionIdRef.current = null;
     };
     // Visual settings intentionally update without replacing the running PTY session.
   }, [
