@@ -22,7 +22,7 @@ NeTerminAI 是一个面向开发、运维与网络设备管理的桌面终端工
 
 API Key 仅在当前运行中使用，不会保存到设置或浏览器存储。Claude CLI、OpenCode CLI、PowerShell 脚本和自定义 CLI 需要用户在设置中明确配置，并建议在本机手工验证其参数行为。
 
-当前产品主线：Local Terminal → Telnet → Serial → Tile Layout / Pane → AI Assistant（规划中）。
+当前产品主线：Local Terminal → Telnet → Serial → Tile Layout / Pane → AI Assistant。
 
 ## 技术架构
 
