@@ -13,6 +13,7 @@ import {
   type TerminalConnectionStateEvent,
 } from "./TerminalRuntimeController";
 import { terminalApi } from "../ipc/terminal";
+import type { IpcError } from "../ipc/errors";
 import type {
   TerminalConnectionError,
   TerminalConnectionState,
@@ -234,7 +235,7 @@ export class TerminalSessionRuntime {
       onOutput: (data) => this.enqueueOutput(data),
       onReady: () => this.notify(),
       onStateChange: (event) => this.handleState(event),
-      onError: (error) => this.updateError(error.message),
+      onError: (error) => this.updateError(error),
     });
   }
 
@@ -252,13 +253,14 @@ export class TerminalSessionRuntime {
     this.notify();
   }
 
-  private updateError(message: string) {
+  private updateError(error: IpcError) {
     if (this.disposed) return;
     this.snapshot = {
       sessionId: this.controller.id,
       state: "failed",
       reason: "connectionFailed",
-      message,
+      error: errorCategoryFor(error.code),
+      message: error.message,
     };
     this.notify();
   }
@@ -354,6 +356,13 @@ export class TerminalSessionRuntime {
   private notify() {
     for (const listener of this.listeners) listener();
   }
+}
+
+function errorCategoryFor(code: IpcError["code"]): TerminalConnectionError {
+  if (code === "invalid_argument") return "configuration";
+  if (code === "invalid_response") return "protocol";
+  if (code === "io_error" || code === "backpressure") return "transport";
+  return "connection";
 }
 
 function connectionTypeFor(definition: TerminalSessionDefinition): TerminalConnectionType {
