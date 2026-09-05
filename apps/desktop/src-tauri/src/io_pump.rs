@@ -22,7 +22,6 @@ pub(crate) enum QueueSendError {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum QueueReceiveError {
     Cancelled,
-    Closed,
 }
 
 #[derive(Clone)]
@@ -192,6 +191,25 @@ mod tests {
         assert_eq!(
             receiver.next_batch(&cancellation, OUTPUT_BATCH_BYTES),
             Err(QueueReceiveError::Cancelled)
+        );
+    }
+
+    #[test]
+    fn receiver_reports_end_of_stream_after_all_senders_drop() {
+        let (sender, mut receiver) = output_queue();
+        let cancellation = CancellationToken::new();
+        drop(sender);
+        assert_eq!(
+            receiver
+                .next_batch(&cancellation, OUTPUT_BATCH_BYTES)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            receiver
+                .next_batch(&cancellation, OUTPUT_BATCH_BYTES)
+                .unwrap(),
+            None
         );
     }
 }

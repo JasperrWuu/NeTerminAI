@@ -2,7 +2,6 @@ use tauri::Manager;
 
 mod commands;
 pub(crate) mod connection_state;
-#[allow(dead_code)]
 pub(crate) mod io_pump;
 #[allow(dead_code)]
 pub(crate) mod lifecycle;

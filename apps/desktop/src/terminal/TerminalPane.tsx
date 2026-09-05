@@ -15,6 +15,7 @@ import {
   TerminalRuntimeController,
   type TerminalConnectionStateEvent,
 } from "./TerminalRuntimeController";
+import { TerminalInputPump } from "./TerminalInputPump";
 
 interface TerminalPaneCommonProps {
   active: boolean;
@@ -133,7 +134,6 @@ export function TerminalPane(props: TerminalPaneProps) {
     let pendingOutput: Uint8Array[] = [];
     let pendingOutputLength = 0;
     const outputDecoder = new TextDecoder();
-    let writeQueue = Promise.resolve();
     const enqueueOutput = (data: Uint8Array) => {
       pendingOutput.push(data);
       pendingOutputLength += data.length;
@@ -154,21 +154,17 @@ export function TerminalPane(props: TerminalPaneProps) {
         }
       });
     };
-    const writeInput = (data: string) => {
-      if (!sessionReadyRef.current) return;
-      writeQueue = writeQueue
-        .then(async () => {
-          if (!disposed && sessionReadyRef.current) {
-            const sessionId = ptySessionIdRef.current;
-            if (sessionId) await invoke(`write_${commandPrefix}`, { sessionId, data });
-          }
-        })
-        .catch((error) => {
-          if (!disposed) {
-            setErrorMessage(String(error));
-          }
-        });
-    };
+    const inputPump = new TerminalInputPump({
+      write: async (data) => {
+        if (disposed || !sessionReadyRef.current) return;
+        const sessionId = ptySessionIdRef.current;
+        if (sessionId) await invoke(`write_${commandPrefix}`, { sessionId, data });
+      },
+      onError: (error) => {
+        if (!disposed) setErrorMessage(String(error));
+      },
+    });
+    const writeInput = (data: string) => inputPump.enqueue(data);
     const unregisterInputTarget = registerInputTargetRef.current(props.tabId, {
       focus: () => terminal.focus(),
       write: writeInput,
@@ -232,6 +228,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     return () => {
       disposed = true;
       sessionReadyRef.current = false;
+      inputPump.dispose();
       if (outputFrame !== undefined) cancelAnimationFrame(outputFrame);
       pendingOutput = [];
       controller.dispose();
