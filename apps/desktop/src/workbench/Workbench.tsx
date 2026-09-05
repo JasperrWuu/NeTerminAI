@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WorkbenchPreferencesController } from "./useWorkbenchPreferences";
@@ -32,6 +32,11 @@ import type { ConnectionFolder, SavedConnectionSession, SavedSerialSession, Save
 import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 import { collectVisibleTabIds } from "../workspace/layout";
 import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
+import {
+  TerminalContextProvider,
+  TerminalContextScope,
+  type TerminalContextWorkspace,
+} from "../ai/context";
 
 interface WorkbenchProps {
   preferences: WorkbenchPreferencesController;
@@ -72,6 +77,22 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [tabDragging, setTabDragging] = useState(false);
   const workspaceTabs = useWorkspaceTabs();
   const runtimeRegistry = useTerminalSessionRegistry(workspaceTabs.tabs.map((tab) => tab.id));
+  const workspaceContextRef = useRef<TerminalContextWorkspace>({
+    tabs: workspaceTabs.tabs,
+    layout: workspaceTabs.layout,
+    activePaneId: workspaceTabs.activePaneId,
+    activeTabId: workspaceTabs.activeTabId,
+  });
+  workspaceContextRef.current = {
+    tabs: workspaceTabs.tabs,
+    layout: workspaceTabs.layout,
+    activePaneId: workspaceTabs.activePaneId,
+    activeTabId: workspaceTabs.activeTabId,
+  };
+  const terminalContextProvider = useMemo(
+    () => new TerminalContextProvider(runtimeRegistry, () => workspaceContextRef.current),
+    [runtimeRegistry],
+  );
   const connectionLibrary = useConnectionLibrary();
   const [telnetDialog, setTelnetDialog] = useState<{
     open: boolean;
@@ -274,7 +295,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   };
 
   return (
-    <div className="workbench" style={layoutStyle}>
+    <TerminalContextScope provider={terminalContextProvider}>
+      <div className="workbench" style={layoutStyle}>
       <header
         className="titlebar"
         onDoubleClick={(event) => {
@@ -513,7 +535,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           }}
         />
       )}
-    </div>
+      </div>
+    </TerminalContextScope>
   );
 }
 

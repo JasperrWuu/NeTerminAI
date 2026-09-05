@@ -3,9 +3,9 @@ import {
   DEFAULT_TERMINAL_SNAPSHOT_LIMITS,
   type TerminalSnapshot,
   type TerminalSnapshotLimits,
-} from "../../terminal/TerminalSnapshot";
+} from "../../terminal/TerminalSnapshot.ts";
 import type { TerminalSessionRuntimeSnapshot } from "../../terminal/TerminalSessionRuntime";
-import { collectVisibleTabIds, findPaneContainingTab } from "../../workspace/layout";
+import { collectVisibleTabIds, findPaneContainingTab } from "../../workspace/layout.ts";
 import type { WorkspaceLayoutNode, WorkspaceTab } from "../../workspace/types";
 import type { TerminalContextSnapshot, TerminalConnectionMetadata } from "./types";
 
@@ -40,10 +40,16 @@ const VISIBLE_CONTEXT_LIMITS: Readonly<TerminalSnapshotLimits> = {
  * tab/pane identity at capture time.
  */
 export class TerminalContextProvider {
+  private readonly registry: RuntimeContextSource;
+  private readonly getWorkspace: () => TerminalContextWorkspace;
+
   constructor(
-    private readonly registry: RuntimeContextSource,
-    private readonly getWorkspace: () => TerminalContextWorkspace,
-  ) {}
+    registry: RuntimeContextSource,
+    getWorkspace: () => TerminalContextWorkspace,
+  ) {
+    this.registry = registry;
+    this.getWorkspace = getWorkspace;
+  }
 
   getActiveContext(): TerminalContextSnapshot | undefined {
     const workspace = this.getWorkspace();
@@ -107,7 +113,8 @@ export class TerminalContextProvider {
       const context = this.getContextForTab(tabId, limits);
       if (!context) continue;
       contexts.push(context);
-      remainingChars -= context.terminal.recentText.length;
+      remainingChars -= context.terminal.recentText.length
+        + (context.terminal.selection?.length ?? 0);
     }
     return contexts;
   }
