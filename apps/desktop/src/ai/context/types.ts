@@ -14,6 +14,7 @@ export interface TerminalContextTarget {
 export type TerminalConnectionMetadata =
   | { kind: "local"; shell: string }
   | { kind: "telnet"; host: string; port: number }
+  | { kind: "ssh"; host: string; port: number }
   | { kind: "serial"; portName: string; baudRate: number };
 
 /**

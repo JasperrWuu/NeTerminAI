@@ -26,6 +26,19 @@ export interface SerialConnection {
   flowControl: SerialFlowControl;
 }
 
+export type SshAuthentication = "password" | "key" | "config";
+/** One-time host-key handling for a new SSH runtime. It is not persisted. */
+export type SshHostKeyAction = "strict" | "replace";
+
+export interface SshConnection {
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authentication: SshAuthentication;
+  identityFile: string;
+}
+
 interface SavedConnectionBase {
   id: string;
   folderId: string | null;
@@ -40,7 +53,11 @@ export interface SavedSerialSession extends SerialConnection, SavedConnectionBas
   kind: "serial";
 }
 
-export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession;
+export interface SavedSshSession extends SshConnection, SavedConnectionBase {
+  kind: "ssh";
+}
+
+export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession | SavedSshSession;
 
 export const emptyTelnetConnection: TelnetConnection = {
   name: "",
@@ -58,4 +75,13 @@ export const emptySerialConnection: SerialConnection = {
   stopBits: 1,
   parity: "none",
   flowControl: "none",
+};
+
+export const emptySshConnection: SshConnection = {
+  name: "",
+  host: "",
+  port: 22,
+  username: "",
+  authentication: "password",
+  identityFile: "",
 };

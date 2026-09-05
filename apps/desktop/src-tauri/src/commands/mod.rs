@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod fonts;
 pub mod serial;
+pub mod ssh;
 pub mod system;
 pub mod telnet;
 pub mod terminal;

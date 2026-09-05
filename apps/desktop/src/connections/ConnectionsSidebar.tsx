@@ -12,6 +12,7 @@ interface ConnectionsSidebarProps {
   onCreateLocal: (profileId: LocalTerminalProfileId) => void;
   onCreateTelnet: () => void;
   onCreateSerial: () => void;
+  onCreateSsh: () => void;
   onEdit: (session: SavedConnectionSession) => void;
   onRemoveFolder: (folderId: string) => void;
   onRemoveSession: (sessionId: string) => void;
@@ -26,6 +27,7 @@ export function ConnectionsSidebar({
   onCreateLocal,
   onCreateTelnet,
   onCreateSerial,
+  onCreateSsh,
   onEdit,
   onRemoveFolder,
   onRemoveSession,
@@ -94,6 +96,7 @@ export function ConnectionsSidebar({
 
       <div className="connection-group-label create-group-label">新建连接</div>
       <div className="connection-create-grid">
+        <NewConnectionButton kind="ssh" label="SSH" detail="OpenSSH 终端" onClick={onCreateSsh} />
         <NewConnectionButton kind="telnet" label="Telnet" detail="TCP 终端" onClick={onCreateTelnet} />
         <NewConnectionButton kind="serial" label="串口" detail="本机 COM" onClick={onCreateSerial} />
       </div>
@@ -154,6 +157,7 @@ function NewConnectionButton({ kind, label, detail, onClick }: { kind: SavedConn
 
 function sessionProtocol(session: SavedConnectionSession) {
   if (session.kind === "telnet") return "TEL";
+  if (session.kind === "ssh") return "SSH";
   return "COM";
 }
 
@@ -164,5 +168,6 @@ function sessionDescription(session: SavedConnectionSession) {
 
 function sessionMode(session: SavedConnectionSession) {
   if (session.kind === "serial") return "串口";
+  if (session.kind === "ssh") return "SSH";
   return "Telnet";
 }

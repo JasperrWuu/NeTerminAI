@@ -34,6 +34,10 @@ pub fn run() {
             commands::serial::write_serial,
             commands::serial::close_serial,
             commands::serial::list_serial_ports,
+            commands::ssh::create_ssh,
+            commands::ssh::write_ssh,
+            commands::ssh::resize_ssh,
+            commands::ssh::close_ssh,
             commands::fonts::list_system_fonts,
             commands::system::get_local_ipv4,
         ])

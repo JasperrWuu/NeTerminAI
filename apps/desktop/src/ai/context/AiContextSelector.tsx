@@ -96,7 +96,9 @@ function describeSession(session: TerminalContextSessionDescriptor) {
     ? shellLabel(session.connection.shell)
     : session.connection.kind === "telnet"
       ? `Telnet · ${session.connection.host}:${session.connection.port}`
-      : `Serial · ${session.connection.portName} · ${session.connection.baudRate}`;
+      : session.connection.kind === "ssh"
+        ? `SSH · ${session.connection.host}:${session.connection.port}`
+        : `Serial · ${session.connection.portName} · ${session.connection.baudRate}`;
   return `${connection} · ${stateLabel(session.connectionState)}`;
 }
 

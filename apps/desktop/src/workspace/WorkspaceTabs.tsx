@@ -150,7 +150,7 @@ export function WorkspaceTabs({
 function WorkspaceTabIcon({ kind }: { kind: WorkspaceTab["kind"] }) {
   return (
     <span className={`tab-glyph ${kind}-tab-icon`} aria-hidden="true">
-      {kind === "localTerminal" || kind === "telnet" ? (
+      {kind === "localTerminal" || kind === "telnet" || kind === "ssh" ? (
         <svg viewBox="0 0 20 20"><path d="m4.5 6 3.5 4-3.5 4M10 14h5.5" /></svg>
       ) : kind === "serial" ? (
         <svg viewBox="0 0 20 20"><path d="M6 5.5h8v4a4 4 0 0 1-8 0v-4ZM8 3.5v2m4-2v2M10 13.5v3" /></svg>

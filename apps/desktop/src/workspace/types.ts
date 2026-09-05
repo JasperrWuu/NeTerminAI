@@ -1,5 +1,5 @@
 import type { LocalTerminalProfileId } from "../terminal/profiles";
-import type { SerialConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
 
 interface WorkspaceTabBase {
   id: string;
@@ -21,7 +21,14 @@ export interface SerialTab extends WorkspaceTabBase {
   connection: SerialConnection;
 }
 
-export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab;
+export interface SshTab extends WorkspaceTabBase {
+  kind: "ssh";
+  connection: SshConnection;
+  /** Host-key replacement is an explicit one-time action, never persisted. */
+  hostKeyAction: SshHostKeyAction;
+}
+
+export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SshTab;
 
 export type WorkspaceSplitDirection = "row" | "column";
 export type WorkspaceDropZone = "center" | "left" | "right" | "top" | "bottom";

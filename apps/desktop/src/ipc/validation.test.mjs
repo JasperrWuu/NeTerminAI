@@ -61,6 +61,31 @@ test("createCommandArguments maps each connection request without UI-only fields
       flowControl: "none",
     },
   );
+  assert.deepEqual(
+    createCommandArguments({
+      kind: "ssh",
+      sessionId: "ssh-1",
+      host: "192.0.2.20",
+      port: 22,
+      username: "operator",
+      authentication: "password",
+      identityFile: "",
+      hostKeyAction: "strict",
+      columns: 100,
+      rows: 30,
+    }),
+    {
+      sessionId: "ssh-1",
+      host: "192.0.2.20",
+      port: 22,
+      username: "operator",
+      authentication: "password",
+      identityFile: "",
+      hostKeyAction: "strict",
+      columns: 100,
+      rows: 30,
+    },
+  );
 });
 
 test("event decoders accept valid DTOs and reject malformed payloads", () => {

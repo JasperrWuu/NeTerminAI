@@ -1,7 +1,7 @@
-import type { SerialConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 
-export type TerminalConnectionType = "local" | "telnet" | "serial";
+export type TerminalConnectionType = "local" | "telnet" | "serial" | "ssh";
 
 export type TerminalConnectionState =
   | "connecting"
@@ -46,6 +46,7 @@ export interface TerminalSize {
 export type TerminalCreateRequest =
   | ({ kind: "local"; profile: LocalTerminalProfileId } & SessionSize)
   | ({ kind: "telnet" } & Omit<TelnetConnection, "name"> & SessionSize)
+  | ({ kind: "ssh" } & Omit<SshConnection, "name"> & { hostKeyAction: SshHostKeyAction } & SessionSize)
   | ({ kind: "serial" } & Omit<SerialConnection, "name"> & SessionIdentity);
 
 export type TerminalWriteRequest = {

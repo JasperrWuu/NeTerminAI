@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { SerialConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
 import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import {
@@ -152,6 +152,14 @@ export function useWorkspaceTabs() {
     title: connection.name.trim() || connection.portName,
   })), [addTab]);
 
+  const openSsh = useCallback((connection: SshConnection, hostKeyAction: SshHostKeyAction = "strict") => addTab(() => ({
+    id: crypto.randomUUID(),
+    kind: "ssh",
+    connection,
+    hostKeyAction,
+    title: connection.name.trim() || `${connection.host}:${connection.port}`,
+  })), [addTab]);
+
   const activateTab = useCallback((paneId: string, tabId: string) => {
     setWorkspace((current) => ({
       ...current,
@@ -275,6 +283,7 @@ export function useWorkspaceTabs() {
     createTerminal,
     openTelnet,
     openSerial,
+    openSsh,
     closeTab,
     moveTab,
     mergeAllTabGroups,
@@ -293,6 +302,7 @@ export function useWorkspaceTabs() {
     moveTab,
     mergeAllTabGroups,
     openSerial,
+    openSsh,
     openTelnet,
     workspace.layout,
     workspace.tabs,

@@ -1,11 +1,13 @@
 :root {
   --protocol-telnet: #65c6aa;
   --protocol-serial: #e19b67;
+  --protocol-ssh: #76a9dc;
 }
 
 :root[data-theme="light"] {
   --protocol-telnet: #267c67;
   --protocol-serial: #a75b2d;
+  --protocol-ssh: #3d76ad;
 }
 
 .telnet-profile-icon {
@@ -24,6 +26,14 @@
   letter-spacing: -0.04em;
 }
 
+.ssh-profile-icon {
+  color: var(--protocol-ssh);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: -0.04em;
+}
+
 .telnet-profile-icon {
   background: color-mix(in srgb, var(--protocol-telnet) 16%, transparent);
   border-color: color-mix(in srgb, var(--protocol-telnet) 34%, transparent);
@@ -34,8 +44,14 @@
   border-color: color-mix(in srgb, var(--protocol-serial) 34%, transparent);
 }
 
+.ssh-profile-icon {
+  background: color-mix(in srgb, var(--protocol-ssh) 16%, transparent);
+  border-color: color-mix(in srgb, var(--protocol-ssh) 34%, transparent);
+}
+
 .telnet-tab-icon { color: var(--protocol-telnet); }
 .serial-tab-icon { color: var(--protocol-serial); }
+.ssh-tab-icon { color: var(--protocol-ssh); }
 
 .remote-group-label {
   align-items: center;
@@ -327,6 +343,7 @@
 .connection-create-icon svg { height: 14px; width: 14px; }
 .telnet-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-telnet) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-telnet) 30%, transparent); }
 .serial-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-serial) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-serial) 30%, transparent); }
+.ssh-create-card .connection-create-icon { background: color-mix(in srgb, var(--protocol-ssh) 16%, transparent); border-color: color-mix(in srgb, var(--protocol-ssh) 30%, transparent); }
 .connection-create-card strong { align-self: end; color: var(--text-primary); font-size: 13px; font-weight: 640; }
 .connection-create-card small { color: var(--text-secondary); font-size: 11px; }
 
@@ -400,6 +417,26 @@
   border-color: color-mix(in srgb, #d08a57 25%, transparent);
   color: #d08a57;
   font-size: 10px;
+}
+
+.ssh-dialog-icon {
+  background: color-mix(in srgb, var(--protocol-ssh) 14%, transparent);
+  border-color: color-mix(in srgb, var(--protocol-ssh) 25%, transparent);
+  color: var(--protocol-ssh);
+  font-size: 10px;
+}
+
+.ssh-host-key-option {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+}
+
+.ssh-host-key-option strong {
+  color: var(--text-primary);
+}
+
+.ssh-host-key-option[data-warning="true"] strong {
+  color: var(--accent-strong);
 }
 
 .dialog-note {

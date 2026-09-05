@@ -234,7 +234,7 @@ impl ConnectionStateTracker {
             snapshot.error,
         );
         #[cfg(not(debug_assertions))]
-        let _ = snapshot;
+        let _ = (&self.connection_type, &self.instance_token, snapshot);
     }
 }
 

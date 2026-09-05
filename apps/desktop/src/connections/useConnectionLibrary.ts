@@ -3,12 +3,15 @@ import type {
   ConnectionFolder,
   SavedConnectionSession,
   SavedSerialSession,
+  SavedSshSession,
   SavedTelnetSession,
   SerialDataBits,
   SerialFlowControl,
   SerialParity,
   SerialConnection,
   SerialStopBits,
+  SshAuthentication,
+  SshConnection,
   TelnetConnection,
 } from "./types";
 
@@ -56,9 +59,9 @@ function normalizeSession(value: unknown): SavedConnectionSession | null {
   const record = asRecord(value);
   if (!record || typeof record.kind !== "string") return null;
 
-  // Removed protocol records are discarded individually so valid sessions in
-  // the same library remain available after a product-scope migration.
-  if (record.kind === "ssh" || record.kind === "rdp") return null;
+  // RDP is no longer supported. Filter it per record so malformed or legacy
+  // records never prevent valid Local/Telnet/Serial/SSH sessions from loading.
+  if (record.kind === "rdp") return null;
 
   const id = stringValue(record, "id");
   if (!id) return null;
@@ -95,6 +98,28 @@ function normalizeSession(value: unknown): SavedConnectionSession | null {
       username: stringValue(record, "username"),
       password: stringValue(record, "password"),
       savesPassword: booleanValue(record, "savesPassword", false),
+    };
+  }
+
+  if (record.kind === "ssh") {
+    const host = stringValue(record, "host");
+    if (!host) return null;
+    const port = numberValue(record, "port", 22);
+    const authentication = enumValue<SshAuthentication>(
+      stringValue(record, "authentication", "password") as SshAuthentication,
+      ["password", "key", "config"],
+      "password",
+    );
+    return {
+      id,
+      kind: "ssh",
+      folderId: folderIdValue(record),
+      name: stringValue(record, "name") || `${host}:${port}`,
+      host,
+      port,
+      username: stringValue(record, "username"),
+      authentication,
+      identityFile: stringValue(record, "identityFile"),
     };
   }
 
@@ -202,6 +227,25 @@ export function useConnectionLibrary() {
     }));
   }, []);
 
+  const saveSsh = useCallback((connection: SshConnection, folderId: string | null, existingId?: string) => {
+    const session: SavedSshSession = {
+      ...connection,
+      id: existingId ?? crypto.randomUUID(),
+      kind: "ssh",
+      folderId,
+      name: connection.name.trim() || `${connection.host}:${connection.port}`,
+      host: connection.host.trim(),
+      username: connection.username.trim(),
+      identityFile: connection.identityFile.trim(),
+    };
+    setLibrary((current) => ({
+      ...current,
+      sessions: existingId
+        ? current.sessions.map((item) => (item.id === existingId ? session : item))
+        : [...current.sessions, session],
+    }));
+  }, []);
+
   const removeSession = useCallback((sessionId: string) => {
     setLibrary((current) => ({
       ...current,
@@ -234,6 +278,7 @@ export function useConnectionLibrary() {
     sessions: library.sessions,
     saveTelnet,
     saveSerial,
+    saveSsh,
     removeSession,
     createFolder,
     renameFolder,
@@ -246,6 +291,7 @@ export function useConnectionLibrary() {
     removeSession,
     renameFolder,
     saveSerial,
+    saveSsh,
     saveTelnet,
   ]);
 }

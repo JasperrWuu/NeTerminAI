@@ -12,16 +12,17 @@ import type {
 } from "./types";
 
 const COMMANDS = {
-  create: { local: "create_terminal", telnet: "create_telnet", serial: "create_serial" },
-  write: { local: "write_terminal", telnet: "write_telnet", serial: "write_serial" },
-  resize: { local: "resize_terminal", telnet: "resize_telnet" },
-  close: { local: "close_terminal", telnet: "close_telnet", serial: "close_serial" },
+  create: { local: "create_terminal", telnet: "create_telnet", serial: "create_serial", ssh: "create_ssh" },
+  write: { local: "write_terminal", telnet: "write_telnet", serial: "write_serial", ssh: "write_ssh" },
+  resize: { local: "resize_terminal", telnet: "resize_telnet", ssh: "resize_ssh" },
+  close: { local: "close_terminal", telnet: "close_telnet", serial: "close_serial", ssh: "close_ssh" },
 } as const;
 
 const OUTPUT_EVENTS = {
   local: "terminal:output",
   telnet: "telnet:output",
   serial: "serial:output",
+  ssh: "ssh:output",
 } as const;
 
 type Unlisten = () => void;

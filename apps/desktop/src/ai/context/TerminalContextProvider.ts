@@ -187,6 +187,9 @@ function connectionMetadataForTab(tab: WorkspaceTab): TerminalConnectionMetadata
   if (tab.kind === "telnet") {
     return { kind: "telnet", host: tab.connection.host, port: tab.connection.port };
   }
+  if (tab.kind === "ssh") {
+    return { kind: "ssh", host: tab.connection.host, port: tab.connection.port };
+  }
   return {
     kind: "serial",
     portName: tab.connection.portName,

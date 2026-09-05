@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
+    process::Command,
     sync::{
         Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
@@ -29,6 +30,13 @@ const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
 const OUTPUT_EVENT: &str = "terminal:output";
 const EXIT_EVENT: &str = "terminal:exit";
 
+fn terminal_events(prefix: &str) -> (&'static str, &'static str) {
+    match prefix {
+        "ssh" => ("ssh:output", "ssh:exit"),
+        _ => (OUTPUT_EVENT, EXIT_EVENT),
+    }
+}
+
 pub struct TerminalManager {
     cleanup: CleanupCoordinator,
     inner: Arc<TerminalManagerInner>,
@@ -55,7 +63,26 @@ pub enum TerminalProfile {
     GitBash,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SshAuthentication {
+    Password,
+    Key,
+    Config,
+}
+
+/// Controls how the one-time SSH host-key preflight behaves.  The default
+/// policy accepts a first key but still rejects a changed key.  Replacing a
+/// key is an explicit user action for cases such as a reinstalled VM.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SshHostKeyAction {
+    Strict,
+    Replace,
+}
+
 struct TerminalRuntime {
+    connection_type: &'static str,
     control: Arc<SessionControl>,
     resources: Mutex<Option<TerminalResources>>,
     output_sender: Mutex<Option<OutputSender>>,
@@ -162,7 +189,7 @@ impl StartGate {
 }
 
 impl SessionControl {
-    fn new(session_id: &str) -> Self {
+    fn new(session_id: &str, connection_type: &'static str) -> Self {
         let instance = Arc::new(());
         let instance_token = format!("{:p}", Arc::as_ptr(&instance));
         Self {
@@ -170,7 +197,11 @@ impl SessionControl {
             cancellation: CancellationToken::new(),
             close_once: CloseOnce::default(),
             instance,
-            connection_state: ConnectionStateTracker::new(session_id, "local", instance_token),
+            connection_state: ConnectionStateTracker::new(
+                session_id,
+                connection_type,
+                instance_token,
+            ),
             transition_lock: Mutex::new(()),
         }
     }
@@ -236,11 +267,13 @@ impl SessionControl {
 impl TerminalRuntime {
     fn new(
         session_id: &str,
+        connection_type: &'static str,
         creation_permit: AdmissionPermit,
         cleanup_sender: Sender<CleanupRequest>,
     ) -> Self {
         Self {
-            control: Arc::new(SessionControl::new(session_id)),
+            connection_type,
+            control: Arc::new(SessionControl::new(session_id, connection_type)),
             resources: Mutex::new(None),
             output_sender: Mutex::new(None),
             workers: WorkerSupervisor::new(),
@@ -296,6 +329,18 @@ impl Default for TerminalManager {
 
 impl TerminalManager {
     pub(crate) fn begin(&self, session_id: &str) -> Result<Arc<SessionControl>, String> {
+        self.begin_with_type(session_id, "local")
+    }
+
+    pub(crate) fn begin_ssh(&self, session_id: &str) -> Result<Arc<SessionControl>, String> {
+        self.begin_with_type(session_id, "ssh")
+    }
+
+    fn begin_with_type(
+        &self,
+        session_id: &str,
+        connection_type: &'static str,
+    ) -> Result<Arc<SessionControl>, String> {
         let permit = self
             .inner
             .admission
@@ -303,6 +348,7 @@ impl TerminalManager {
             .ok_or_else(|| "应用正在退出，无法创建终端会话".to_owned())?;
         let runtime = Arc::new(TerminalRuntime::new(
             session_id,
+            connection_type,
             permit,
             self.cleanup.sender.clone(),
         ));
@@ -314,7 +360,7 @@ impl TerminalManager {
             session_id.to_owned(),
             SessionState::Starting(Arc::clone(&runtime)),
         );
-        lifecycle_log(session_id, "local", "session create");
+        lifecycle_log(session_id, connection_type, "session create");
         Ok(Arc::clone(&runtime.control))
     }
 
@@ -328,26 +374,50 @@ impl TerminalManager {
         rows: u16,
         control: Arc<SessionControl>,
     ) -> Result<(), String> {
+        self.create_command(
+            app,
+            session_id,
+            shell_command(profile),
+            columns,
+            rows,
+            "terminal",
+            "本地终端",
+            control,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn create_command(
+        &self,
+        app: AppHandle,
+        session_id: String,
+        command: CommandBuilder,
+        columns: u16,
+        rows: u16,
+        event_prefix: &'static str,
+        label: &'static str,
+        control: Arc<SessionControl>,
+    ) -> Result<(), String> {
         let runtime = self.runtime_for_control(&session_id, &control)?;
         runtime.control.bind_app(&app);
         let _initialization_guard = InitializationGuard::new(Arc::clone(&runtime));
-        let open =
-            match self.open_command_resources(shell_command(profile), columns, rows, "本地终端")
-            {
-                Ok(resources) => resources,
-                Err(error) => {
-                    runtime.control.mark_failed_with(
-                        DisconnectReason::ConnectionFailed,
-                        ConnectionErrorKind::Connection,
-                        Some(error.clone()),
-                    );
-                    runtime
-                        .control
-                        .request_close_with(DisconnectReason::ConnectionFailed);
-                    runtime.request_cleanup(&session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
-                    return Err(error);
-                }
-            };
+        let open = match self.open_command_resources(command, columns, rows, label) {
+            Ok(resources) => resources,
+            Err(error) => {
+                runtime.control.mark_failed_with(
+                    DisconnectReason::ConnectionFailed,
+                    ConnectionErrorKind::Connection,
+                    Some(error.clone()),
+                );
+                runtime
+                    .control
+                    .request_close_with(DisconnectReason::ConnectionFailed);
+                runtime.request_cleanup(&session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
+                return Err(error);
+            }
+        };
+
+        let (output_event, exit_event) = terminal_events(event_prefix);
 
         if control.close_once.is_requested() || control.cancellation.is_cancelled() {
             shutdown_terminal_resources(open.resources);
@@ -355,7 +425,7 @@ impl TerminalManager {
                 .control
                 .request_close_with(DisconnectReason::UserRequested);
             runtime.request_cleanup(&session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
-            return Err("本地终端启动已取消".to_owned());
+            return Err(format!("{label}启动已取消"));
         }
 
         let OpenResources {
@@ -384,6 +454,7 @@ impl TerminalManager {
                     output_control,
                     output_gate,
                     output_cleanup,
+                    output_event,
                 );
             })
             .is_err()
@@ -391,7 +462,7 @@ impl TerminalManager {
             runtime.control.mark_failed_with(
                 DisconnectReason::ReadFailed,
                 ConnectionErrorKind::Transport,
-                Some("本地终端输出线程启动失败".to_owned()),
+                Some(format!("{label}输出线程启动失败")),
             );
             runtime
                 .control
@@ -405,7 +476,7 @@ impl TerminalManager {
                 resources.expect("resources installed before output worker spawn"),
             );
             runtime.request_cleanup(&session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
-            return Err("本地终端输出线程启动失败".to_owned());
+            return Err(format!("{label}输出线程启动失败"));
         }
 
         let writer_control = Arc::clone(&runtime.control);
@@ -430,7 +501,7 @@ impl TerminalManager {
             runtime.control.mark_failed_with(
                 DisconnectReason::WriteFailed,
                 ConnectionErrorKind::Transport,
-                Some("本地终端写入线程启动失败".to_owned()),
+                Some(format!("{label}写入线程启动失败")),
             );
             runtime
                 .control
@@ -440,7 +511,7 @@ impl TerminalManager {
             shutdown_terminal_resources(
                 resources.expect("resources installed before worker spawn"),
             );
-            return Err("本地终端写入线程启动失败".to_owned());
+            return Err(format!("{label}写入线程启动失败"));
         }
 
         let reader_control = Arc::clone(&runtime.control);
@@ -459,6 +530,7 @@ impl TerminalManager {
                     reader_control,
                     reader_gate,
                     reader_sender,
+                    exit_event,
                 );
             })
             .is_err()
@@ -466,7 +538,7 @@ impl TerminalManager {
             runtime.control.mark_failed_with(
                 DisconnectReason::ReadFailed,
                 ConnectionErrorKind::Transport,
-                Some("本地终端读取线程启动失败".to_owned()),
+                Some(format!("{label}读取线程启动失败")),
             );
             runtime
                 .control
@@ -479,7 +551,7 @@ impl TerminalManager {
                 resources.expect("resources installed before worker spawn"),
             );
             runtime.request_cleanup(&session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
-            return Err("本地终端读取线程启动失败".to_owned());
+            return Err(format!("{label}读取线程启动失败"));
         }
 
         if !(self.is_current_starting(&session_id, &runtime) && runtime.control.publish_running()) {
@@ -492,12 +564,101 @@ impl TerminalManager {
             let resources = lock_unpoisoned(&runtime.resources).take();
             shutdown_terminal_resources(resources.expect("resources installed before publish"));
             runtime.request_cleanup(&session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
-            return Err("本地终端启动已取消".to_owned());
+            return Err(format!("{label}启动已取消"));
         }
         self.promote_running(&session_id, &runtime);
         runtime.start_gate.release();
-        lifecycle_log(&session_id, "local", "session running");
+        lifecycle_log(&session_id, runtime.connection_type, "session running");
         Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn create_ssh(
+        &self,
+        app: AppHandle,
+        session_id: String,
+        host: String,
+        port: u16,
+        username: String,
+        authentication: SshAuthentication,
+        identity_file: String,
+        host_key_action: SshHostKeyAction,
+        columns: u16,
+        rows: u16,
+        control: Arc<SessionControl>,
+    ) -> Result<(), String> {
+        let runtime = self.runtime_for_control(&session_id, &control)?;
+        runtime.control.bind_app(&app);
+        let _initialization_guard = InitializationGuard::new(Arc::clone(&runtime));
+        let host = host.trim();
+        let username = username.trim();
+        let identity_file = identity_file.trim();
+        if host.is_empty() || port == 0 {
+            return self.fail_starting_ssh(
+                &session_id,
+                &runtime,
+                "SSH 主机地址或端口无效".to_owned(),
+            );
+        }
+        if host.contains(['\r', '\n'])
+            || username.contains(['\r', '\n'])
+            || identity_file.contains(['\r', '\n'])
+        {
+            return self.fail_starting_ssh(
+                &session_id,
+                &runtime,
+                "SSH 连接信息包含无效换行符".to_owned(),
+            );
+        }
+        if authentication == SshAuthentication::Password && username.is_empty() {
+            return self.fail_starting_ssh(
+                &session_id,
+                &runtime,
+                "密码认证需要填写 SSH 账号".to_owned(),
+            );
+        }
+        if authentication == SshAuthentication::Key && identity_file.is_empty() {
+            return self.fail_starting_ssh(
+                &session_id,
+                &runtime,
+                "私钥认证需要选择私钥文件".to_owned(),
+            );
+        }
+        if host_key_action == SshHostKeyAction::Replace
+            && let Err(error) = remove_ssh_known_host(host, port)
+        {
+            return self.fail_starting_ssh(&session_id, &runtime, error);
+        }
+
+        self.create_command(
+            app,
+            session_id,
+            ssh_command(host, port, username, authentication, identity_file),
+            columns,
+            rows,
+            "ssh",
+            "SSH 终端",
+            control,
+        )
+    }
+
+    fn fail_starting_ssh(
+        &self,
+        session_id: &str,
+        runtime: &Arc<TerminalRuntime>,
+        message: String,
+    ) -> Result<(), String> {
+        runtime.control.mark_failed_with(
+            DisconnectReason::ConnectionFailed,
+            ConnectionErrorKind::Configuration,
+            Some(message.clone()),
+        );
+        runtime
+            .control
+            .request_close_with(DisconnectReason::ConnectionFailed);
+        runtime.start_gate.cancel();
+        runtime.request_cleanup(session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
+        Err(message)
     }
 
     fn open_command_resources(
@@ -868,11 +1029,11 @@ fn cleanup_one(
                     && Arc::ptr_eq(&current.control.instance, instance)
         ) {
             sessions.remove(session_id);
-            lifecycle_log(session_id, "local", "session removed");
+            lifecycle_log(session_id, runtime.connection_type, "session removed");
         }
         true
     } else {
-        lifecycle_log(session_id, "local", "cleanup timeout");
+        lifecycle_log(session_id, runtime.connection_type, "cleanup timeout");
         runtime.finish_cleanup(false);
         false
     }
@@ -934,6 +1095,7 @@ fn run_terminal_reader(
     control: Arc<SessionControl>,
     start_gate: Arc<StartGate>,
     cleanup_sender: Sender<CleanupRequest>,
+    exit_event: &'static str,
 ) {
     if !start_gate.wait(&control.cancellation) {
         return;
@@ -977,7 +1139,7 @@ fn run_terminal_reader(
     }
     if !control.close_once.is_requested() {
         let _ = app.emit(
-            EXIT_EVENT,
+            exit_event,
             TerminalExit {
                 session_id: session_id.clone(),
             },
@@ -999,6 +1161,7 @@ fn run_terminal_reader(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_terminal_output_pump(
     app: AppHandle,
     session_id: String,
@@ -1007,6 +1170,7 @@ fn run_terminal_output_pump(
     control: Arc<SessionControl>,
     start_gate: Arc<StartGate>,
     cleanup_sender: Sender<CleanupRequest>,
+    output_event: &'static str,
 ) {
     if !start_gate.wait(&control.cancellation) {
         return;
@@ -1017,7 +1181,7 @@ fn run_terminal_output_pump(
         }
         if app
             .emit(
-                OUTPUT_EVENT,
+                output_event,
                 TerminalOutput {
                     session_id: session_id.clone(),
                     data: STANDARD.encode(batch),
@@ -1046,6 +1210,119 @@ fn shutdown_terminal_resources(mut resources: TerminalResources) {
     let _ = resources.child.kill();
     let _ = resources.child.wait();
     drop(resources.master);
+}
+
+fn ssh_command(
+    host: &str,
+    port: u16,
+    username: &str,
+    authentication: SshAuthentication,
+    identity_file: &str,
+) -> CommandBuilder {
+    let mut command = CommandBuilder::new(ssh_executable());
+    command.arg("-p");
+    command.arg(port.to_string());
+    command.args(["-o", "ConnectTimeout=10"]);
+    command.args(["-o", "ServerAliveInterval=15"]);
+    command.args(["-o", "ServerAliveCountMax=3"]);
+    command.args(["-o", "TCPKeepAlive=yes"]);
+    // accept-new verifies changed keys while avoiding an interactive first-use
+    // prompt that cannot be answered reliably inside the terminal view.
+    command.args(["-o", "StrictHostKeyChecking=accept-new"]);
+    configure_ssh_authentication(&mut command, authentication, identity_file);
+    command.arg("-tt");
+    command.arg("--");
+    command.arg(if username.is_empty() {
+        host.to_owned()
+    } else {
+        format!("{username}@{host}")
+    });
+    command
+}
+
+fn configure_ssh_authentication(
+    command: &mut CommandBuilder,
+    authentication: SshAuthentication,
+    identity_file: &str,
+) {
+    command.args(["-o", "BatchMode=no"]);
+    command.args(["-o", "NumberOfPasswordPrompts=3"]);
+    match authentication {
+        SshAuthentication::Password => {
+            command.args([
+                "-o",
+                "PreferredAuthentications=keyboard-interactive,password",
+            ]);
+            command.args(["-o", "PubkeyAuthentication=no"]);
+        }
+        SshAuthentication::Key => {
+            command.args(["-o", "PreferredAuthentications=publickey"]);
+            command.args(["-o", "IdentitiesOnly=yes"]);
+            if !identity_file.is_empty() {
+                command.args(["-i", identity_file]);
+            }
+        }
+        SshAuthentication::Config => {}
+    }
+}
+
+fn remove_ssh_known_host(host: &str, port: u16) -> Result<(), String> {
+    let lookup = ssh_known_host_lookup(host, port);
+    let output = Command::new(ssh_keygen_executable())
+        .args(["-R", lookup.as_str()])
+        .output()
+        .map_err(|error| format!("无法运行 ssh-keygen 清理主机密钥：{error}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    if detail.to_ascii_lowercase().contains("not found") {
+        return Ok(());
+    }
+    if detail.is_empty() {
+        Err("无法更新 SSH known_hosts 中的主机密钥".to_owned())
+    } else {
+        Err(format!("无法更新 SSH known_hosts 中的主机密钥：{detail}"))
+    }
+}
+
+fn ssh_known_host_lookup(host: &str, port: u16) -> String {
+    let normalized = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(host);
+    if port == 22 {
+        normalized.to_owned()
+    } else {
+        format!("[{normalized}]:{port}")
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn ssh_executable() -> std::path::PathBuf {
+    std::env::var_os("WINDIR")
+        .map(|root| std::path::PathBuf::from(root).join("System32/OpenSSH/ssh.exe"))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| std::path::PathBuf::from("ssh.exe"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ssh_executable() -> std::path::PathBuf {
+    std::path::PathBuf::from("ssh")
+}
+
+#[cfg(target_os = "windows")]
+fn ssh_keygen_executable() -> std::path::PathBuf {
+    std::env::var_os("WINDIR")
+        .map(|root| std::path::PathBuf::from(root).join("System32/OpenSSH/ssh-keygen.exe"))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| std::path::PathBuf::from("ssh-keygen.exe"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ssh_keygen_executable() -> std::path::PathBuf {
+    std::path::PathBuf::from("ssh-keygen")
 }
 
 fn shell_command(profile: TerminalProfile) -> CommandBuilder {
@@ -1184,5 +1461,60 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         panic!("closed runtime was not reclaimed");
+    }
+
+    #[test]
+    fn ssh_command_uses_safe_host_key_policy_and_authentication_options() {
+        let command = ssh_command(
+            "server.example",
+            2222,
+            "operator",
+            SshAuthentication::Key,
+            "C:\\keys\\id_ed25519",
+        );
+        let arguments = command
+            .get_argv()
+            .iter()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(
+            arguments
+                .iter()
+                .any(|value| value == "StrictHostKeyChecking=accept-new")
+        );
+        assert!(arguments.windows(2).any(|pair| pair == ["-p", "2222"]));
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-i", "C:\\keys\\id_ed25519"])
+        );
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair == ["-o", "IdentitiesOnly=yes"])
+        );
+        assert_eq!(arguments[arguments.len() - 2], "--");
+        assert_eq!(
+            arguments.last().map(String::as_str),
+            Some("operator@server.example")
+        );
+    }
+
+    #[test]
+    fn ssh_known_host_lookup_handles_default_and_non_default_ports() {
+        assert_eq!(
+            ssh_known_host_lookup("server.example", 22),
+            "server.example"
+        );
+        assert_eq!(
+            ssh_known_host_lookup("server.example", 2222),
+            "[server.example]:2222"
+        );
+        assert_eq!(
+            ssh_known_host_lookup("[2001:db8::10]", 2222),
+            "[2001:db8::10]:2222"
+        );
+        assert_eq!(ssh_known_host_lookup("2001:db8::10", 22), "2001:db8::10");
     }
 }

@@ -1,7 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
-import type { SerialConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
 import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalClipboardAction } from "./clipboard";
 import { TerminalHighlightStream } from "./highlighting";
@@ -33,7 +33,8 @@ import {
 export type TerminalSessionDefinition =
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
   | { sessionType: "telnet"; connection: TelnetConnection }
-  | { sessionType: "serial"; connection: SerialConnection };
+  | { sessionType: "serial"; connection: SerialConnection }
+  | { sessionType: "ssh"; connection: SshConnection; hostKeyAction: SshHostKeyAction };
 
 export interface TerminalViewAttachment {
   container: HTMLElement;
@@ -386,6 +387,20 @@ function createRequestFor(
   if (definition.sessionType === "telnet") {
     const { host, port, username, password } = definition.connection;
     return { kind: "telnet", sessionId, host, port, username, password, ...size };
+  }
+  if (definition.sessionType === "ssh") {
+    const { host, port, username, authentication, identityFile } = definition.connection;
+    return {
+      kind: "ssh",
+      sessionId,
+      host,
+      port,
+      username,
+      authentication,
+      identityFile,
+      hostKeyAction: definition.hostKeyAction,
+      ...size,
+    };
   }
   const { portName, baudRate, dataBits, stopBits, parity, flowControl } = definition.connection;
   return { kind: "serial", sessionId, portName, baudRate, dataBits, stopBits, parity, flowControl };

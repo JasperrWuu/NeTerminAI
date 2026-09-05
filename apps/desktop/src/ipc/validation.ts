@@ -24,6 +24,19 @@ export function createCommandArguments(request: TerminalCreateRequest): Record<s
       rows: request.rows,
     };
   }
+  if (request.kind === "ssh") {
+    return {
+      sessionId: request.sessionId,
+      host: request.host,
+      port: request.port,
+      username: request.username,
+      authentication: request.authentication,
+      identityFile: request.identityFile,
+      hostKeyAction: request.hostKeyAction,
+      columns: request.columns,
+      rows: request.rows,
+    };
+  }
   return {
     sessionId: request.sessionId,
     portName: request.portName,

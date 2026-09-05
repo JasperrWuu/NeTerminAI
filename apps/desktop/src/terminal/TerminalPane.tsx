@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { LocalTerminalProfileId } from "./profiles";
-import type { SerialConnection, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
 import {
   TerminalSessionRuntime,
   type TerminalSessionDefinition,
@@ -27,7 +27,8 @@ interface TerminalPaneCommonProps {
 type TerminalSessionProps =
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
   | { sessionType: "telnet"; connection: TelnetConnection }
-  | { sessionType: "serial"; connection: SerialConnection };
+  | { sessionType: "serial"; connection: SerialConnection }
+  | { sessionType: "ssh"; connection: SshConnection; hostKeyAction: SshHostKeyAction };
 
 type TerminalPaneProps = TerminalPaneCommonProps & TerminalSessionProps;
 
@@ -125,6 +126,13 @@ export function TerminalPane(props: TerminalPaneProps) {
 function terminalSessionDefinition(props: TerminalSessionProps): TerminalSessionDefinition {
   if (props.sessionType === "local") return { sessionType: "local", profileId: props.profileId };
   if (props.sessionType === "telnet") return { sessionType: "telnet", connection: props.connection };
+  if (props.sessionType === "ssh") {
+    return {
+      sessionType: "ssh",
+      connection: props.connection,
+      hostKeyAction: props.hostKeyAction,
+    };
+  }
   return { sessionType: "serial", connection: props.connection };
 }
 
@@ -149,6 +157,7 @@ function SyncInputIcon() {
 function terminalAriaLabel(props: TerminalSessionProps) {
   if (props.sessionType === "local") return "本地终端";
   if (props.sessionType === "serial") return `串口 ${props.connection.portName}`;
+  if (props.sessionType === "ssh") return `SSH ${props.connection.host}`;
   return `TELNET ${props.connection.host}`;
 }
 
@@ -157,7 +166,13 @@ function terminalStatusText(
   status: TerminalPaneStatus,
   errorMessage: string,
 ) {
-  const protocol = props.sessionType === "local" ? "终端" : props.sessionType === "serial" ? "串口" : "Telnet";
+  const protocol = props.sessionType === "local"
+    ? "终端"
+    : props.sessionType === "serial"
+      ? "串口"
+      : props.sessionType === "ssh"
+        ? "SSH"
+        : "Telnet";
   if (status === "error") return errorMessage || `${protocol}连接失败`;
   if (status === "closed") return props.sessionType === "local" ? "终端已关闭" : `${protocol}连接已关闭`;
   if (status === "closing") return props.sessionType === "local" ? "正在关闭终端…" : `正在关闭${protocol}连接…`;
