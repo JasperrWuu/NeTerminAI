@@ -16,6 +16,7 @@ import {
 } from "./icons";
 import { usePanelResize } from "./usePanelResize";
 import { TerminalPane } from "../terminal/TerminalPane";
+import { useTerminalSessionRegistry } from "../terminal/TerminalSessionRegistry";
 import { WorkspaceArea } from "../workspace/WorkspaceArea";
 import { useWorkspaceTabs } from "../workspace/useWorkspaceTabs";
 import type { WorkspaceTab } from "../workspace/types";
@@ -70,6 +71,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("terminal");
   const [tabDragging, setTabDragging] = useState(false);
   const workspaceTabs = useWorkspaceTabs();
+  const runtimeRegistry = useTerminalSessionRegistry(workspaceTabs.tabs.map((tab) => tab.id));
   const connectionLibrary = useConnectionLibrary();
   const [telnetDialog, setTelnetDialog] = useState<{
     open: boolean;
@@ -226,6 +228,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           synchronizedInput={synchronizedTabIds.has(tab.id)}
           tabId={tab.id}
           theme={settings.appearance.theme}
+          runtimeRegistry={runtimeRegistry}
         />
       );
     }
@@ -245,6 +248,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           synchronizedInput={synchronizedTabIds.has(tab.id)}
           tabId={tab.id}
           theme={settings.appearance.theme}
+          runtimeRegistry={runtimeRegistry}
         />
       );
     }
@@ -264,6 +268,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           synchronizedInput={synchronizedTabIds.has(tab.id)}
           tabId={tab.id}
           theme={settings.appearance.theme}
+          runtimeRegistry={runtimeRegistry}
         />
       );
     }

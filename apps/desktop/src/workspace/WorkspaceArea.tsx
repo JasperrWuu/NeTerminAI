@@ -192,8 +192,12 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
         {props.tabs.map((tab) => {
           const placement = tabPlacements.get(tab.id);
           if (!placement) return null;
+          // Only the active tab in each group owns a mounted view. Inactive
+          // tabs stay in the runtime registry and keep receiving output while
+          // their xterm element is parked off-DOM.
+          if (!placement.active) return null;
           const bounds = placement ? paneBounds[placement.paneId] : undefined;
-          const active = Boolean(bounds && placement?.active);
+          const active = Boolean(bounds);
           const style = bounds ? {
             height: bounds.height,
             transform: `translate3d(${bounds.x}px, ${bounds.y}px, 0)`,

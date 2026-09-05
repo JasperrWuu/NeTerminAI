@@ -1,22 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { LocalTerminalProfileId } from "./profiles";
-import { resolveTerminalClipboardAction } from "./clipboard";
-import { TerminalHighlightStream } from "./highlighting";
-import { resolveTerminalTheme } from "./themes";
 import type { SerialConnection, TelnetConnection } from "../connections/types";
-import type { TerminalInputTarget } from "./useSynchronizedInput";
-import { terminalFontStack } from "./fontStack";
 import {
-  TerminalRuntimeController,
-  type TerminalConnectionStateEvent,
-} from "./TerminalRuntimeController";
-import { terminalApi } from "../ipc/terminal";
-import type { TerminalCreateRequest } from "../ipc/types";
-import { TerminalInputPump } from "./TerminalInputPump";
+  TerminalSessionRuntime,
+  type TerminalSessionDefinition,
+  type TerminalSessionRuntimeSnapshot,
+} from "./TerminalSessionRuntime";
+import type { TerminalSessionRegistry } from "./TerminalSessionRegistry";
 
 interface TerminalPaneCommonProps {
   active: boolean;
@@ -28,7 +20,8 @@ interface TerminalPaneCommonProps {
   theme: AppearanceTheme;
   onInput: (tabId: string, data: string) => void;
   onActivate: () => void;
-  registerInputTarget: (tabId: string, target: TerminalInputTarget) => () => void;
+  registerInputTarget: (tabId: string, target: import("./useSynchronizedInput").TerminalInputTarget) => () => void;
+  runtimeRegistry: TerminalSessionRegistry;
 }
 
 type TerminalSessionProps =
@@ -38,216 +31,61 @@ type TerminalSessionProps =
 
 type TerminalPaneProps = TerminalPaneCommonProps & TerminalSessionProps;
 
-function decodeBase64(value: string) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-}
+type TerminalPaneStatus = "starting" | "ready" | "closing" | "closed" | "error";
 
 export function TerminalPane(props: TerminalPaneProps) {
   const { active, settings, theme } = props;
   const profileId = props.sessionType === "local" ? props.profileId : null;
   const sessionConnection = props.sessionType === "local" ? null : props.connection;
-  const supportsResize = props.sessionType !== "serial";
   const containerRef = useRef<HTMLDivElement>(null);
-  const terminalRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const runtimeControllerRef = useRef<TerminalRuntimeController | null>(null);
-  const sessionReadyRef = useRef(false);
-  const ptySessionIdRef = useRef<string | null>(null);
-  const activeRef = useRef(active);
-  const onInputRef = useRef(props.onInput);
-  const registerInputTargetRef = useRef(props.registerInputTarget);
-  const activeHighlightRules = settings.highlightSets.find(
-    (set) => set.id === settings.activeHighlightSetId && set.enabled,
-  )?.rules ?? [];
-  const highlighterRef = useRef(new TerminalHighlightStream(activeHighlightRules));
-  const [status, setStatus] = useState<"starting" | "ready" | "closing" | "closed" | "error">("starting");
-  const [errorMessage, setErrorMessage] = useState("");
-
-  activeRef.current = active;
-  onInputRef.current = props.onInput;
-  registerInputTargetRef.current = props.registerInputTarget;
-
-  useEffect(() => {
-    if (terminalRef.current) {
-      terminalRef.current.options.theme = resolveTerminalTheme(settings.colorScheme, theme);
-    }
-  }, [settings.colorScheme, theme]);
-
-  useEffect(() => {
-    highlighterRef.current.setRules(activeHighlightRules);
-  }, [activeHighlightRules]);
-
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    const fitAddon = fitAddonRef.current;
-    if (!terminal || !fitAddon) return;
-    terminal.options.fontFamily = terminalFontStack(settings);
-    terminal.options.fontSize = settings.fontSize;
-    terminal.options.fontWeight = settings.fontWeight;
-    terminal.options.lineHeight = settings.lineHeight;
-    terminal.options.cursorStyle = settings.cursorStyle;
-    terminal.options.cursorBlink = settings.cursorBlink;
-    terminal.options.scrollback = settings.scrollback;
-
-    if (active) {
-      runtimeControllerRef.current?.resize();
-    }
-  }, [active, props.sessionType, settings, supportsResize]);
-
-  useEffect(() => {
-    if (!active) return;
-    const frame = requestAnimationFrame(() => {
-      const terminal = terminalRef.current;
-      if (!terminal) return;
-      runtimeControllerRef.current?.resize();
-      terminal.focus();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [active, props.sessionType, supportsResize]);
+  const runtimeRef = useRef<TerminalSessionRuntime | null>(null);
+  const [snapshot, setSnapshot] = useState<TerminalSessionRuntimeSnapshot | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const terminal = new Terminal({
-      allowTransparency: false,
-      cursorBlink: settings.cursorBlink,
-      cursorStyle: settings.cursorStyle,
-      fontFamily: terminalFontStack(settings),
-      fontSize: settings.fontSize,
-      fontWeight: settings.fontWeight,
-      lineHeight: settings.lineHeight,
-      scrollback: settings.scrollback,
-      theme: resolveTerminalTheme(settings.colorScheme, theme),
-    });
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.open(container);
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-
-    let disposed = false;
-    let outputFrame: number | undefined;
-    let pendingOutput: Uint8Array[] = [];
-    let pendingOutputLength = 0;
-    const outputDecoder = new TextDecoder();
-    const enqueueOutput = (data: Uint8Array) => {
-      pendingOutput.push(data);
-      pendingOutputLength += data.length;
-      if (outputFrame !== undefined) return;
-      outputFrame = requestAnimationFrame(() => {
-        outputFrame = undefined;
-        const combined = new Uint8Array(pendingOutputLength);
-        let offset = 0;
-        for (const chunk of pendingOutput) {
-          combined.set(chunk, offset);
-          offset += chunk.length;
-        }
-        pendingOutput = [];
-        pendingOutputLength = 0;
-        if (!disposed) {
-          const text = outputDecoder.decode(combined, { stream: true });
-          terminal.write(highlighterRef.current.write(text));
-        }
-      });
-    };
-    const inputPump = new TerminalInputPump({
-      write: async (data) => {
-        if (disposed || !sessionReadyRef.current) return;
-        const sessionId = ptySessionIdRef.current;
-        if (sessionId) {
-          await terminalApi.write({ kind: props.sessionType, sessionId, data });
-        }
+    const runtime = props.runtimeRegistry.acquire(
+      props.tabId,
+      terminalSessionDefinition(props),
+      {
+        container,
+        active,
+        settings,
+        theme,
+        onInput: (data) => props.onInput(props.tabId, data),
+        registerInputTarget: props.registerInputTarget,
       },
-      onError: (error) => {
-        if (!disposed) setErrorMessage(String(error));
-      },
-    });
-    const writeInput = (data: string) => inputPump.enqueue(data);
-    const unregisterInputTarget = registerInputTargetRef.current(props.tabId, {
-      focus: () => terminal.focus(),
-      write: writeInput,
-    });
-    const inputSubscription = terminal.onData((data) => onInputRef.current(props.tabId, data));
-    terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown") return true;
-      const action = resolveTerminalClipboardAction(event, terminal.hasSelection());
-      if (!action) return true;
-
-      if (action === "copy") {
-        if (!navigator.clipboard?.writeText) return true;
-        event.preventDefault();
-        event.stopPropagation();
-        const selection = terminal.getSelection();
-        if (selection) {
-          void navigator.clipboard.writeText(selection).catch(() => undefined);
-          terminal.clearSelection();
-        }
-      } else {
-        if (!navigator.clipboard?.readText) return true;
-        event.preventDefault();
-        event.stopPropagation();
-        void navigator.clipboard.readText().then((text) => {
-          if (text) terminal.paste(text);
-        }).catch(() => undefined);
-      }
-      return false;
-    });
-
-    const controller = new TerminalRuntimeController({
-      connectionType: props.sessionType,
-      container,
-      supportsResize,
-      isActive: () => activeRef.current,
-      fit: () => fitAddon.fit(),
-      getTerminalSize: () => ({ columns: terminal.cols, rows: terminal.rows }),
-      createRequest: (sessionId, size) => terminalCreateRequest(props, sessionId, size.columns, size.rows),
-      onOutput: (data) => enqueueOutput(decodeBase64(data)),
-      onStateChange: (event) => {
-        applyConnectionState(event, props, setStatus, setErrorMessage, sessionReadyRef);
-      },
-      onReady: (sessionId) => {
-        ptySessionIdRef.current = sessionId;
-        container.closest<HTMLElement>(".terminal-pane")?.setAttribute("data-session-id", sessionId);
-        terminal.focus();
-      },
-      onError: (error) => {
-        if (!disposed) {
-          setStatus("error");
-          setErrorMessage(String(error));
-        }
-      },
-    });
-    runtimeControllerRef.current = controller;
-    ptySessionIdRef.current = controller.id;
-    container.closest<HTMLElement>(".terminal-pane")?.setAttribute("data-session-id", controller.id);
-    controller.start();
-
+    );
+    runtimeRef.current = runtime;
+    setSnapshot(runtime.getSnapshot());
+    const unsubscribe = runtime.subscribe(() => setSnapshot(runtime.getSnapshot()));
     return () => {
-      disposed = true;
-      sessionReadyRef.current = false;
-      inputPump.dispose();
-      if (outputFrame !== undefined) cancelAnimationFrame(outputFrame);
-      pendingOutput = [];
-      controller.dispose();
-      inputSubscription.dispose();
-      unregisterInputTarget();
-      terminal.dispose();
-      if (runtimeControllerRef.current === controller) runtimeControllerRef.current = null;
-      terminalRef.current = null;
-      fitAddonRef.current = null;
-      container.closest<HTMLElement>(".terminal-pane")?.removeAttribute("data-session-id");
-      if (ptySessionIdRef.current === controller.id) ptySessionIdRef.current = null;
+      unsubscribe();
+      props.runtimeRegistry.releaseView(props.tabId, container);
+      if (runtimeRef.current === runtime) runtimeRef.current = null;
     };
-    // Visual settings intentionally update without replacing the running PTY session.
   }, [
-    props.sessionType,
     profileId,
+    props.onInput,
+    props.registerInputTarget,
+    props.runtimeRegistry,
+    props.sessionType,
+    props.tabId,
     sessionConnection,
-    supportsResize,
   ]);
+
+  useEffect(() => {
+    runtimeRef.current?.updateView({
+      active,
+      settings,
+      theme,
+      onInput: (data) => props.onInput(props.tabId, data),
+      registerInputTarget: props.registerInputTarget,
+    });
+  }, [active, props.onInput, props.registerInputTarget, props.tabId, settings, theme]);
+
+  const status = toPaneStatus(snapshot?.state ?? "connecting");
+  const errorMessage = snapshot?.message ?? "";
 
   return (
     <section
@@ -257,7 +95,7 @@ export function TerminalPane(props: TerminalPaneProps) {
       data-active={active}
       data-connection-id={props.connectionId}
       data-pane-id={props.paneId}
-      data-session-id={ptySessionIdRef.current ?? undefined}
+      data-session-id={snapshot?.sessionId}
       data-synchronized={props.synchronizedInput}
       data-tab-id={props.tabId}
     >
@@ -265,7 +103,7 @@ export function TerminalPane(props: TerminalPaneProps) {
         className="terminal-container"
         onPointerDown={() => {
           props.onActivate();
-          terminalRef.current?.focus();
+          runtimeRef.current?.focus();
         }}
         ref={containerRef}
       />
@@ -284,6 +122,22 @@ export function TerminalPane(props: TerminalPaneProps) {
   );
 }
 
+function terminalSessionDefinition(props: TerminalSessionProps): TerminalSessionDefinition {
+  if (props.sessionType === "local") return { sessionType: "local", profileId: props.profileId };
+  if (props.sessionType === "telnet") return { sessionType: "telnet", connection: props.connection };
+  return { sessionType: "serial", connection: props.connection };
+}
+
+function toPaneStatus(state: TerminalSessionRuntimeSnapshot["state"]): TerminalPaneStatus {
+  switch (state) {
+    case "connected": return "ready";
+    case "closing": return "closing";
+    case "disconnected": return "closed";
+    case "failed": return "error";
+    default: return "starting";
+  }
+}
+
 function SyncInputIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16">
@@ -292,28 +146,18 @@ function SyncInputIcon() {
   );
 }
 
-function terminalCreateRequest(props: TerminalSessionProps, sessionId: string, columns: number, rows: number): TerminalCreateRequest {
-  if (props.sessionType === "local") return { kind: "local", sessionId, profile: props.profileId, columns, rows };
-  if (props.sessionType === "telnet") {
-    const { host, port, username, password } = props.connection;
-    return { kind: "telnet", sessionId, host, port, username, password, columns, rows };
-  }
-  const { portName, baudRate, dataBits, stopBits, parity, flowControl } = props.connection;
-  return { kind: "serial", sessionId, portName, baudRate, dataBits, stopBits, parity, flowControl };
-}
-
 function terminalAriaLabel(props: TerminalSessionProps) {
   if (props.sessionType === "local") return "本地终端";
   if (props.sessionType === "serial") return `串口 ${props.connection.portName}`;
-  return `${props.sessionType.toUpperCase()} ${props.connection.host}`;
+  return `TELNET ${props.connection.host}`;
 }
 
 function terminalStatusText(
   props: TerminalSessionProps,
-  status: "starting" | "ready" | "closing" | "closed" | "error",
+  status: TerminalPaneStatus,
   errorMessage: string,
 ) {
-  const protocol = props.sessionType === "local" ? "终端" : props.sessionType === "serial" ? "串口" : props.sessionType.toUpperCase();
+  const protocol = props.sessionType === "local" ? "终端" : props.sessionType === "serial" ? "串口" : "Telnet";
   if (status === "error") return errorMessage || `${protocol}连接失败`;
   if (status === "closed") return props.sessionType === "local" ? "终端已关闭" : `${protocol}连接已关闭`;
   if (status === "closing") return props.sessionType === "local" ? "正在关闭终端…" : `正在关闭${protocol}连接…`;
@@ -321,60 +165,4 @@ function terminalStatusText(
   if (props.sessionType === "local") return "正在启动终端…";
   if (props.sessionType === "serial") return `正在打开 ${props.connection.portName}…`;
   return `正在连接 ${props.connection.host}:${props.connection.port}…`;
-}
-
-function applyConnectionState(
-  event: TerminalConnectionStateEvent,
-  props: TerminalSessionProps,
-  setStatus: (status: "starting" | "ready" | "closing" | "closed" | "error") => void,
-  setErrorMessage: (message: string) => void,
-  sessionReadyRef: { current: boolean },
-) {
-  switch (event.state) {
-    case "connecting":
-      sessionReadyRef.current = false;
-      setStatus("starting");
-      return;
-    case "connected":
-      sessionReadyRef.current = true;
-      setErrorMessage("");
-      setStatus("ready");
-      return;
-    case "closing":
-      sessionReadyRef.current = false;
-      setStatus("closing");
-      return;
-    case "disconnected":
-      sessionReadyRef.current = false;
-      setStatus("closed");
-      return;
-    case "failed":
-      sessionReadyRef.current = false;
-      setErrorMessage(event.message || connectionFailureText(props, event.reason));
-      setStatus("error");
-      return;
-  }
-}
-
-function connectionFailureText(
-  props: TerminalSessionProps,
-  reason: TerminalConnectionStateEvent["reason"],
-) {
-  const protocol = props.sessionType === "local" ? "终端" : props.sessionType === "serial" ? "串口" : "Telnet";
-  switch (reason) {
-    case "connectionFailed":
-      return `${protocol}连接失败`;
-    case "readFailed":
-      return `${protocol}读取失败`;
-    case "writeFailed":
-      return `${protocol}写入失败`;
-    case "deviceDisconnected":
-      return `${protocol}设备已断开`;
-    case "timeout":
-      return `${protocol}连接超时`;
-    case "protocolError":
-      return `${protocol}协议错误`;
-    default:
-      return `${protocol}连接失败`;
-  }
 }
