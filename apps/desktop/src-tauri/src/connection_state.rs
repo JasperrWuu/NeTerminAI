@@ -1,8 +1,11 @@
 use std::sync::{Mutex, PoisonError};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+#[cfg(not(test))]
+use tauri::Emitter;
 
+#[cfg(not(test))]
 pub(crate) const STATE_EVENT: &str = "connection:state";
 
 /// The small, user-facing state vocabulary shared by Local, Telnet and Serial
@@ -50,6 +53,7 @@ pub(crate) enum ConnectionErrorKind {
     Configuration,
 }
 
+#[cfg(not(test))]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConnectionStateEvent {
@@ -77,6 +81,7 @@ pub(crate) struct ConnectionStateTracker {
     connection_type: &'static str,
     instance_token: String,
     snapshot: Mutex<StateSnapshot>,
+    #[cfg(not(test))]
     app: Mutex<Option<AppHandle>>,
 }
 
@@ -97,10 +102,12 @@ impl ConnectionStateTracker {
                 message: None,
                 initial_emitted: false,
             }),
+            #[cfg(not(test))]
             app: Mutex::new(None),
         }
     }
 
+    #[cfg(not(test))]
     pub(crate) fn bind_app(&self, app: &AppHandle) {
         *lock_unpoisoned(&self.app) = Some(app.clone());
         let mut snapshot = lock_unpoisoned(&self.snapshot);
@@ -111,6 +118,9 @@ impl ConnectionStateTracker {
         self.log_locked(&snapshot);
         self.emit_locked(&snapshot);
     }
+
+    #[cfg(test)]
+    pub(crate) fn bind_app(&self, _app: &AppHandle) {}
 
     #[cfg(test)]
     pub(crate) fn state(&self) -> ConnectionState {
@@ -192,6 +202,7 @@ impl ConnectionStateTracker {
         true
     }
 
+    #[cfg(not(test))]
     fn emit_locked(&self, snapshot: &StateSnapshot) {
         let Some(app) = lock_unpoisoned(&self.app).clone() else {
             return;
@@ -207,6 +218,9 @@ impl ConnectionStateTracker {
             },
         );
     }
+
+    #[cfg(test)]
+    fn emit_locked(&self, _snapshot: &StateSnapshot) {}
 
     fn log_locked(&self, snapshot: &StateSnapshot) {
         #[cfg(debug_assertions)]
