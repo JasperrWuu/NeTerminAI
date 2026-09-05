@@ -39,6 +39,8 @@ import {
   useAiContextSelection,
   type TerminalContextWorkspace,
 } from "../ai/context";
+import { AiAssistant, createAiProvider } from "../ai/runtime";
+import { AiAssistantPanel } from "../ai/runtime/AiAssistantPanel";
 
 interface WorkbenchProps {
   preferences: WorkbenchPreferencesController;
@@ -77,6 +79,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("terminal");
   const [tabDragging, setTabDragging] = useState(false);
+  const [runtimeApiKey, setRuntimeApiKey] = useState("");
   const workspaceTabs = useWorkspaceTabs();
   const openTabIds = useMemo(() => workspaceTabs.tabs.map((tab) => tab.id), [workspaceTabs.tabs]);
   const runtimeRegistry = useTerminalSessionRegistry(openTabIds);
@@ -96,6 +99,13 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     () => new TerminalContextProvider(runtimeRegistry, () => workspaceContextRef.current),
     [runtimeRegistry],
   );
+  const aiAssistant = useMemo(
+    () => new AiAssistant(createAiProvider(settings.ai, runtimeApiKey), terminalContextProvider, runtimeRegistry),
+    [runtimeRegistry, terminalContextProvider],
+  );
+  useEffect(() => {
+    aiAssistant.setProvider(createAiProvider(settings.ai, runtimeApiKey));
+  }, [aiAssistant, runtimeApiKey, settings.ai]);
   const connectionLibrary = useConnectionLibrary();
   const [telnetDialog, setTelnetDialog] = useState<{
     open: boolean;
@@ -450,6 +460,9 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
               onChangeTerminal={settings.updateTerminal}
               onResetKeybindings={settings.resetKeybindings}
               onResetTerminal={settings.resetTerminal}
+              ai={settings.ai}
+              onChangeAi={settings.updateAi}
+              onResetAi={settings.resetAi}
               section={settingsSection}
               terminal={settings.terminal}
             />
@@ -484,13 +497,16 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                 selection={aiContextSelection.selection}
                 visibleTabIds={visibleTabIds}
               />
-              <div className="assistant-empty">
-                <div className="assistant-orb" aria-hidden="true">
-                  <AssistantIcon />
-                </div>
-                <h2>专注于当前工作</h2>
-                <p>终端能力稳定后，AI 将在这里理解上下文并协助执行任务。</p>
-              </div>
+              <AiAssistantPanel
+                apiKey={runtimeApiKey}
+                assistant={aiAssistant}
+                contextCount={terminalContextProvider.getContexts(aiContextSelection.selection).length}
+                onApiKeyChange={setRuntimeApiKey}
+                providerMode={settings.ai.providerMode}
+                providerPreset={settings.ai.providerPreset}
+                enabled={settings.ai.enabled}
+                selection={aiContextSelection.selection}
+              />
             </aside>
           </>
         )}

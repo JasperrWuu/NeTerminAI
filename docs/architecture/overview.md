@@ -30,6 +30,12 @@ AI 侧栏的上下文范围属于当前 Assistant 运行时状态，不写入全
 
 多会话数据经过轻量规范化后按 SessionContextMemory 分开维护，再组装成带有 `tabId`、`sessionId`、标题和连接类型的结构化会话数组。每个会话的摘要、重要事实和近期事件都有上限，最新终端输出与压缩记忆分开保存；没有 AI Provider 时仍使用确定性的整理逻辑。分析结果中的命令提案必须携带目标会话，并在用户明确批准后通过当前运行时的 InputPump 发送，执行前再次校验 sessionId，过期提案会被拒绝。
 
+## AI Runtime
+
+AI 助手每次发送问题都会重新采集当前选择的会话，保留有界的对话历史，并将每个 Session 独立标记为 `SESSION CONTEXT / TERMINAL OUTPUT`。`ApiAiProvider` 使用 OpenAI-compatible HTTP API，支持流式 SSE、取消和超时；`ProcessAiProvider` 通过独立的 Rust `AiProcessRunner` 调用用户明确配置的 CLI 或 PowerShell 脚本，stdin 传入结构化请求，stdout 与 stderr 分离。AI 进程不复用终端 PTY、xterm 或 Session worker，因此供应商故障、停止生成和进程错误都不会影响终端连接。
+
+API Key 只存在于当前运行内存，绝不写入 localStorage、ApplicationSettings 或日志。命令提案始终先显示在 AI 侧栏，只有用户点击“运行”后才会经由 `TerminalActionExecutor → TerminalSessionRegistry → InputPump` 发送；AI 不能自行改变目标会话、可执行文件或脚本路径。Claude CLI、OpenCode CLI、PowerShell 和自定义 CLI 使用同一进程边界，具体命令参数与本机环境需在手工验收时确认。
+
 ## 本地终端链路
 
 ```text

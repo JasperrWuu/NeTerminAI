@@ -7,7 +7,7 @@ import type {
   WorkspacePreferences,
 } from "./types";
 
-export const CURRENT_SETTINGS_SCHEMA_VERSION = 2;
+export const CURRENT_SETTINGS_SCHEMA_VERSION = 3;
 export const SETTINGS_STORAGE_KEY = "neterminai.application.settings.v2";
 export const LEGACY_SETTINGS_STORAGE_KEY = "neterminai.application.settings.v1";
 export const LEGACY_WORKBENCH_STORAGE_KEY = "neterminai.workbench.preferences.v2";
@@ -71,6 +71,19 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
         enabled: true,
       },
     },
+    ai: {
+      enabled: true,
+      providerMode: "api",
+      providerPreset: "openaiCompatible",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      executable: "",
+      scriptPath: "",
+      arguments: [],
+      cwd: "",
+      timeoutMs: 60_000,
+    },
     workspacePreferences: {
       leftSidebarOpen: true,
       rightSidebarOpen: false,
@@ -90,6 +103,7 @@ export function migrateSettings(
   const appearance = asRecord(root?.appearance);
   const terminal = asRecord(root?.terminal);
   const keybindings = asRecord(root?.keybindings);
+  const ai = asRecord(root?.ai);
   const highlightSets = normalizeHighlightSets(terminal, defaults.terminal.highlightSets);
   const highlightSelection = normalizeTerminalHighlightSelection(
     highlightSets,
@@ -137,7 +151,34 @@ export function migrateSettings(
       ...highlightSelection,
     },
     keybindings: normalizeKeybindings(keybindings, defaults.keybindings),
+    ai: normalizeAiSettings(ai, defaults.ai),
     workspacePreferences: normalizeWorkspacePreferences(workspaceValue, defaults.workspacePreferences),
+  };
+}
+
+function normalizeAiSettings(value: Record<string, unknown> | null, defaults: ApplicationSettings["ai"]): ApplicationSettings["ai"] {
+  const providerMode = value?.providerMode === "process" ? "process" : "api";
+  const preset = value?.providerPreset === "claude"
+    || value?.providerPreset === "opencode"
+    || value?.providerPreset === "powershell"
+    || value?.providerPreset === "custom"
+    ? value.providerPreset
+    : "openaiCompatible";
+  const args = Array.isArray(value?.arguments)
+    ? value.arguments.filter((item): item is string => typeof item === "string").slice(0, 32)
+    : defaults.arguments;
+  return {
+    enabled: typeof value?.enabled === "boolean" ? value.enabled : defaults.enabled,
+    providerMode,
+    providerPreset: preset,
+    baseUrl: nonEmptyString(value?.baseUrl) ?? defaults.baseUrl,
+    model: nonEmptyString(value?.model) ?? defaults.model,
+    temperature: finiteNumberInRange(value?.temperature, 0, 2) ?? defaults.temperature,
+    executable: typeof value?.executable === "string" ? value.executable : defaults.executable,
+    scriptPath: typeof value?.scriptPath === "string" ? value.scriptPath : defaults.scriptPath,
+    arguments: args,
+    cwd: typeof value?.cwd === "string" ? value.cwd : defaults.cwd,
+    timeoutMs: finiteNumberInRange(value?.timeoutMs, 1_000, 600_000) ?? defaults.timeoutMs,
   };
 }
 

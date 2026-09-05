@@ -91,6 +91,23 @@
   width: 100%;
 }
 
+.settings-view-heading { margin: 28px auto 18px; max-width: 720px; width: calc(100% - 48px); }
+.settings-view-heading h1 { font-size: 26px; letter-spacing: -0.02em; margin: 4px 0 0; }
+.settings-view-heading p { color: var(--text-secondary); font-size: 13px; line-height: 1.55; margin: 7px 0 0; }
+.settings-kicker { color: var(--accent-strong); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.settings-view > .settings-card { margin: 0 auto; max-width: 720px; width: calc(100% - 48px); }
+.settings-row { align-items: center; display: flex; gap: 18px; justify-content: space-between; min-height: 58px; padding: 10px 14px; }
+.settings-row + .settings-row { border-top: 1px solid var(--border-subtle); }
+.settings-row > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.settings-row strong { font-size: 13px; font-weight: 600; }
+.settings-row small { color: var(--text-secondary); font-size: 11px; }
+.settings-row select, .settings-field input, .settings-field textarea { background: var(--bg-panel-solid); border: 1px solid var(--border-subtle); border-radius: 7px; color: var(--text-primary); font: inherit; font-size: 12px; min-width: 180px; padding: 7px 8px; }
+.settings-field { align-items: center; display: flex; gap: 18px; justify-content: space-between; padding: 10px 14px; }
+.settings-field + .settings-field { border-top: 1px solid var(--border-subtle); }
+.settings-field > span { color: var(--text-secondary); font-size: 12px; }
+.settings-field textarea { resize: vertical; }
+.settings-reset { align-self: center; background: transparent; border: 1px solid var(--border-subtle); border-radius: 7px; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 12px; margin: 16px auto 32px; padding: 7px 12px; }
+
 .settings-scroll-area {
   flex: 1;
   min-height: 0;

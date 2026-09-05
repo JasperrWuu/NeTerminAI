@@ -1,5 +1,5 @@
 import type { SettingsSection } from "./types";
-import { KeyboardIcon, SettingsIcon } from "../workbench/icons";
+import { AssistantIcon, KeyboardIcon, SettingsIcon } from "../workbench/icons";
 
 interface SettingsSidebarProps {
   section: SettingsSection;
@@ -19,6 +19,16 @@ export function SettingsSidebar({ section, onSelect }: SettingsSidebarProps) {
       >
         <SettingsIcon />
         <span><strong>终端</strong><small>字体、光标与颜色</small></span>
+      </button>
+      <button
+        aria-current={section === "ai" ? "page" : undefined}
+        className="settings-nav-item"
+        data-active={section === "ai"}
+        onClick={() => onSelect("ai")}
+        type="button"
+      >
+        <AssistantIcon />
+        <span><strong>AI 助手</strong><small>服务与本地进程</small></span>
       </button>
       <button
         aria-current={section === "keyboard" ? "page" : undefined}

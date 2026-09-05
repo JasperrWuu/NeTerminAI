@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AppearanceSettings,
+  AiSettings,
   ApplicationSettings,
   KeybindingPatch,
   KeybindingSettings,
@@ -18,9 +19,11 @@ export interface ApplicationSettingsController extends ApplicationSettings {
   updateAppearance: (settings: Partial<AppearanceSettings>) => void;
   updateKeybindings: (settings: KeybindingPatch) => void;
   updateTerminal: (settings: Partial<TerminalSettings>) => void;
+  updateAi: (settings: Partial<AiSettings>) => void;
   updateWorkspacePreferences: (settings: Partial<WorkspacePreferences>) => void;
   resetKeybindings: () => void;
   resetTerminal: () => void;
+  resetAi: () => void;
   resetSettings: () => void;
 }
 
@@ -67,6 +70,10 @@ export function useApplicationSettings(): ApplicationSettingsController {
     });
   }, []);
 
+  const updateAi = useCallback((patch: Partial<AiSettings>) => {
+    setSettings((current) => ({ ...current, ai: { ...current.ai, ...patch } }));
+  }, []);
+
   const updateKeybindings = useCallback((patch: KeybindingPatch) => {
     setSettings((current) => ({
       ...current,
@@ -101,6 +108,10 @@ export function useApplicationSettings(): ApplicationSettingsController {
     }));
   }, []);
 
+  const resetAi = useCallback(() => {
+    setSettings((current) => ({ ...current, ai: createDefaultApplicationSettings().ai }));
+  }, []);
+
   const resetSettings = useCallback(() => {
     setSettings(createDefaultApplicationSettings());
   }, []);
@@ -110,18 +121,22 @@ export function useApplicationSettings(): ApplicationSettingsController {
     updateAppearance,
     updateKeybindings,
     updateTerminal,
+    updateAi,
     updateWorkspacePreferences,
     resetKeybindings,
     resetTerminal,
+    resetAi,
     resetSettings,
   }), [
     resetKeybindings,
     resetTerminal,
+    resetAi,
     resetSettings,
     settings,
     updateAppearance,
     updateKeybindings,
     updateTerminal,
+    updateAi,
     updateWorkspacePreferences,
   ]);
 }

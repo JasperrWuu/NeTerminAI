@@ -3,7 +3,9 @@ export type TerminalCursorStyle = "block" | "bar" | "underline";
 export type TerminalColorScheme = "adaptive" | "graphite" | "paper";
 export type TerminalFontWeight = 400 | 500 | 600;
 export type TerminalHighlightMatchMode = "text" | "regex";
-export type SettingsSection = "terminal" | "keyboard";
+export type SettingsSection = "terminal" | "keyboard" | "ai";
+export type AiProviderMode = "api" | "process";
+export type AiProviderPreset = "openaiCompatible" | "claude" | "opencode" | "powershell" | "custom";
 export type KeybindingCommandId =
   | "synchronizeVisibleTerminals"
   | "stopSynchronizedInput"
@@ -43,6 +45,20 @@ export interface AppearanceSettings {
   theme: AppearanceTheme;
 }
 
+export interface AiSettings {
+  enabled: boolean;
+  providerMode: AiProviderMode;
+  providerPreset: AiProviderPreset;
+  baseUrl: string;
+  model: string;
+  temperature: number;
+  executable: string;
+  scriptPath: string;
+  arguments: string[];
+  cwd: string;
+  timeoutMs: number;
+}
+
 export interface WorkspacePreferences {
   leftSidebarOpen: boolean;
   rightSidebarOpen: boolean;
@@ -69,5 +85,6 @@ export interface ApplicationSettings {
   appearance: AppearanceSettings;
   terminal: TerminalSettings;
   keybindings: KeybindingSettings;
+  ai: AiSettings;
   workspacePreferences: WorkspacePreferences;
 }
