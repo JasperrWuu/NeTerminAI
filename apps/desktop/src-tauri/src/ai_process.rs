@@ -156,10 +156,16 @@ pub(crate) fn run(
             timed_out = true;
             terminate_child(&mut child);
         }
-        match child
-            .try_wait()
-            .map_err(|error| format!("[ai_process] 等待 AI 进程失败：{error}"))?
-        {
+        let status = match child.try_wait() {
+            Ok(status) => status,
+            Err(error) => {
+                terminate_child(&mut child);
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
+                return Err(format!("[ai_process] 等待 AI 进程失败：{error}"));
+            }
+        };
+        match status {
             Some(status) => break status.code(),
             None => thread::sleep(Duration::from_millis(20)),
         }
