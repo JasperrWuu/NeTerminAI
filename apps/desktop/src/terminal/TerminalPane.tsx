@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -15,6 +14,8 @@ import {
   TerminalRuntimeController,
   type TerminalConnectionStateEvent,
 } from "./TerminalRuntimeController";
+import { terminalApi } from "../ipc/terminal";
+import type { TerminalCreateRequest } from "../ipc/types";
 import { TerminalInputPump } from "./TerminalInputPump";
 
 interface TerminalPaneCommonProps {
@@ -48,8 +49,6 @@ export function TerminalPane(props: TerminalPaneProps) {
   const { active, settings, theme } = props;
   const profileId = props.sessionType === "local" ? props.profileId : null;
   const sessionConnection = props.sessionType === "local" ? null : props.connection;
-  const commandPrefix = terminalCommandPrefix(props.sessionType);
-  const eventPrefix = commandPrefix;
   const supportsResize = props.sessionType !== "serial";
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -96,7 +95,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     if (active) {
       runtimeControllerRef.current?.resize();
     }
-  }, [active, commandPrefix, settings, supportsResize]);
+  }, [active, props.sessionType, settings, supportsResize]);
 
   useEffect(() => {
     if (!active) return;
@@ -107,7 +106,7 @@ export function TerminalPane(props: TerminalPaneProps) {
       terminal.focus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [active, commandPrefix, supportsResize]);
+  }, [active, props.sessionType, supportsResize]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -158,7 +157,9 @@ export function TerminalPane(props: TerminalPaneProps) {
       write: async (data) => {
         if (disposed || !sessionReadyRef.current) return;
         const sessionId = ptySessionIdRef.current;
-        if (sessionId) await invoke(`write_${commandPrefix}`, { sessionId, data });
+        if (sessionId) {
+          await terminalApi.write({ kind: props.sessionType, sessionId, data });
+        }
       },
       onError: (error) => {
         if (!disposed) setErrorMessage(String(error));
@@ -196,14 +197,13 @@ export function TerminalPane(props: TerminalPaneProps) {
     });
 
     const controller = new TerminalRuntimeController({
-      commandPrefix,
-      eventPrefix,
+      connectionType: props.sessionType,
       container,
       supportsResize,
       isActive: () => activeRef.current,
       fit: () => fitAddon.fit(),
       getTerminalSize: () => ({ columns: terminal.cols, rows: terminal.rows }),
-      createArguments: (sessionId, size) => terminalCreateArguments(props, sessionId, size.columns, size.rows),
+      createRequest: (sessionId, size) => terminalCreateRequest(props, sessionId, size.columns, size.rows),
       onOutput: (data) => enqueueOutput(decodeBase64(data)),
       onStateChange: (event) => {
         applyConnectionState(event, props, setStatus, setErrorMessage, sessionReadyRef);
@@ -243,8 +243,7 @@ export function TerminalPane(props: TerminalPaneProps) {
     };
     // Visual settings intentionally update without replacing the running PTY session.
   }, [
-    commandPrefix,
-    eventPrefix,
+    props.sessionType,
     profileId,
     sessionConnection,
     supportsResize,
@@ -293,19 +292,14 @@ function SyncInputIcon() {
   );
 }
 
-function terminalCommandPrefix(sessionType: TerminalSessionProps["sessionType"]) {
-  if (sessionType === "local") return "terminal";
-  return sessionType;
-}
-
-function terminalCreateArguments(props: TerminalSessionProps, sessionId: string, columns: number, rows: number) {
-  if (props.sessionType === "local") return { sessionId, profile: props.profileId, columns, rows };
+function terminalCreateRequest(props: TerminalSessionProps, sessionId: string, columns: number, rows: number): TerminalCreateRequest {
+  if (props.sessionType === "local") return { kind: "local", sessionId, profile: props.profileId, columns, rows };
   if (props.sessionType === "telnet") {
     const { host, port, username, password } = props.connection;
-    return { sessionId, host, port, username, password, columns, rows };
+    return { kind: "telnet", sessionId, host, port, username, password, columns, rows };
   }
   const { portName, baudRate, dataBits, stopBits, parity, flowControl } = props.connection;
-  return { sessionId, portName, baudRate, dataBits, stopBits, parity, flowControl };
+  return { kind: "serial", sessionId, portName, baudRate, dataBits, stopBits, parity, flowControl };
 }
 
 function terminalAriaLabel(props: TerminalSessionProps) {

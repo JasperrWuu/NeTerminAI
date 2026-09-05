@@ -1,60 +1,33 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { invokeInBackground } from "../platform/tauri";
+import { connectionStateApi } from "../ipc/connectionState";
+import { IpcError, normalizeIpcError } from "../ipc/errors";
+import { terminalApi } from "../ipc/terminal";
+import type {
+  TerminalConnectionState,
+  TerminalConnectionStateEvent,
+  TerminalConnectionType,
+  TerminalCreateRequest,
+  TerminalSize,
+} from "../ipc/types";
 
-interface TerminalOutputEvent {
-  sessionId: string;
-  data: string;
-}
-
-export type TerminalConnectionState =
-  | "connecting"
-  | "connected"
-  | "closing"
-  | "disconnected"
-  | "failed";
-
-export type TerminalDisconnectReason =
-  | "userRequested"
-  | "remoteClosed"
-  | "processExited"
-  | "connectionFailed"
-  | "readFailed"
-  | "writeFailed"
-  | "timeout"
-  | "protocolError"
-  | "deviceDisconnected"
-  | "applicationShutdown"
-  | "unknown";
-
-export type TerminalConnectionError = "connection" | "transport" | "protocol" | "configuration";
-
-export interface TerminalConnectionStateEvent {
-  sessionId: string;
-  state: TerminalConnectionState;
-  reason?: TerminalDisconnectReason;
-  error?: TerminalConnectionError;
-  message?: string;
-}
-
-interface TerminalSize {
-  columns: number;
-  rows: number;
-}
+export type {
+  TerminalConnectionError,
+  TerminalConnectionState,
+  TerminalConnectionStateEvent,
+  TerminalDisconnectReason,
+} from "../ipc/types";
 
 export interface TerminalRuntimeControllerOptions {
-  commandPrefix: string;
-  eventPrefix: string;
+  connectionType: TerminalConnectionType;
   container: HTMLElement;
   supportsResize: boolean;
   isActive: () => boolean;
   fit: () => void;
   getTerminalSize: () => TerminalSize;
-  createArguments: (sessionId: string, size: TerminalSize) => Record<string, unknown>;
+  createRequest: (sessionId: string, size: TerminalSize) => TerminalCreateRequest;
   onOutput: (data: string) => void;
   onReady: (sessionId: string) => void;
   onStateChange: (event: TerminalConnectionStateEvent) => void;
-  onError: (error: unknown) => void;
+  onError: (error: IpcError) => void;
 }
 
 type Unlisten = () => void;
@@ -135,11 +108,11 @@ export class TerminalRuntimeController {
     this.options.fit();
     if (!this.options.supportsResize || !this.isReady) return;
     const size = this.options.getTerminalSize();
-    invokeInBackground(`resize_${this.options.commandPrefix}`, {
+    void terminalApi.resize({
+      kind: this.options.connectionType,
       sessionId: this.sessionId,
-      columns: size.columns,
-      rows: size.rows,
-    });
+      size,
+    }).catch(() => undefined);
   }
 
   private async startRuntime() {
@@ -150,9 +123,8 @@ export class TerminalRuntimeController {
       await this.registerStateListener();
       if (this.disposed) return;
 
-      const createPromise = invoke<void>(
-        `create_${this.options.commandPrefix}`,
-        this.options.createArguments(this.sessionId, this.options.getTerminalSize()),
+      const createPromise = terminalApi.create(
+        this.options.createRequest(this.sessionId, this.options.getTerminalSize()),
       );
       this.createPromise = createPromise;
       await createPromise;
@@ -164,14 +136,14 @@ export class TerminalRuntimeController {
       }
       this.options.onReady(this.sessionId);
     } catch (error) {
-      if (!this.disposed) this.options.onError(error);
+      if (!this.disposed) this.options.onError(normalizeIpcError(error));
       this.removeListeners();
     }
   }
 
   private registerOutputListener() {
     return this.trackRegistration(
-      listen<TerminalOutputEvent>(`${this.options.eventPrefix}:output`, ({ payload }) => {
+      terminalApi.subscribeOutput(this.options.connectionType, (payload) => {
         if (!this.disposed
           && this.connectionState === "connected"
           && payload.sessionId === this.sessionId) {
@@ -189,7 +161,7 @@ export class TerminalRuntimeController {
 
   private registerStateListener() {
     return this.trackRegistration(
-      listen<TerminalConnectionStateEvent>("connection:state", ({ payload }) => {
+      connectionStateApi.subscribe((payload) => {
         if (this.disposed || payload.sessionId !== this.sessionId) return;
         if (this.sessionEnded) return;
         this.connectionState = payload.state;
@@ -244,8 +216,7 @@ export class TerminalRuntimeController {
       }
     }
     if (!this.createSucceeded) return;
-    await invoke<void>(`close_${this.options.commandPrefix}`, {
-      sessionId: this.sessionId,
-    }).catch(() => undefined);
+    await terminalApi.close({ kind: this.options.connectionType, sessionId: this.sessionId })
+      .catch(() => undefined);
   }
 }
