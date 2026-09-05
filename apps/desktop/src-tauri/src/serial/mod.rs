@@ -4,7 +4,7 @@ use std::{
     sync::{
         Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -16,6 +16,10 @@ use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use tauri::{AppHandle, Emitter};
 
 use crate::connection_state::{ConnectionErrorKind, ConnectionStateTracker, DisconnectReason};
+use crate::io_pump::{
+    MAX_IO_CHUNK_BYTES, OUTPUT_BATCH_BYTES, OutputReceiver, OutputSender, QueueSendError,
+    output_queue,
+};
 use crate::lifecycle::{
     AdmissionGate, AdmissionPermit, CancellationToken, CloseOnce, Lifecycle, LifecycleStage,
     WorkerKind, WorkerSupervisor,
@@ -45,6 +49,7 @@ enum SessionState {
 struct SerialRuntime {
     control: Arc<SessionControl>,
     resources: Mutex<Option<SerialResources>>,
+    output_sender: Mutex<Option<OutputSender>>,
     workers: WorkerSupervisor,
     start_gate: Arc<StartGate>,
     initializing: AtomicBool,
@@ -63,7 +68,7 @@ pub(crate) struct SessionControl {
 }
 
 struct SerialResources {
-    writer: Sender<WriterMessage>,
+    writer: SyncSender<WriterMessage>,
 }
 
 enum WriterMessage {
@@ -231,6 +236,7 @@ impl SerialRuntime {
         Self {
             control: Arc::new(SessionControl::new(session_id)),
             resources: Mutex::new(None),
+            output_sender: Mutex::new(None),
             workers: WorkerSupervisor::new(),
             start_gate: Arc::new(StartGate::new()),
             initializing: AtomicBool::new(true),
@@ -398,10 +404,50 @@ impl SerialManager {
                 return Err(format!("无法读取串口 {port_name}：{error}"));
             }
         };
-        let (writer, writer_receiver) = mpsc::channel();
+        let (writer, writer_receiver) = mpsc::sync_channel(crate::io_pump::INPUT_QUEUE_CAPACITY);
         *lock_unpoisoned(&runtime.resources) = Some(SerialResources {
             writer: writer.clone(),
         });
+        let (output_sender, output_receiver) = output_queue();
+        *lock_unpoisoned(&runtime.output_sender) = Some(output_sender.clone());
+
+        let output_control = Arc::clone(&runtime.control);
+        let output_gate = Arc::clone(&runtime.start_gate);
+        let output_session = session_id.clone();
+        let output_cleanup = self.cleanup.sender.clone();
+        let output_app = app.clone();
+        if runtime
+            .workers
+            .spawn(WorkerKind::Other, move |worker_cancel| {
+                run_output_pump(
+                    output_app,
+                    output_session,
+                    output_receiver,
+                    worker_cancel,
+                    output_control,
+                    output_gate,
+                    output_cleanup,
+                );
+            })
+            .is_err()
+        {
+            runtime.control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("串口输出线程启动失败".to_owned()),
+            );
+            runtime
+                .control
+                .request_close_with(DisconnectReason::ReadFailed);
+            runtime.start_gate.cancel();
+            runtime.workers.stop_accepting();
+            runtime.workers.request_shutdown();
+            lock_unpoisoned(&runtime.output_sender).take();
+            let resources = lock_unpoisoned(&runtime.resources).take();
+            drop(resources);
+            runtime.queue_cleanup(&session_id);
+            return Err("串口输出线程启动失败".to_owned());
+        }
 
         let writer_control = Arc::clone(&runtime.control);
         let writer_gate = Arc::clone(&runtime.start_gate);
@@ -448,6 +494,7 @@ impl SerialManager {
                     app,
                     reader_session,
                     reader,
+                    output_sender,
                     worker_cancel,
                     reader_control,
                     reader_gate,
@@ -492,15 +539,23 @@ impl SerialManager {
     }
 
     pub(crate) fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
+        if data.len() > MAX_IO_CHUNK_BYTES {
+            return Err(format!(
+                "串口单次输入超过 {} KB，请分段粘贴",
+                MAX_IO_CHUNK_BYTES / 1024
+            ));
+        }
         let runtime = self.running_runtime(session_id)?;
         let writer = lock_unpoisoned(&runtime.resources)
             .as_ref()
             .filter(|_| runtime.control.writable())
             .map(|resources| resources.writer.clone())
             .ok_or_else(|| "串口连接已关闭".to_owned())?;
-        writer
-            .send(WriterMessage::Bytes(data.to_vec()))
-            .map_err(|_| "串口连接已关闭".to_owned())
+        match writer.try_send(WriterMessage::Bytes(data.to_vec())) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err("串口输入队列繁忙，请稍后重试".to_owned()),
+            Err(TrySendError::Disconnected(_)) => Err("串口连接已关闭".to_owned()),
+        }
     }
 
     pub(crate) fn close(&self, session_id: &str) -> Result<(), String> {
@@ -741,8 +796,9 @@ fn cleanup_one(
     runtime.start_gate.cancel();
     runtime.workers.stop_accepting();
     runtime.workers.request_shutdown();
+    lock_unpoisoned(&runtime.output_sender).take();
     if let Some(resources) = lock_unpoisoned(&runtime.resources).take() {
-        let _ = resources.writer.send(WriterMessage::Shutdown);
+        let _ = resources.writer.try_send(WriterMessage::Shutdown);
     }
     let report = runtime.workers.wait_until(deadline);
     let complete = !runtime.initializing.load(Ordering::Acquire)
@@ -782,7 +838,15 @@ fn run_writer(
     if !start_gate.wait(&control.cancellation) {
         return;
     }
-    while let Ok(message) = receiver.recv() {
+    loop {
+        if worker_cancel.is_cancelled() || !control.writable() {
+            break;
+        }
+        let message = match receiver.recv_timeout(crate::io_pump::QUEUE_RETRY_INTERVAL) {
+            Ok(message) => message,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         match message {
             WriterMessage::Bytes(bytes) => {
                 if worker_cancel.is_cancelled() || !control.writable() {
@@ -808,10 +872,12 @@ fn run_writer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_reader(
     app: AppHandle,
     session_id: String,
     mut reader: Box<dyn SerialPort>,
+    output_sender: OutputSender,
     worker_cancel: CancellationToken,
     control: Arc<SessionControl>,
     start_gate: Arc<StartGate>,
@@ -830,20 +896,21 @@ fn run_reader(
         match reader.read(&mut buffer) {
             Ok(0) => {}
             Ok(length) => {
-                if control.writable()
-                    && app
-                        .emit(
-                            OUTPUT_EVENT,
-                            SerialOutput {
-                                session_id: session_id.clone(),
-                                data: STANDARD.encode(&buffer[..length]),
-                            },
-                        )
-                        .is_err()
-                {
-                    terminal_reason = Some(DisconnectReason::ReadFailed);
-                    terminal_error = Some("终端输出事件发送失败".to_owned());
-                    break;
+                if control.writable() {
+                    match output_sender.send(buffer[..length].to_vec(), &worker_cancel) {
+                        Ok(()) => {}
+                        Err(QueueSendError::Cancelled) => break,
+                        Err(QueueSendError::Closed) => {
+                            terminal_reason = Some(DisconnectReason::ReadFailed);
+                            terminal_error = Some("串口输出通道已关闭".to_owned());
+                            break;
+                        }
+                        Err(QueueSendError::ChunkTooLarge { .. }) => {
+                            terminal_reason = Some(DisconnectReason::ReadFailed);
+                            terminal_error = Some("串口输出块超过队列限制".to_owned());
+                            break;
+                        }
+                    }
                 }
             }
             Err(error) if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::Interrupted) => {}
@@ -885,6 +952,49 @@ fn run_reader(
         instance: Arc::clone(&control.instance),
         deadline: Instant::now() + SESSION_CLOSE_TIMEOUT,
     });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_output_pump(
+    app: AppHandle,
+    session_id: String,
+    mut receiver: OutputReceiver,
+    worker_cancellation: CancellationToken,
+    control: Arc<SessionControl>,
+    start_gate: Arc<StartGate>,
+    cleanup_sender: Sender<CleanupRequest>,
+) {
+    if !start_gate.wait(&control.cancellation) {
+        return;
+    }
+    while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
+        if !control.writable() {
+            break;
+        }
+        if app
+            .emit(
+                OUTPUT_EVENT,
+                SerialOutput {
+                    session_id: session_id.clone(),
+                    data: STANDARD.encode(batch),
+                },
+            )
+            .is_err()
+        {
+            control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("串口输出事件发送失败".to_owned()),
+            );
+            control.request_close_with(DisconnectReason::ReadFailed);
+            let _ = cleanup_sender.send(CleanupRequest::Session {
+                session_id,
+                instance: Arc::clone(&control.instance),
+                deadline: Instant::now() + SESSION_CLOSE_TIMEOUT,
+            });
+            break;
+        }
+    }
 }
 
 fn map_data_bits(value: u8) -> Result<DataBits, String> {
