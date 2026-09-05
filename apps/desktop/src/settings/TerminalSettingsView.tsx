@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type {
   AppearanceTheme,
   TerminalColorScheme,
@@ -13,6 +12,7 @@ import { resolveTerminalTheme } from "../terminal/themes";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { CloseIcon } from "../workbench/icons";
 import { quoteFontFamilyName, terminalFontStack } from "../terminal/fontStack";
+import { systemApi } from "../ipc/system";
 
 interface TerminalSettingsViewProps {
   appearanceTheme: AppearanceTheme;
@@ -45,7 +45,7 @@ export function TerminalSettingsView({
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
     let cancelled = false;
-    void invoke<string[]>("list_system_fonts")
+    void systemApi.listSystemFonts()
       .then((fonts) => {
         if (!cancelled) setFontFamilies(fonts);
       })

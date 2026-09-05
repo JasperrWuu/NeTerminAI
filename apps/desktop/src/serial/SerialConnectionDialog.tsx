@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { FolderPicker } from "../connections/FolderPicker";
 import { emptySerialConnection } from "../connections/types";
 import type {
@@ -14,6 +13,7 @@ import type {
 } from "../connections/types";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { SerialPortPicker } from "./SerialPortPicker";
+import { serialApi } from "../ipc/serial";
 
 interface SerialConnectionDialogProps {
   folders: ConnectionFolder[];
@@ -34,7 +34,7 @@ export function SerialConnectionDialog({ folders, initialSession, onCancel, onCr
   const loadPorts = useCallback(async () => {
     setPortsLoading(true);
     try {
-      setPorts(await invoke<string[]>("list_serial_ports"));
+      setPorts(await serialApi.listPorts());
     } catch {
       setPorts([]);
     } finally {
