@@ -5,7 +5,7 @@ use std::{
     sync::{
         Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -16,6 +16,10 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::connection_state::{ConnectionErrorKind, ConnectionStateTracker, DisconnectReason};
+use crate::io_pump::{
+    MAX_IO_CHUNK_BYTES, OUTPUT_BATCH_BYTES, OutputReceiver, OutputSender, QueueSendError,
+    output_queue,
+};
 use crate::lifecycle::{
     AdmissionGate, AdmissionPermit, CancellationToken, CloseOnce, Lifecycle, LifecycleStage,
     WorkerKind, WorkerSupervisor,
@@ -27,6 +31,8 @@ use super::{
 };
 
 const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(3);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const CONTROL_QUEUE_CAPACITY: usize = 16;
 
 pub struct TelnetManager {
     cleanup: CleanupCoordinator,
@@ -47,6 +53,7 @@ enum SessionState {
 struct TelnetRuntime {
     control: Arc<SessionControl>,
     resources: Mutex<Option<TelnetResources>>,
+    output_sender: Mutex<Option<OutputSender>>,
     workers: WorkerSupervisor,
     start_gate: Arc<StartGate>,
     initializing: AtomicBool,
@@ -66,7 +73,8 @@ pub(crate) struct SessionControl {
 
 struct TelnetResources {
     control: TcpStream,
-    writer: Sender<WriterMessage>,
+    writer: SyncSender<WriterMessage>,
+    control_writer: SyncSender<WriterMessage>,
     window_size_enabled: Arc<AtomicBool>,
 }
 
@@ -230,6 +238,7 @@ impl TelnetRuntime {
         Self {
             control: Arc::new(SessionControl::new(session_id)),
             resources: Mutex::new(None),
+            output_sender: Mutex::new(None),
             workers: WorkerSupervisor::new(),
             start_gate: Arc::new(StartGate::new()),
             initializing: AtomicBool::new(true),
@@ -321,9 +330,16 @@ impl TelnetManager {
         let runtime = self.runtime_for_control(&session_id, &control)?;
         runtime.control.bind_app(&app);
         let _guard = InitializationGuard(Arc::clone(&runtime));
-        let stream = match connect(&host, port) {
+        let stream = match connect(&host, port, &control.cancellation) {
             Ok(stream) => stream,
             Err(failure) => {
+                if control.close_once.is_requested() || control.cancellation.is_cancelled() {
+                    runtime
+                        .control
+                        .request_close_with(DisconnectReason::UserRequested);
+                    runtime.queue_cleanup(&session_id);
+                    return Err("Telnet 连接已取消".to_owned());
+                }
                 let reason = failure.reason;
                 runtime.control.mark_failed_with(
                     reason,
@@ -375,13 +391,55 @@ impl TelnetManager {
                 return Err(format!("无法管理 Telnet 连接：{error}"));
             }
         };
-        let (writer, writer_receiver) = mpsc::channel();
+        let (writer, writer_receiver) = mpsc::sync_channel(crate::io_pump::INPUT_QUEUE_CAPACITY);
+        let (control_writer, control_receiver) = mpsc::sync_channel(CONTROL_QUEUE_CAPACITY);
         let window_size_enabled = Arc::new(AtomicBool::new(false));
         *lock_unpoisoned(&runtime.resources) = Some(TelnetResources {
             control: control_stream,
             writer: writer.clone(),
+            control_writer: control_writer.clone(),
             window_size_enabled: Arc::clone(&window_size_enabled),
         });
+        let (output_sender, output_receiver) = output_queue();
+        *lock_unpoisoned(&runtime.output_sender) = Some(output_sender.clone());
+
+        let output_control = Arc::clone(&runtime.control);
+        let output_gate = Arc::clone(&runtime.start_gate);
+        let output_session = session_id.clone();
+        let output_cleanup = self.cleanup.sender.clone();
+        let output_app = app.clone();
+        if runtime
+            .workers
+            .spawn(WorkerKind::Other, move |worker_cancel| {
+                run_output_pump(
+                    output_app,
+                    output_session,
+                    output_receiver,
+                    worker_cancel,
+                    output_control,
+                    output_gate,
+                    output_cleanup,
+                );
+            })
+            .is_err()
+        {
+            runtime.control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("Telnet 输出线程启动失败".to_owned()),
+            );
+            runtime
+                .control
+                .request_close_with(DisconnectReason::ReadFailed);
+            runtime.start_gate.cancel();
+            runtime.workers.stop_accepting();
+            runtime.workers.request_shutdown();
+            lock_unpoisoned(&runtime.output_sender).take();
+            let resources = lock_unpoisoned(&runtime.resources).take();
+            shutdown_resources(resources.expect("Telnet resources installed"));
+            runtime.queue_cleanup(&session_id);
+            return Err("Telnet 输出线程启动失败".to_owned());
+        }
 
         let writer_control = Arc::clone(&runtime.control);
         let writer_gate = Arc::clone(&runtime.start_gate);
@@ -393,6 +451,7 @@ impl TelnetManager {
                 run_writer(
                     stream,
                     writer_receiver,
+                    control_receiver,
                     worker_cancel,
                     writer_control,
                     writer_gate,
@@ -436,7 +495,8 @@ impl TelnetManager {
                     app,
                     reader_session,
                     reader,
-                    writer,
+                    control_writer,
+                    output_sender,
                     credentials,
                     geometry,
                     worker_cancel,
@@ -483,7 +543,14 @@ impl TelnetManager {
     }
 
     pub(crate) fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
-        self.send(session_id, WriterMessage::Bytes(escape_iac(data)))
+        let escaped = escape_iac(data);
+        if escaped.len() > MAX_IO_CHUNK_BYTES {
+            return Err(format!(
+                "Telnet 单次输入超过 {} KB，请分段粘贴",
+                MAX_IO_CHUNK_BYTES / 1024
+            ));
+        }
+        self.send(session_id, WriterMessage::Bytes(escaped))
     }
 
     pub(crate) fn resize(&self, session_id: &str, columns: u16, rows: u16) -> Result<(), String> {
@@ -496,9 +563,12 @@ impl TelnetManager {
             return Ok(());
         }
         resources
-            .writer
-            .send(WriterMessage::Bytes(window_size_message(columns, rows)))
-            .map_err(|_| "Telnet 连接已关闭".to_owned())
+            .control_writer
+            .try_send(WriterMessage::Bytes(window_size_message(columns, rows)))
+            .map_err(|error| match error {
+                TrySendError::Full(_) => "Telnet 协议控制队列繁忙，请稍后重试".to_owned(),
+                TrySendError::Disconnected(_) => "Telnet 连接已关闭".to_owned(),
+            })
     }
 
     pub(crate) fn close(&self, session_id: &str) -> Result<(), String> {
@@ -587,9 +657,11 @@ impl TelnetManager {
             .filter(|_| runtime.control.writable())
             .map(|resources| resources.writer.clone())
             .ok_or_else(|| "Telnet 连接已关闭".to_owned())?;
-        writer
-            .send(message)
-            .map_err(|_| "Telnet 连接已关闭".to_owned())
+        match writer.try_send(message) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err("Telnet 输入队列繁忙，请稍后重试".to_owned()),
+            Err(TrySendError::Disconnected(_)) => Err("Telnet 连接已关闭".to_owned()),
+        }
     }
 
     fn is_current_starting(&self, session_id: &str, runtime: &Arc<TelnetRuntime>) -> bool {
@@ -751,6 +823,7 @@ fn cleanup_one(
     runtime.start_gate.cancel();
     runtime.workers.stop_accepting();
     runtime.workers.request_shutdown();
+    lock_unpoisoned(&runtime.output_sender).take();
     if let Some(resources) = lock_unpoisoned(&runtime.resources).take() {
         shutdown_resources(resources);
     }
@@ -780,9 +853,11 @@ fn cleanup_one(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_writer(
     mut stream: TcpStream,
     receiver: Receiver<WriterMessage>,
+    control_receiver: Receiver<WriterMessage>,
     worker_cancel: CancellationToken,
     control: Arc<SessionControl>,
     start_gate: Arc<StartGate>,
@@ -793,7 +868,20 @@ fn run_writer(
         let _ = stream.shutdown(Shutdown::Both);
         return;
     }
-    while let Ok(message) = receiver.recv() {
+    loop {
+        if worker_cancel.is_cancelled() || !control.writable() {
+            break;
+        }
+        let message = match control_receiver.try_recv() {
+            Ok(message) => message,
+            Err(mpsc::TryRecvError::Empty) | Err(mpsc::TryRecvError::Disconnected) => {
+                match receiver.recv_timeout(crate::io_pump::QUEUE_RETRY_INTERVAL) {
+                    Ok(message) => message,
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        };
         match message {
             WriterMessage::Bytes(bytes) => {
                 if worker_cancel.is_cancelled() || !control.writable() {
@@ -825,7 +913,8 @@ fn run_reader(
     app: AppHandle,
     session_id: String,
     mut reader: TcpStream,
-    writer: Sender<WriterMessage>,
+    control_writer: SyncSender<WriterMessage>,
+    output_sender: OutputSender,
     credentials: LoginCredentials,
     geometry: TerminalGeometry,
     worker_cancel: CancellationToken,
@@ -849,7 +938,7 @@ fn run_reader(
     let mut terminal_reason = None;
     let mut terminal_error = None;
 
-    loop {
+    'read: loop {
         if worker_cancel.is_cancelled() || control.cancellation.is_cancelled() {
             break;
         }
@@ -878,8 +967,15 @@ fn run_reader(
         };
         let frame = protocol.decode(&buffer[..length]);
         for response in frame.responses {
-            if !control.writable() || writer.send(WriterMessage::Bytes(response)).is_err() {
-                break;
+            if !control.writable() {
+                break 'read;
+            }
+            if send_control(&control_writer, response, &worker_cancel).is_err() {
+                if control.writable() && !worker_cancel.is_cancelled() {
+                    terminal_reason = Some(DisconnectReason::ReadFailed);
+                    terminal_error = Some("Telnet 协议控制消息发送失败".to_owned());
+                }
+                break 'read;
             }
         }
         if frame.output.is_empty() {
@@ -887,28 +983,53 @@ fn run_reader(
         }
         append_prompt_text(&mut prompt, &frame.output);
         if !username_sent && (prompt.contains("login:") || prompt.contains("username:")) {
-            let _ = writer.send(WriterMessage::Bytes(line_message(&credentials.username)));
+            if send_control(
+                &control_writer,
+                line_message(&credentials.username),
+                &worker_cancel,
+            )
+            .is_err()
+            {
+                if control.writable() && !worker_cancel.is_cancelled() {
+                    terminal_reason = Some(DisconnectReason::ReadFailed);
+                    terminal_error = Some("Telnet 登录消息发送失败".to_owned());
+                }
+                break 'read;
+            }
             username_sent = true;
             prompt.clear();
         } else if username_sent && !password_sent && prompt.contains("password:") {
-            let _ = writer.send(WriterMessage::Bytes(line_message(&credentials.password)));
+            if send_control(
+                &control_writer,
+                line_message(&credentials.password),
+                &worker_cancel,
+            )
+            .is_err()
+            {
+                if control.writable() && !worker_cancel.is_cancelled() {
+                    terminal_reason = Some(DisconnectReason::ReadFailed);
+                    terminal_error = Some("Telnet 登录消息发送失败".to_owned());
+                }
+                break 'read;
+            }
             password_sent = true;
             prompt.clear();
         }
-        if control.writable()
-            && app
-                .emit(
-                    OUTPUT_EVENT,
-                    TelnetOutput {
-                        session_id: session_id.clone(),
-                        data: STANDARD.encode(frame.output),
-                    },
-                )
-                .is_err()
-        {
-            terminal_reason = Some(DisconnectReason::ReadFailed);
-            terminal_error = Some("终端输出事件发送失败".to_owned());
-            break;
+        if control.writable() {
+            match output_sender.send(frame.output, &worker_cancel) {
+                Ok(()) => {}
+                Err(QueueSendError::Cancelled) => break,
+                Err(QueueSendError::Closed) => {
+                    terminal_reason = Some(DisconnectReason::ReadFailed);
+                    terminal_error = Some("Telnet 输出通道已关闭".to_owned());
+                    break;
+                }
+                Err(QueueSendError::ChunkTooLarge { .. }) => {
+                    terminal_reason = Some(DisconnectReason::ReadFailed);
+                    terminal_error = Some("Telnet 输出块超过队列限制".to_owned());
+                    break;
+                }
+            }
         }
     }
     if !control.close_once.is_requested() {
@@ -935,8 +1056,73 @@ fn run_reader(
     });
 }
 
+fn send_control(
+    sender: &SyncSender<WriterMessage>,
+    bytes: Vec<u8>,
+    cancellation: &CancellationToken,
+) -> Result<(), ()> {
+    let mut message = WriterMessage::Bytes(bytes);
+    loop {
+        if cancellation.is_cancelled() {
+            return Err(());
+        }
+        match sender.try_send(message) {
+            Ok(()) => return Ok(()),
+            Err(TrySendError::Full(next)) => {
+                message = next;
+                thread::sleep(crate::io_pump::QUEUE_RETRY_INTERVAL);
+            }
+            Err(TrySendError::Disconnected(_)) => return Err(()),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_output_pump(
+    app: AppHandle,
+    session_id: String,
+    mut receiver: OutputReceiver,
+    worker_cancellation: CancellationToken,
+    control: Arc<SessionControl>,
+    start_gate: Arc<StartGate>,
+    cleanup_sender: Sender<CleanupRequest>,
+) {
+    if !start_gate.wait(&control.cancellation) {
+        return;
+    }
+    while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
+        if !control.writable() {
+            break;
+        }
+        if app
+            .emit(
+                OUTPUT_EVENT,
+                TelnetOutput {
+                    session_id: session_id.clone(),
+                    data: STANDARD.encode(batch),
+                },
+            )
+            .is_err()
+        {
+            control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("Telnet 输出事件发送失败".to_owned()),
+            );
+            control.request_close_with(DisconnectReason::ReadFailed);
+            let _ = cleanup_sender.send(CleanupRequest::Session {
+                session_id,
+                instance: Arc::clone(&control.instance),
+                deadline: Instant::now() + SESSION_CLOSE_TIMEOUT,
+            });
+            break;
+        }
+    }
+}
+
 fn shutdown_resources(resources: TelnetResources) {
-    let _ = resources.writer.send(WriterMessage::Shutdown);
+    let _ = resources.writer.try_send(WriterMessage::Shutdown);
+    let _ = resources.control_writer.try_send(WriterMessage::Shutdown);
     let _ = resources.control.shutdown(Shutdown::Both);
 }
 
@@ -957,7 +1143,11 @@ impl TelnetConnectFailure {
     }
 }
 
-fn connect(host: &str, port: u16) -> Result<TcpStream, TelnetConnectFailure> {
+fn connect(
+    host: &str,
+    port: u16,
+    cancellation: &CancellationToken,
+) -> Result<TcpStream, TelnetConnectFailure> {
     let host = host.trim();
     if host.is_empty() || port == 0 {
         return Err(TelnetConnectFailure::new(
@@ -967,17 +1157,54 @@ fn connect(host: &str, port: u16) -> Result<TcpStream, TelnetConnectFailure> {
         ));
     }
     let address = format!("{host}:{port}");
-    let addresses = (host, port).to_socket_addrs().map_err(|error| {
-        TelnetConnectFailure::new(
+    if cancellation.is_cancelled() {
+        return Err(TelnetConnectFailure::new(
             DisconnectReason::ConnectionFailed,
             ConnectionErrorKind::Connection,
-            format!("无法解析 Telnet 地址：{error}"),
-        )
-    })?;
+            "Telnet 连接已取消".to_owned(),
+        ));
+    }
+    let addresses = (host, port)
+        .to_socket_addrs()
+        .map_err(|error| {
+            TelnetConnectFailure::new(
+                DisconnectReason::ConnectionFailed,
+                ConnectionErrorKind::Connection,
+                format!("无法解析 Telnet 地址：{error}"),
+            )
+        })?
+        .collect::<Vec<_>>();
+    if cancellation.is_cancelled() {
+        return Err(TelnetConnectFailure::new(
+            DisconnectReason::ConnectionFailed,
+            ConnectionErrorKind::Connection,
+            "Telnet 连接已取消".to_owned(),
+        ));
+    }
+    let deadline = Instant::now() + CONNECT_TIMEOUT;
     let mut last_error = None;
     for socket_address in addresses {
-        match TcpStream::connect_timeout(&socket_address, Duration::from_secs(5)) {
+        if cancellation.is_cancelled() {
+            return Err(TelnetConnectFailure::new(
+                DisconnectReason::ConnectionFailed,
+                ConnectionErrorKind::Connection,
+                "Telnet 连接已取消".to_owned(),
+            ));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match TcpStream::connect_timeout(&socket_address, remaining) {
             Ok(stream) => {
+                if cancellation.is_cancelled() {
+                    let _ = stream.shutdown(Shutdown::Both);
+                    return Err(TelnetConnectFailure::new(
+                        DisconnectReason::ConnectionFailed,
+                        ConnectionErrorKind::Connection,
+                        "Telnet 连接已取消".to_owned(),
+                    ));
+                }
                 stream.set_nodelay(true).map_err(|error| {
                     TelnetConnectFailure::new(
                         DisconnectReason::ConnectionFailed,
@@ -1043,9 +1270,20 @@ mod tests {
 
     #[test]
     fn invalid_endpoint_is_reported_as_configuration_failure() {
-        let failure = connect("", 23).expect_err("empty host must fail");
+        let failure = connect("", 23, &CancellationToken::new()).expect_err("empty host must fail");
         assert_eq!(failure.reason, DisconnectReason::ConnectionFailed);
         assert_eq!(failure.error, ConnectionErrorKind::Configuration);
+    }
+
+    #[test]
+    fn cancelled_connect_is_rejected_before_dns_or_socket_work() {
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let failure =
+            connect("localhost", 23, &cancellation).expect_err("cancelled connect must not start");
+        assert_eq!(failure.reason, DisconnectReason::ConnectionFailed);
+        assert_eq!(failure.error, ConnectionErrorKind::Connection);
+        assert_eq!(failure.message, "Telnet 连接已取消");
     }
 
     #[test]
