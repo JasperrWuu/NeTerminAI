@@ -1,0 +1,117 @@
+/* Desktop chrome only. Terminal geometry, splitters and runtime stay independent. */
+:root {
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --bg-panel: rgb(31 32 36 / 88%);
+  --bg-panel-solid: #1f2024;
+  --bg-elevated: #292a2f;
+  --separator: rgb(255 255 255 / 8%);
+  --text-secondary: #bfc0c8;
+  --text-tertiary: #a1a3ae;
+  --material-raised: #37383e;
+  --material-edge: rgb(255 255 255 / 7%);
+  --shadow-control: 0 1px 3px rgb(0 0 0 / 18%), 0 0 0 1px var(--material-edge);
+  --shadow-card: 0 2px 8px rgb(0 0 0 / 8%);
+}
+
+:root[data-theme="light"] {
+  --bg-panel: rgb(240 237 231 / 88%);
+  --bg-panel-solid: #f0ede7;
+  --bg-elevated: #fffdf9;
+  --separator: rgb(65 52 41 / 8%);
+  --text-secondary: #625d58;
+  --text-tertiary: #77706a;
+  --material-raised: #fffefb;
+  --material-edge: rgb(65 52 41 / 7%);
+  --shadow-control: 0 1px 3px rgb(65 52 41 / 10%), 0 0 0 1px var(--material-edge);
+  --shadow-card: 0 2px 8px rgb(65 52 41 / 4%);
+}
+
+.titlebar, .sidebar { backdrop-filter: blur(24px) saturate(135%); }
+.brand { letter-spacing: -.025em; }
+.panel-title { font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.activity-button { border-radius: 11px; }
+.activity-button[data-active="true"] { border-color: transparent; box-shadow: inset 0 0 0 1px var(--material-edge); }
+.activity-button[data-active="true"]::before { content: none; }
+.activity-button svg, .icon-button svg, .folder-symbol { stroke-width: 1.65; }
+
+.connection-list { border-top: 0; }
+.connection-group-label { font-size: 12px; font-weight: 600; letter-spacing: .015em; text-transform: none; }
+.remote-group-label { border-top: 0; }
+.connection-item { min-height: 42px; gap: 10px; border-radius: 9px; }
+.connection-name { font-size: 13px; font-weight: 550; }
+.connection-profile-icon {
+  border-color: transparent;
+  border-radius: 8px;
+  width: 30px;
+  height: 28px;
+  font-size: 9px;
+  letter-spacing: -.02em;
+}
+.connection-profile-icon svg { width: 18px; height: 18px; }
+.folder-symbol { color: var(--accent); }
+.folder-name { font-weight: 550; }
+.folder-count { background: transparent; border-color: transparent; font-variant-numeric: tabular-nums; }
+.session-folder-contents { border-left-color: var(--border-subtle); }
+
+/* A single quiet list remains legible in a narrow sidebar. */
+.connection-create-grid { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.connection-create-card {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 10px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 1px;
+  min-height: 52px;
+  padding: 7px 8px;
+}
+.connection-create-card:hover { background: var(--bg-hover); border-color: transparent; }
+.connection-create-icon { grid-row: 1 / 3; width: 30px; height: 30px; border: 0; border-radius: 9px; margin-top: 0; align-self: center; }
+.connection-create-icon svg { width: 18px; height: 18px; }
+.connection-create-card strong { font-size: 13px; font-weight: 550; align-self: end; }
+.connection-create-card small { grid-column: 2; font-size: 12px; align-self: start; }
+
+.tab, .tab-active-indicator { border-radius: 9px; }
+.tab-active-indicator { background: var(--material-raised); box-shadow: var(--shadow-control); }
+.tabbar[data-active-pane="true"] .tab-active-indicator { box-shadow: var(--shadow-control); }
+.tab[data-active="true"] .tab-title { font-weight: 600; }
+.tab-close { border-radius: 7px; }
+.tab-glyph svg { stroke-width: 1.65; }
+
+.secondary-button { border-color: var(--material-edge); border-radius: 8px; box-shadow: var(--shadow-control); color: var(--text-primary); }
+.segmented-control { background: var(--bg-active); border-color: transparent; border-radius: 9px; }
+.segmented-control-indicator { background: var(--material-raised); border-color: transparent; border-radius: 7px; box-shadow: var(--shadow-control); }
+.segmented-control button { border-radius: 7px; }
+.segmented-control button[data-active="true"] { font-weight: 550; }
+
+.settings-nav-item { border-radius: 10px; }
+.settings-nav-item[data-active="true"] { border-color: transparent; }
+.settings-heading h1, .settings-view-heading h1 { letter-spacing: -.035em; font-weight: 650; }
+.settings-card { border-radius: 14px; border-color: var(--material-edge); box-shadow: var(--shadow-card); }
+.setting-row { padding: 15px 18px; }
+.settings-field, .settings-row small { font-size: 13px; }
+.scheme-card { border-radius: 10px; }
+.switch { box-shadow: inset 0 0 0 1px var(--material-edge); }
+.switch span { box-shadow: 0 1px 3px rgb(0 0 0 / 20%); }
+.connection-dialog { border-radius: 20px; border-color: var(--material-edge); }
+.connection-form-grid input, .connection-form-grid select { border-radius: 9px; }
+
+/* Press feedback is immediate, without animating layout or pointer-following geometry. */
+:is(.activity-button, .icon-button, .connection-item, .connection-create-card, .tab-close, .secondary-button):active {
+  background: var(--bg-active);
+  transition-duration: 0ms;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .titlebar, .sidebar { background: var(--bg-panel-solid); backdrop-filter: none; }
+  .connection-dialog { backdrop-filter: none; }
+}
+
+@media (prefers-contrast: more) {
+  :root { --separator: rgb(255 255 255 / 36%); --material-edge: rgb(255 255 255 / 45%); --text-tertiary: #c7c9d2; }
+  :root[data-theme="light"] { --separator: rgb(42 35 30 / 38%); --material-edge: rgb(42 35 30 / 45%); --text-tertiary: #4f4944; }
+  .activity-button[data-active="true"], .settings-nav-item[data-active="true"] { border-color: var(--accent); }
+}

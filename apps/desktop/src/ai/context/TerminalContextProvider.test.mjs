@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TerminalContextProvider } from "./TerminalContextProvider.ts";
+import { TerminalCapabilityAdapter as TerminalContextProvider } from "../../capabilities/terminalAdapter.ts";
 
 const localTab = { id: "local-tab", kind: "localTerminal", profileId: "powershell", title: "PowerShell" };
 const telnetTab = {
@@ -17,6 +17,12 @@ const serialTab = {
     name: "Console", portName: "COM1", baudRate: 9600, dataBits: 8, stopBits: 1,
     parity: "none", flowControl: "none",
   },
+};
+const rdpTab = {
+  id: "rdp-tab",
+  kind: "rdp",
+  title: "VM",
+  connection: { name: "VM", host: "192.0.2.20", port: 3389, username: "admin", password: "secret" },
 };
 
 function pane(id, tabIds, activeTabId) {
@@ -145,4 +151,27 @@ test("selected scope can read a hidden open tab without following tile visibilit
     provider.getContexts({ scope: "selected", selectedTabIds: ["local-tab"] }).map((context) => context.tabId),
     ["local-tab"],
   );
+});
+
+test("native RDP tabs are excluded at the Core capability boundary", () => {
+  const workspace = {
+    tabs: [localTab, rdpTab],
+    layout: {
+      type: "split", id: "split", direction: "row", ratio: 0.5,
+      first: pane("pane-a", ["local-tab"], "local-tab"),
+      second: pane("pane-b", ["rdp-tab"], "rdp-tab"),
+    },
+    activePaneId: "pane-b",
+    activeTabId: "rdp-tab",
+  };
+  const provider = providerWith(workspace, new Map([
+    ["local-tab", runtime("local", "session-l")],
+  ]));
+  assert.deepEqual(provider.listSessions().map((session) => session.tabId), ["local-tab"]);
+  assert.deepEqual(provider.getContexts({ scope: "selected", selectedTabIds: ["rdp-tab"] }), []);
+  assert.equal(provider.getActiveContext(), undefined);
+  assert.deepEqual(provider.dispatchInput({ tabId: "rdp-tab", sessionId: "rdp-session" }, "whoami"), {
+    ok: false,
+    code: "stale_session",
+  });
 });

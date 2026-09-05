@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
+import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import {
@@ -21,14 +21,18 @@ import type {
   WorkspaceDropZone,
   WorkspaceLayoutNode,
   WorkspacePaneNode,
+  WorkspaceProjectSnapshot,
   WorkspaceTab,
 } from "./types";
 
 interface WorkspaceState {
+  projectId: string;
   tabs: WorkspaceTab[];
   layout: WorkspaceLayoutNode;
   activePaneId: string;
 }
+
+export type InitialWorkspaceState = WorkspaceProjectSnapshot;
 
 function createPane(tabId?: string): WorkspacePaneNode {
   return {
@@ -43,6 +47,7 @@ function createLocalTerminalTab(
   id: string,
   profileId: LocalTerminalProfileId,
   existingTabs: WorkspaceTab[],
+  projectId?: string,
 ): LocalTerminalTab {
   const profile = getLocalTerminalProfile(profileId);
   const profileCount = existingTabs.filter(
@@ -52,23 +57,34 @@ function createLocalTerminalTab(
   return {
     id,
     kind: "localTerminal",
+    ...(projectId ? { projectId } : {}),
     profileId,
     title: profileCount === 0 ? profile.name : `${profile.name} ${profileCount + 1}`,
   };
 }
 
-export function useWorkspaceTabs() {
+export function useWorkspaceTabs(
+  initialProjectId = "default",
+  initialState?: InitialWorkspaceState,
+) {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() => {
-    const initialTab = createLocalTerminalTab(crypto.randomUUID(), "powershell", []);
+    if (initialState && initialState.tabs.length > 0) {
+      const tabs = initialState.tabs.map((tab) => ({ ...tab, projectId: tab.projectId ?? initialProjectId }));
+      const layout = tabs.length > 0 ? initialState.layout : createPane();
+      const activePaneId = findPane(layout, initialState.activePaneId)?.id ?? firstPane(layout).id;
+      return { projectId: initialProjectId, tabs, layout, activePaneId };
+    }
+    const initialTab = createLocalTerminalTab(crypto.randomUUID(), "powershell", [], initialProjectId);
     const initialPane = createPane(initialTab.id);
-    return { tabs: [initialTab], layout: initialPane, activePaneId: initialPane.id };
+    return { projectId: initialProjectId, tabs: [initialTab], layout: initialPane, activePaneId: initialPane.id };
   });
 
   const addTab = useCallback((create: (tabs: WorkspaceTab[]) => WorkspaceTab) => {
     setWorkspace((current) => {
-      const tab = create(current.tabs);
+      const tab = { ...create(current.tabs), projectId: current.projectId };
       const paneId = findPane(current.layout, current.activePaneId)?.id ?? firstPane(current.layout).id;
       return {
+        projectId: current.projectId,
         tabs: [...current.tabs, tab],
         layout: updatePane(current.layout, paneId, (pane) => ({
           ...pane,
@@ -87,7 +103,7 @@ export function useWorkspaceTabs() {
 
   const balanceWorkspace = useCallback(() => {
     setWorkspace((current) => {
-      const tabIds = current.tabs.map((tab) => tab.id);
+      const tabIds = current.tabs.filter((tab) => tab.projectId === current.projectId).map((tab) => tab.id);
       if (tabIds.length <= 1) return current;
       const currentActiveTabId = findPane(current.layout, current.activePaneId)?.activeTabId;
       const activeTabId = currentActiveTabId && tabIds.includes(currentActiveTabId)
@@ -105,7 +121,7 @@ export function useWorkspaceTabs() {
 
   const mergeAllTabGroups = useCallback(() => {
     setWorkspace((current) => {
-      const tabIds = current.tabs.map((tab) => tab.id);
+      const tabIds = current.tabs.filter((tab) => tab.projectId === current.projectId).map((tab) => tab.id);
       const currentActiveTabId = findPane(current.layout, current.activePaneId)?.activeTabId;
       const activeTabId = currentActiveTabId && tabIds.includes(currentActiveTabId)
         ? currentActiveTabId
@@ -132,31 +148,41 @@ export function useWorkspaceTabs() {
       const layout = removePane(current.layout, paneId);
       if (!layout) return current;
       const usedTabIds = new Set(collectTabIds(layout));
-      const tabs = current.tabs.filter((tab) => usedTabIds.has(tab.id));
+      const tabs = current.tabs.filter((tab) => tab.projectId !== current.projectId || usedTabIds.has(tab.id));
       const activePane = findPane(layout, current.activePaneId) ?? firstPane(layout);
       return { ...current, tabs, layout, activePaneId: activePane.id };
     });
   }, []);
 
-  const openTelnet = useCallback((connection: TelnetConnection) => addTab(() => ({
+  const openTelnet = useCallback((connection: TelnetConnection, connectionId?: string) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "telnet",
     connection,
+    ...(connectionId ? { connectionId } : {}),
     title: connection.name.trim() || `${connection.host}:${connection.port}`,
   })), [addTab]);
 
-  const openSerial = useCallback((connection: SerialConnection) => addTab(() => ({
+  const openSerial = useCallback((connection: SerialConnection, connectionId?: string) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "serial",
     connection,
+    ...(connectionId ? { connectionId } : {}),
     title: connection.name.trim() || connection.portName,
   })), [addTab]);
 
-  const openSsh = useCallback((connection: SshConnection, hostKeyAction: SshHostKeyAction = "strict") => addTab(() => ({
+  const openSsh = useCallback((connection: SshConnection, connectionId?: string) => addTab(() => ({
     id: crypto.randomUUID(),
     kind: "ssh",
     connection,
-    hostKeyAction,
+    ...(connectionId ? { connectionId } : {}),
+    title: connection.name.trim() || `${connection.host}:${connection.port}`,
+  })), [addTab]);
+
+  const openRdp = useCallback((connection: RdpConnection, connectionId?: string) => addTab(() => ({
+    id: crypto.randomUUID(),
+    kind: "rdp",
+    connection,
+    ...(connectionId ? { connectionId } : {}),
     title: connection.name.trim() || `${connection.host}:${connection.port}`,
   })), [addTab]);
 
@@ -172,7 +198,7 @@ export function useWorkspaceTabs() {
 
   const activateNextSession = useCallback(() => {
     setWorkspace((current) => {
-      const sessions = current.tabs;
+      const sessions = current.tabs.filter((tab) => tab.projectId === current.projectId);
       if (sessions.length === 0) return current;
       const activePane = findPane(current.layout, current.activePaneId) ?? firstPane(current.layout);
       const activeIndex = sessions.findIndex((tab) => tab.id === activePane.activeTabId);
@@ -196,6 +222,7 @@ export function useWorkspaceTabs() {
       const layout = nextLayout ?? createPane();
       const activePaneId = findPane(layout, current.activePaneId)?.id ?? firstPane(layout).id;
       return {
+        projectId: current.projectId,
         tabs: current.tabs.filter((tab) => tab.id !== tabId),
         layout,
         activePaneId,
@@ -267,9 +294,42 @@ export function useWorkspaceTabs() {
       : current);
   }, []);
 
+  const captureProjectState = useCallback((): WorkspaceProjectSnapshot => ({
+    projectId: workspace.projectId,
+    tabs: workspace.tabs.filter((tab) => tab.projectId === workspace.projectId),
+    layout: workspace.layout,
+    activePaneId: workspace.activePaneId,
+  }), [workspace.activePaneId, workspace.layout, workspace.projectId, workspace.tabs]);
+
+  const switchProject = useCallback((projectId: string, next: WorkspaceProjectSnapshot) => {
+    setWorkspace((current) => {
+      const nextTabIds = new Set(next.tabs.map((tab) => tab.id));
+      const existingById = new Map(
+        current.tabs
+          .filter((tab) => tab.projectId === projectId)
+          .map((tab) => [tab.id, tab]),
+      );
+      const targetTabs = next.tabs.map((tab) => existingById.get(tab.id) ?? { ...tab, projectId });
+      // Keep the previous project's tabs in the runtime registry while its
+      // project is hidden.  Removing them here would make the registry
+      // dispose their sessions as soon as the project is switched away from.
+      // Only the active project's layout determines what is rendered.
+      const preserved = current.tabs.filter((tab) => !nextTabIds.has(tab.id));
+      const layout = targetTabs.length > 0 ? next.layout : createPane();
+      const activePaneId = findPane(layout, next.activePaneId)?.id ?? firstPane(layout).id;
+      return {
+        projectId,
+        tabs: [...preserved, ...targetTabs],
+        layout,
+        activePaneId,
+      };
+    });
+  }, []);
+
   const activePane = findPane(workspace.layout, workspace.activePaneId) ?? firstPane(workspace.layout);
 
   return useMemo(() => ({
+    projectId: workspace.projectId,
     tabs: workspace.tabs,
     layout: workspace.layout,
     activePaneId: activePane.id,
@@ -284,10 +344,13 @@ export function useWorkspaceTabs() {
     openTelnet,
     openSerial,
     openSsh,
+    openRdp,
     closeTab,
     moveTab,
     mergeAllTabGroups,
     resizeSplit,
+    captureProjectState,
+    switchProject,
   }), [
     activateNextSession,
     activatePane,
@@ -303,9 +366,13 @@ export function useWorkspaceTabs() {
     mergeAllTabGroups,
     openSerial,
     openSsh,
+    openRdp,
     openTelnet,
     workspace.layout,
     workspace.tabs,
     resizeSplit,
+    captureProjectState,
+    switchProject,
+    workspace.projectId,
   ]);
 }

@@ -1,4 +1,5 @@
 import type { ContextAnalysisResult, TerminalCommandProposal } from "../analysis/types";
+import type { ProjectContextPatch } from "../../capabilities/project";
 
 export function parseAnalysisResponse(text: string): ContextAnalysisResult {
   const trimmed = text.trim();
@@ -36,7 +37,17 @@ function isAnalysis(value: unknown): value is ContextAnalysisResult {
     && Array.isArray(root.suggestedChecks)
     && root.suggestedChecks.every((item) => typeof item === "string")
     && Array.isArray(root.proposals)
-    && root.proposals.every((item) => isProposal(item));
+    && root.proposals.every((item) => isProposal(item))
+    && (!("projectContextUpdate" in root) || isProjectContextUpdate(root.projectContextUpdate));
+}
+
+function isProjectContextUpdate(value: unknown): value is ProjectContextPatch {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const root = value as Record<string, unknown>;
+  const textFields = ["goal", "topology", "progress"];
+  const listFields = ["keyConfigurations", "confirmedFacts", "issues", "conclusions", "nextSteps"];
+  return textFields.every((field) => !(field in root) || typeof root[field] === "string")
+    && listFields.every((field) => !(field in root) || (Array.isArray(root[field]) && root[field].every((item) => typeof item === "string")));
 }
 
 function isEvidence(value: unknown) {

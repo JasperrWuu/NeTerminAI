@@ -1,9 +1,13 @@
 import type { LocalTerminalProfileId } from "../terminal/profiles";
-import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
+import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 
 interface WorkspaceTabBase {
   id: string;
   title: string;
+  /** Project scope is a logical owner; it does not control runtime lifetime. */
+  projectId?: string;
+  /** Saved connection identity, when a tab was opened from the library. */
+  connectionId?: string;
 }
 
 export interface LocalTerminalTab extends WorkspaceTabBase {
@@ -24,11 +28,14 @@ export interface SerialTab extends WorkspaceTabBase {
 export interface SshTab extends WorkspaceTabBase {
   kind: "ssh";
   connection: SshConnection;
-  /** Host-key replacement is an explicit one-time action, never persisted. */
-  hostKeyAction: SshHostKeyAction;
 }
 
-export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SshTab;
+export interface RdpTab extends WorkspaceTabBase {
+  kind: "rdp";
+  connection: RdpConnection;
+}
+
+export type WorkspaceTab = LocalTerminalTab | TelnetTab | SerialTab | SshTab | RdpTab;
 
 export type WorkspaceSplitDirection = "row" | "column";
 export type WorkspaceDropZone = "center" | "left" | "right" | "top" | "bottom";
@@ -55,3 +62,11 @@ export interface WorkspaceSplitNode {
 }
 
 export type WorkspaceLayoutNode = WorkspacePaneNode | WorkspaceSplitNode;
+
+/** In-memory snapshot used when switching the active Project. */
+export interface WorkspaceProjectSnapshot {
+  projectId: string;
+  tabs: WorkspaceTab[];
+  layout: WorkspaceLayoutNode;
+  activePaneId: string;
+}

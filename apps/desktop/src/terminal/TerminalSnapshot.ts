@@ -1,24 +1,14 @@
-/**
- * The small, renderer-neutral view of a terminal that an AI consumer may
- * inspect. It intentionally contains no xterm or DOM types.
- */
-export interface TerminalSnapshotLimits {
-  maxLines: number;
-  maxChars: number;
-}
+import {
+  DEFAULT_TERMINAL_SNAPSHOT_LIMITS,
+  type TerminalSnapshot,
+  type TerminalSnapshotLimits,
+} from "../capabilities/terminal";
 
-export const DEFAULT_TERMINAL_SNAPSHOT_LIMITS: Readonly<TerminalSnapshotLimits> = {
-  maxLines: 300,
-  maxChars: 32 * 1024,
-};
-
-export interface TerminalSnapshot {
-  sessionId: string;
-  cols: number;
-  rows: number;
-  recentText: string;
-  selection?: string;
-}
+export {
+  DEFAULT_TERMINAL_SNAPSHOT_LIMITS,
+  type TerminalSnapshot,
+  type TerminalSnapshotLimits,
+} from "../capabilities/terminal";
 
 /** The public line surface used by xterm.js buffer lines. */
 export interface TerminalBufferLineLike {

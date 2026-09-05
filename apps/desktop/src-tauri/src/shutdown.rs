@@ -10,7 +10,7 @@ use std::{
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    ai_process::AiProcessManager, serial::SerialManager, telnet::TelnetManager,
+    ai_process::AiProcessManager, rdp::RdpManager, serial::SerialManager, telnet::TelnetManager,
     terminal::TerminalManager,
 };
 
@@ -54,6 +54,7 @@ impl ShutdownCoordinator {
                 let deadline = Instant::now() + GLOBAL_SHUTDOWN_TIMEOUT;
                 let ai_processes = app.state::<AiProcessManager>();
                 ai_processes.cancel_all();
+                shutdown_rdp_on_main_thread(&app, deadline);
                 app.state::<TerminalManager>().shutdown(deadline);
                 app.state::<TelnetManager>().shutdown(deadline);
                 app.state::<SerialManager>().shutdown(deadline);
@@ -70,6 +71,30 @@ impl ShutdownCoordinator {
             })
             .expect("unable to start application shutdown worker");
         *lock_unpoisoned(&self.worker) = Some(worker);
+    }
+}
+
+fn shutdown_rdp_on_main_thread(app: &AppHandle, deadline: Instant) {
+    let manager = app.state::<RdpManager>().inner().clone();
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let app_handle = app.clone();
+    if let Err(error) = app_handle.run_on_main_thread(move || {
+        let result = manager.shutdown();
+        let _ = sender.send(result);
+    }) {
+        eprintln!("[neterminai][shutdown] unable to schedule RDP cleanup: {error}");
+        return;
+    }
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    match receiver.recv_timeout(remaining) {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => eprintln!("[neterminai][shutdown] RDP cleanup failed: {error}"),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            eprintln!("[neterminai][shutdown] RDP cleanup reached global deadline")
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            eprintln!("[neterminai][shutdown] RDP cleanup callback ended unexpectedly")
+        }
     }
 }
 

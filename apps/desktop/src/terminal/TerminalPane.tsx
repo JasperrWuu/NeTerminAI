@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { LocalTerminalProfileId } from "./profiles";
-import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import {
   TerminalSessionRuntime,
   type TerminalSessionDefinition,
@@ -28,7 +28,7 @@ type TerminalSessionProps =
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
   | { sessionType: "telnet"; connection: TelnetConnection }
   | { sessionType: "serial"; connection: SerialConnection }
-  | { sessionType: "ssh"; connection: SshConnection; hostKeyAction: SshHostKeyAction };
+  | { sessionType: "ssh"; connection: SshConnection };
 
 type TerminalPaneProps = TerminalPaneCommonProps & TerminalSessionProps;
 
@@ -130,7 +130,6 @@ function terminalSessionDefinition(props: TerminalSessionProps): TerminalSession
     return {
       sessionType: "ssh",
       connection: props.connection,
-      hostKeyAction: props.hostKeyAction,
     };
   }
   return { sessionType: "serial", connection: props.connection };

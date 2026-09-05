@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  DEFAULT_AI_CONTEXT_SELECTION,
+  DEFAULT_CONTEXT_SELECTION,
   reconcileContextSelection,
-  type AiContextScope,
-  type AiContextSelection,
-} from "./selection";
+  type ContextSelection,
+  type TerminalContextScope,
+} from "../../capabilities/terminal";
 
 export function useAiContextSelection(
   openTabIds: readonly string[],
   activeTabId: string | null,
   visibleTabIds: readonly string[] = [],
+  initialSelection: ContextSelection = DEFAULT_CONTEXT_SELECTION,
+  selectionKey?: string,
 ) {
-  const [selection, setSelection] = useState<AiContextSelection>(() => ({
-    ...DEFAULT_AI_CONTEXT_SELECTION,
+  const [selection, setSelection] = useState<ContextSelection>(() => ({
+    scope: initialSelection.scope,
+    selectedTabIds: [...initialSelection.selectedTabIds],
   }));
   const openTabKey = openTabIds.join("\u0000");
 
@@ -20,7 +23,18 @@ export function useAiContextSelection(
     setSelection((current) => reconcileContextSelection(current, openTabIds));
   }, [openTabKey, openTabIds]);
 
-  const setScope = useCallback((scope: AiContextScope) => {
+  useEffect(() => {
+    if (selectionKey === undefined) return;
+    setSelection(reconcileContextSelection({
+      scope: initialSelection.scope,
+      selectedTabIds: [...initialSelection.selectedTabIds],
+    }, openTabIds));
+    // A project key deliberately controls this reset; changing the object
+    // reference for the same project must not erase an in-progress selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionKey]);
+
+  const setScope = useCallback((scope: TerminalContextScope) => {
     setSelection((current) => ({ ...current, scope }));
   }, []);
 

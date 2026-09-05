@@ -30,9 +30,6 @@ export function createCommandArguments(request: TerminalCreateRequest): Record<s
       host: request.host,
       port: request.port,
       username: request.username,
-      authentication: request.authentication,
-      identityFile: request.identityFile,
-      hostKeyAction: request.hostKeyAction,
       columns: request.columns,
       rows: request.rows,
     };

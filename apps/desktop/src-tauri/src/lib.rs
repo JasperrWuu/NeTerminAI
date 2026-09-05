@@ -6,6 +6,7 @@ pub(crate) mod connection_state;
 pub(crate) mod io_pump;
 #[allow(dead_code)]
 pub(crate) mod lifecycle;
+mod rdp;
 mod serial;
 mod shutdown;
 mod telnet;
@@ -17,6 +18,7 @@ pub fn run() {
         .manage(terminal::TerminalManager::default())
         .manage(telnet::TelnetManager::default())
         .manage(serial::SerialManager::default())
+        .manage(rdp::RdpManager::default())
         .manage(ai_process::AiProcessManager::default())
         .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![
@@ -38,6 +40,11 @@ pub fn run() {
             commands::ssh::write_ssh,
             commands::ssh::resize_ssh,
             commands::ssh::close_ssh,
+            commands::rdp::create_rdp,
+            commands::rdp::resize_rdp,
+            commands::rdp::get_rdp_status,
+            commands::rdp::close_rdp,
+            commands::rdp::focus_rdp,
             commands::fonts::list_system_fonts,
             commands::system::get_local_ipv4,
         ])

@@ -1,7 +1,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { AppearanceTheme, TerminalSettings } from "../settings/types";
-import type { SerialConnection, SshConnection, SshHostKeyAction, TelnetConnection } from "../connections/types";
+import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalClipboardAction } from "./clipboard";
 import { TerminalHighlightStream } from "./highlighting";
@@ -34,7 +34,7 @@ export type TerminalSessionDefinition =
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
   | { sessionType: "telnet"; connection: TelnetConnection }
   | { sessionType: "serial"; connection: SerialConnection }
-  | { sessionType: "ssh"; connection: SshConnection; hostKeyAction: SshHostKeyAction };
+  | { sessionType: "ssh"; connection: SshConnection };
 
 export interface TerminalViewAttachment {
   container: HTMLElement;
@@ -389,16 +389,13 @@ function createRequestFor(
     return { kind: "telnet", sessionId, host, port, username, password, ...size };
   }
   if (definition.sessionType === "ssh") {
-    const { host, port, username, authentication, identityFile } = definition.connection;
+    const { host, port, username } = definition.connection;
     return {
       kind: "ssh",
       sessionId,
       host,
       port,
       username,
-      authentication,
-      identityFile,
-      hostKeyAction: definition.hostKeyAction,
       ...size,
     };
   }

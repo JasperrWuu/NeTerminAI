@@ -26,17 +26,20 @@ export interface SerialConnection {
   flowControl: SerialFlowControl;
 }
 
-export type SshAuthentication = "password" | "key" | "config";
-/** One-time host-key handling for a new SSH runtime. It is not persisted. */
-export type SshHostKeyAction = "strict" | "replace";
-
 export interface SshConnection {
   name: string;
   host: string;
   port: number;
   username: string;
-  authentication: SshAuthentication;
-  identityFile: string;
+}
+
+/** A Windows Remote Desktop connection rendered by the native MSTSC view. */
+export interface RdpConnection {
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  adminSession: boolean;
 }
 
 interface SavedConnectionBase {
@@ -57,7 +60,11 @@ export interface SavedSshSession extends SshConnection, SavedConnectionBase {
   kind: "ssh";
 }
 
-export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession | SavedSshSession;
+export interface SavedRdpSession extends RdpConnection, SavedConnectionBase {
+  kind: "rdp";
+}
+
+export type SavedConnectionSession = SavedTelnetSession | SavedSerialSession | SavedSshSession | SavedRdpSession;
 
 export const emptyTelnetConnection: TelnetConnection = {
   name: "",
@@ -82,6 +89,12 @@ export const emptySshConnection: SshConnection = {
   host: "",
   port: 22,
   username: "",
-  authentication: "password",
-  identityFile: "",
+};
+
+export const emptyRdpConnection: RdpConnection = {
+  name: "",
+  host: "",
+  port: 3389,
+  username: "",
+  adminSession: false,
 };

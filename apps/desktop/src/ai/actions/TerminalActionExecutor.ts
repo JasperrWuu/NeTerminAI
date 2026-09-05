@@ -1,5 +1,5 @@
-import type { TerminalSessionRegistry } from "../../terminal/TerminalSessionRegistry";
 import type { TerminalCommandProposal } from "../analysis/types";
+import type { TerminalInputCapability } from "../../capabilities/terminal";
 
 export type TerminalActionResult =
   | { status: "requiresApproval" }
@@ -8,10 +8,10 @@ export type TerminalActionResult =
 
 /** Executes only user-approved proposals after validating the current runtime identity. */
 export class TerminalActionExecutor {
-  private readonly registry: Pick<TerminalSessionRegistry, "dispatchInput">;
+  private readonly input: TerminalInputCapability;
 
-  constructor(registry: Pick<TerminalSessionRegistry, "dispatchInput">) {
-    this.registry = registry;
+  constructor(input: TerminalInputCapability) {
+    this.input = input;
   }
 
   execute(proposal: TerminalCommandProposal, approved = false): TerminalActionResult {
@@ -19,11 +19,7 @@ export class TerminalActionExecutor {
     const command = proposal.command.trim();
     if (!command || /[\r\n]/u.test(command)) return { status: "rejected", reason: "invalid_command" };
 
-    const result = this.registry.dispatchInput(
-      proposal.target.tabId,
-      proposal.target.sessionId,
-      `${command}\r`,
-    );
+    const result = this.input.dispatchInput(proposal.target, `${command}\r`);
     if (result.ok) return { status: "executed" };
     return {
       status: "rejected",

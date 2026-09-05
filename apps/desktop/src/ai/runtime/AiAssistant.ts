@@ -1,11 +1,18 @@
-import type { TerminalSessionRegistry } from "../../terminal/TerminalSessionRegistry.ts";
 import { TerminalActionExecutor } from "../actions/TerminalActionExecutor.ts";
 import type { ContextAnalysisResult } from "../analysis/types.ts";
-import type { TerminalContextProvider } from "../context/TerminalContextProvider.ts";
-import type { AiContextSelection } from "../context/selection.ts";
 import type { AiConversationMessage, AiProvider } from "../providers/types.ts";
 import type { MultiSessionContextAssembly } from "../processing/types.ts";
 import { ContextProcessingPipeline } from "../processing/contextPipeline.ts";
+import type {
+  ContextSelection,
+  TerminalContextCapability,
+  TerminalInputCapability,
+} from "../../capabilities/terminal";
+import type {
+  ProjectContext,
+  ProjectContextCapability,
+  ProjectContextPatch,
+} from "../../capabilities/project";
 
 export type AssistantStatus = "idle" | "running" | "completed" | "error" | "cancelled";
 
@@ -32,10 +39,12 @@ export class AiAssistant {
   private provider: AiProvider;
   private readonly pipeline: ContextProcessingPipeline;
   private readonly actionExecutor: TerminalActionExecutor;
+  private readonly projectContext?: ProjectContextCapability;
   private readonly listeners = new Set<() => void>();
   private readonly history: AiConversationMessage[] = [];
   private active: { requestId: string; controller: AbortController } | null = null;
-  private lastRequest: { selection: AiContextSelection; question: string } | null = null;
+  private lastRequest: { selection: ContextSelection; question: string } | null = null;
+  private enabled: boolean;
   private snapshot: AssistantSnapshot = {
     status: "idle",
     requestId: null,
@@ -48,12 +57,18 @@ export class AiAssistant {
 
   constructor(
     provider: AiProvider,
-    contextProvider: TerminalContextProvider,
-    registry: Pick<TerminalSessionRegistry, "dispatchInput">,
+    contextCapability: TerminalContextCapability,
+    inputCapability: TerminalInputCapability,
+    options: {
+      projectContext?: ProjectContextCapability;
+      enabled?: boolean;
+    } = {},
   ) {
     this.provider = provider;
-    this.pipeline = new ContextProcessingPipeline(contextProvider);
-    this.actionExecutor = new TerminalActionExecutor(registry);
+    this.projectContext = options.projectContext;
+    this.enabled = options.enabled ?? true;
+    this.pipeline = new ContextProcessingPipeline(contextCapability, undefined, undefined, this.projectContext);
+    this.actionExecutor = new TerminalActionExecutor(inputCapability);
   }
 
   getSnapshot = () => this.snapshot;
@@ -67,13 +82,23 @@ export class AiAssistant {
     this.provider = provider;
   }
 
+  setEnabled(enabled: boolean) {
+    if (this.enabled === enabled) return;
+    this.enabled = enabled;
+    if (!enabled) this.stop();
+  }
+
+  isEnabled() {
+    return this.enabled;
+  }
+
   getActionExecutor() {
     return this.actionExecutor;
   }
 
-  async send(selection: AiContextSelection, question: string): Promise<AssistantResponse | null> {
+  async send(selection: ContextSelection, question: string): Promise<AssistantResponse | null> {
     const normalizedQuestion = question.trim();
-    if (!normalizedQuestion || this.active) return null;
+    if (!this.enabled || !normalizedQuestion || this.active) return null;
     const requestId = createRequestId();
     const controller = new AbortController();
     this.active = { requestId, controller };
@@ -83,11 +108,27 @@ export class AiAssistant {
     try {
       const result = await this.provider.analyze(
         { context, question: normalizedQuestion, history: this.history },
-        { signal: controller.signal, onToken: (token) => this.update({ streamedText: `${this.snapshot.streamedText}${token}` }) },
+        {
+          signal: controller.signal,
+          onToken: (token) => {
+            if (this.active?.requestId !== requestId || !this.enabled) return;
+            this.update({ streamedText: `${this.snapshot.streamedText}${token}` });
+          },
+        },
       );
       if (this.active?.requestId !== requestId) return null;
+      if (!this.enabled) {
+        this.active = null;
+        this.update({ status: "cancelled", error: "已停止本次生成" });
+        return null;
+      }
       this.pushHistory({ role: "user", content: normalizedQuestion });
       this.pushHistory({ role: "assistant", content: result.diagnosis });
+      const projectUpdate = mergeProjectContextUpdate(
+        this.projectContext?.get(),
+        result.projectContextUpdate ?? deriveProjectContextUpdate(result),
+      );
+      if (Object.keys(projectUpdate).length > 0) this.projectContext?.update(projectUpdate);
       this.active = null;
       this.update({ status: "completed", response: result });
       return { requestId, context, result };
@@ -111,6 +152,8 @@ export class AiAssistant {
   }
 
   resetConversation() {
+    this.active?.controller.abort();
+    this.active = null;
     this.history.length = 0;
     this.lastRequest = null;
     this.update({ status: "idle", requestId: null, question: "", streamedText: "", response: null, context: null, error: null });
@@ -130,6 +173,42 @@ export class AiAssistant {
     this.snapshot = { ...this.snapshot, ...patch };
     for (const listener of this.listeners) listener();
   }
+}
+
+function deriveProjectContextUpdate(result: ContextAnalysisResult): ProjectContextPatch {
+  const confirmedFacts = result.evidence
+    .map((item) => item.detail.trim())
+    .filter(Boolean)
+    .slice(-8);
+  const nextSteps = result.suggestedChecks.map((item) => item.trim()).filter(Boolean).slice(-8);
+  const conclusions = (confirmedFacts.length > 0 || nextSteps.length > 0) && result.diagnosis.trim()
+    ? [result.diagnosis.trim()]
+    : [];
+  return {
+    ...(confirmedFacts.length > 0 ? { confirmedFacts } : {}),
+    ...(conclusions.length > 0 ? { conclusions } : {}),
+    ...(nextSteps.length > 0 ? { nextSteps } : {}),
+  };
+}
+
+function mergeProjectContextUpdate(
+  current: ProjectContext | undefined,
+  patch: ProjectContextPatch,
+): ProjectContextPatch {
+  const listFields = [
+    "keyConfigurations",
+    "confirmedFacts",
+    "issues",
+    "conclusions",
+    "nextSteps",
+  ] as const;
+  const merged: ProjectContextPatch = { ...patch };
+  for (const field of listFields) {
+    if (!patch[field]) continue;
+    const existing = current?.[field] ?? [];
+    merged[field] = [...new Set([...existing, ...patch[field]])].slice(-64);
+  }
+  return merged;
 }
 
 function createRequestId() {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { localTerminalProfiles } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
-import { ChevronIcon, CloseIcon, EditIcon, FolderIcon, PlusIcon } from "../workbench/icons";
+import { ChevronIcon, CloseIcon, ConnectionProtocolIcon, EditIcon, FolderIcon, PlusIcon } from "../workbench/icons";
 import type { ConnectionFolder, SavedConnectionSession } from "./types";
 
 interface ConnectionsSidebarProps {
@@ -13,6 +13,7 @@ interface ConnectionsSidebarProps {
   onCreateTelnet: () => void;
   onCreateSerial: () => void;
   onCreateSsh: () => void;
+  onCreateRdp: () => void;
   onEdit: (session: SavedConnectionSession) => void;
   onRemoveFolder: (folderId: string) => void;
   onRemoveSession: (sessionId: string) => void;
@@ -28,6 +29,7 @@ export function ConnectionsSidebar({
   onCreateTelnet,
   onCreateSerial,
   onCreateSsh,
+  onCreateRdp,
   onEdit,
   onRemoveFolder,
   onRemoveSession,
@@ -55,8 +57,16 @@ export function ConnectionsSidebar({
         </button>
       ))}
 
+      <div className="connection-group-label create-group-label">新建连接</div>
+      <div className="connection-create-grid">
+        <NewConnectionButton kind="ssh" label="SSH" detail="OpenSSH 终端" onClick={onCreateSsh} />
+        <NewConnectionButton kind="telnet" label="Telnet" detail="TCP 终端" onClick={onCreateTelnet} />
+        <NewConnectionButton kind="serial" label="串口" detail="本机 COM" onClick={onCreateSerial} />
+        <NewConnectionButton kind="rdp" label="RDP" detail="远程桌面" onClick={onCreateRdp} />
+      </div>
+
       <div className="connection-group-label remote-group-label">
-        <span>远程与串口</span>
+        <span>设备列表</span>
         <button aria-label="新建会话分区" className="group-add-button" onClick={onCreateFolder} title="新建分区" type="button"><FolderIcon /><PlusIcon /></button>
       </div>
 
@@ -94,12 +104,6 @@ export function ConnectionsSidebar({
         </section>
       )}
 
-      <div className="connection-group-label create-group-label">新建连接</div>
-      <div className="connection-create-grid">
-        <NewConnectionButton kind="ssh" label="SSH" detail="OpenSSH 终端" onClick={onCreateSsh} />
-        <NewConnectionButton kind="telnet" label="Telnet" detail="TCP 终端" onClick={onCreateTelnet} />
-        <NewConnectionButton kind="serial" label="串口" detail="本机 COM" onClick={onCreateSerial} />
-      </div>
       {sessions.length > 0 && <p className="connection-gesture-hint">单击编辑 · 双击连接</p>}
     </div>
   );
@@ -136,7 +140,7 @@ function SavedSessionRow({ session, onConnect, onEdit, onRemove }: {
         title="单击编辑，双击连接"
         type="button"
       >
-        <span className={`connection-profile-icon ${session.kind}-profile-icon`}>{sessionProtocol(session)}</span>
+        <span className={`connection-profile-icon ${session.kind}-profile-icon`}><ConnectionProtocolIcon kind={session.kind} /></span>
         <span className="connection-name">{session.name}<small>{sessionDescription(session)}</small></span>
         <span className="session-mode">{sessionMode(session)}</span>
       </button>
@@ -148,17 +152,11 @@ function SavedSessionRow({ session, onConnect, onEdit, onRemove }: {
 function NewConnectionButton({ kind, label, detail, onClick }: { kind: SavedConnectionSession["kind"]; label: string; detail: string; onClick: () => void }) {
   return (
     <button className={`connection-create-card ${kind}-create-card`} onClick={onClick} type="button">
-      <span className={`connection-create-icon ${kind}-profile-icon`}><PlusIcon /></span>
+      <span className={`connection-create-icon ${kind}-profile-icon`}><ConnectionProtocolIcon kind={kind} /></span>
       <strong>{label}</strong>
       <small>{detail}</small>
     </button>
   );
-}
-
-function sessionProtocol(session: SavedConnectionSession) {
-  if (session.kind === "telnet") return "TEL";
-  if (session.kind === "ssh") return "SSH";
-  return "COM";
 }
 
 function sessionDescription(session: SavedConnectionSession) {
@@ -169,5 +167,6 @@ function sessionDescription(session: SavedConnectionSession) {
 function sessionMode(session: SavedConnectionSession) {
   if (session.kind === "serial") return "串口";
   if (session.kind === "ssh") return "SSH";
+  if (session.kind === "rdp") return "RDP";
   return "Telnet";
 }

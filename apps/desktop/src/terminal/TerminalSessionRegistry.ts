@@ -62,6 +62,10 @@ export class TerminalSessionRegistry {
     this.runtimes.get(tabId)?.reconnect();
   }
 
+  focus(tabId: string) {
+    this.runtimes.get(tabId)?.focus();
+  }
+
   reconcile(openTabIds: readonly string[]) {
     const open = new Set(openTabIds);
     for (const [tabId, runtime] of this.runtimes) {

@@ -1,13 +1,14 @@
 import { useCallback, useSyncExternalStore } from "react";
-import type { TerminalContextProvider, TerminalContextSessionDescriptor } from "./TerminalContextProvider";
-import type { AiContextSelection } from "./selection";
-import type { TerminalSessionRegistry } from "../../terminal/TerminalSessionRegistry";
+import type {
+  ContextSelection,
+  TerminalContextCapability,
+  TerminalSessionDescriptor,
+} from "../../capabilities/terminal";
 
 interface AiContextSelectorProps {
   activeTabId: string | null;
-  provider: TerminalContextProvider;
-  registry: TerminalSessionRegistry;
-  selection: AiContextSelection;
+  provider: TerminalContextCapability;
+  selection: ContextSelection;
   visibleTabIds: readonly string[];
   onSelectActive: () => void;
   onSelectVisible: () => void;
@@ -19,7 +20,6 @@ interface AiContextSelectorProps {
 export function AiContextSelector({
   activeTabId,
   provider,
-  registry,
   selection,
   visibleTabIds,
   onSelectActive,
@@ -28,8 +28,8 @@ export function AiContextSelector({
   onClear,
   onToggle,
 }: AiContextSelectorProps) {
-  const subscribe = useCallback((listener: () => void) => registry.subscribe(listener), [registry]);
-  const getRevision = useCallback(() => registry.getRevision(), [registry]);
+  const subscribe = useCallback((listener: () => void) => provider.subscribe(listener), [provider]);
+  const getRevision = useCallback(() => provider.getRevision(), [provider]);
   useSyncExternalStore(subscribe, getRevision, getRevision);
 
   const sessions = provider.listSessions();
@@ -85,13 +85,13 @@ function ScopeButton({ active, label, onClick }: { active: boolean; label: strin
   return <button className="ai-context-scope-button" data-active={active} onClick={onClick} type="button">{label}</button>;
 }
 
-function scopeLabel(selection: AiContextSelection) {
+function scopeLabel(selection: ContextSelection) {
   if (selection.scope === "active") return "活动会话";
   if (selection.scope === "visible") return "可见会话";
   return "手动选择";
 }
 
-function describeSession(session: TerminalContextSessionDescriptor) {
+function describeSession(session: TerminalSessionDescriptor) {
   const connection = session.connection.kind === "local"
     ? shellLabel(session.connection.shell)
     : session.connection.kind === "telnet"
@@ -109,7 +109,7 @@ function shellLabel(shell: string) {
   return shell;
 }
 
-function stateLabel(state: TerminalContextSessionDescriptor["connectionState"]) {
+function stateLabel(state: TerminalSessionDescriptor["connectionState"]) {
   if (state === "connected") return "已连接";
   if (state === "connecting") return "连接中";
   if (state === "closing") return "关闭中";

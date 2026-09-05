@@ -9,7 +9,6 @@ interface SettingsSidebarProps {
 export function SettingsSidebar({ section, onSelect }: SettingsSidebarProps) {
   return (
     <nav aria-label="设置选项" className="settings-sidebar">
-      <p className="settings-sidebar-label">工作台</p>
       <button
         aria-current={section === "terminal" ? "page" : undefined}
         className="settings-nav-item"

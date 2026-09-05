@@ -1,8 +1,13 @@
-import type { TerminalConnectionState } from "../../ipc/types";
-import type { TerminalContextSnapshot, TerminalConnectionMetadata, TerminalContextTarget } from "../context/types";
+import type {
+  TerminalConnectionMetadata,
+  TerminalConnectionState,
+  TerminalContextSnapshot,
+  TerminalTarget,
+} from "../../capabilities/terminal";
+import type { ProjectContext } from "../../capabilities/project";
 
 export interface NormalizedSessionContext {
-  target: TerminalContextTarget;
+  target: TerminalTarget;
   title: string;
   connectionKind: TerminalContextSnapshot["connectionKind"];
   connectionState: TerminalConnectionState;
@@ -24,7 +29,7 @@ export interface SessionContextMemory {
 }
 
 export interface StructuredSessionContext {
-  target: TerminalContextTarget;
+  target: TerminalTarget;
   title: string;
   connectionKind: NormalizedSessionContext["connectionKind"];
   connectionState: TerminalConnectionState;
@@ -40,6 +45,7 @@ export interface MultiSessionContextAssembly {
   version: 1;
   capturedAt: number;
   activeTabId?: string;
+  projectContext?: ProjectContext;
   sessions: StructuredSessionContext[];
 }
 

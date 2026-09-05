@@ -12,8 +12,8 @@ const proposal = {
 test("actions require explicit approval and dispatch through the current runtime", () => {
   const writes = [];
   const executor = new TerminalActionExecutor({
-    dispatchInput: (tabId, sessionId, data) => {
-      writes.push({ tabId, sessionId, data });
+    dispatchInput: (target, data) => {
+      writes.push({ ...target, data });
       return { ok: true };
     },
   });
@@ -24,7 +24,7 @@ test("actions require explicit approval and dispatch through the current runtime
 
 test("stale, unavailable and invalid proposals are rejected without dispatch", () => {
   const executor = new TerminalActionExecutor({
-    dispatchInput: () => ({ ok: false, code: "stale_session" }),
+    dispatchInput: (_target, _data) => ({ ok: false, code: "stale_session" }),
   });
   assert.deepEqual(executor.execute(proposal, true), { status: "rejected", reason: "stale_session" });
   assert.deepEqual(executor.execute({ ...proposal, command: "  " }, true), { status: "rejected", reason: "invalid_command" });

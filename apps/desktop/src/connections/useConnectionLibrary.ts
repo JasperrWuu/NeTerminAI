@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ConnectionFolder,
   SavedConnectionSession,
+  SavedRdpSession,
   SavedSerialSession,
   SavedSshSession,
   SavedTelnetSession,
@@ -10,9 +11,9 @@ import type {
   SerialParity,
   SerialConnection,
   SerialStopBits,
-  SshAuthentication,
   SshConnection,
   TelnetConnection,
+  RdpConnection,
 } from "./types";
 
 const STORAGE_KEY = "neterminai.connection-library.v3";
@@ -59,10 +60,6 @@ function normalizeSession(value: unknown): SavedConnectionSession | null {
   const record = asRecord(value);
   if (!record || typeof record.kind !== "string") return null;
 
-  // RDP is no longer supported. Filter it per record so malformed or legacy
-  // records never prevent valid Local/Telnet/Serial/SSH sessions from loading.
-  if (record.kind === "rdp") return null;
-
   const id = stringValue(record, "id");
   if (!id) return null;
 
@@ -105,11 +102,6 @@ function normalizeSession(value: unknown): SavedConnectionSession | null {
     const host = stringValue(record, "host");
     if (!host) return null;
     const port = numberValue(record, "port", 22);
-    const authentication = enumValue<SshAuthentication>(
-      stringValue(record, "authentication", "password") as SshAuthentication,
-      ["password", "key", "config"],
-      "password",
-    );
     return {
       id,
       kind: "ssh",
@@ -118,8 +110,22 @@ function normalizeSession(value: unknown): SavedConnectionSession | null {
       host,
       port,
       username: stringValue(record, "username"),
-      authentication,
-      identityFile: stringValue(record, "identityFile"),
+    };
+  }
+
+  if (record.kind === "rdp") {
+    const host = stringValue(record, "host");
+    if (!host) return null;
+    const port = numberValue(record, "port", 3389);
+    return {
+      id,
+      kind: "rdp",
+      folderId: folderIdValue(record),
+      name: stringValue(record, "name") || `${host}:${port}`,
+      host,
+      port,
+      username: stringValue(record, "username"),
+      adminSession: booleanValue(record, "adminSession", false),
     };
   }
 
@@ -236,7 +242,24 @@ export function useConnectionLibrary() {
       name: connection.name.trim() || `${connection.host}:${connection.port}`,
       host: connection.host.trim(),
       username: connection.username.trim(),
-      identityFile: connection.identityFile.trim(),
+    };
+    setLibrary((current) => ({
+      ...current,
+      sessions: existingId
+        ? current.sessions.map((item) => (item.id === existingId ? session : item))
+        : [...current.sessions, session],
+    }));
+  }, []);
+
+  const saveRdp = useCallback((connection: RdpConnection, folderId: string | null, existingId?: string) => {
+    const session: SavedRdpSession = {
+      ...connection,
+      id: existingId ?? crypto.randomUUID(),
+      kind: "rdp",
+      folderId,
+      name: connection.name.trim() || `${connection.host}:${connection.port}`,
+      host: connection.host.trim(),
+      username: connection.username.trim(),
     };
     setLibrary((current) => ({
       ...current,
@@ -279,6 +302,7 @@ export function useConnectionLibrary() {
     saveTelnet,
     saveSerial,
     saveSsh,
+    saveRdp,
     removeSession,
     createFolder,
     renameFolder,
@@ -292,6 +316,7 @@ export function useConnectionLibrary() {
     renameFolder,
     saveSerial,
     saveSsh,
+    saveRdp,
     saveTelnet,
   ]);
 }

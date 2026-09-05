@@ -1,6 +1,9 @@
-import type { TerminalContextProvider } from "../context/TerminalContextProvider";
-import type { AiContextSelection } from "../context/selection";
-import type { TerminalContextSnapshot } from "../context/types";
+import type {
+  ContextSelection,
+  TerminalContextCapability,
+  TerminalContextSnapshot,
+} from "../../capabilities/terminal";
+import type { ProjectContext, ProjectContextCapability } from "../../capabilities/project";
 import type {
   ContextCompressionInput,
   ContextCompressionUpdate,
@@ -101,28 +104,37 @@ export class DeterministicContextCompressor implements ContextCompressor {
 }
 
 export class ContextProcessingPipeline {
-  private readonly provider: TerminalContextProvider;
+  private readonly provider: TerminalContextCapability;
   private readonly memoryStore: SessionContextMemoryStore;
   private readonly compressor: ContextCompressor;
+  private readonly projectContext?: ProjectContextCapability;
 
   constructor(
-    provider: TerminalContextProvider,
+    provider: TerminalContextCapability,
     memoryStore = new SessionContextMemoryStore(),
     compressor: ContextCompressor = new DeterministicContextCompressor(),
+    projectContext?: ProjectContextCapability | (() => ProjectContext | undefined),
   ) {
     this.provider = provider;
     this.memoryStore = memoryStore;
     this.compressor = compressor;
+    this.projectContext = typeof projectContext === "function"
+      ? { get: projectContext, update: () => undefined }
+      : projectContext;
   }
 
-  capture(selection: AiContextSelection): MultiSessionContextAssembly {
+  capture(selection: ContextSelection): MultiSessionContextAssembly {
     const sessions = this.provider.getContexts(selection).map((snapshot) => this.processSnapshot(snapshot));
-    this.memoryStore.reconcile(this.provider.listSessions().map((session) => session.tabId));
+    const ownedTabIds = this.provider.listOwnedTerminalIds?.()
+      ?? this.provider.listSessions().map((session) => session.tabId);
+    this.memoryStore.reconcile(ownedTabIds);
     const active = this.provider.getActiveContext();
+    const projectContext = this.projectContext?.get();
     return {
       version: 1,
       capturedAt: Date.now(),
       ...(active ? { activeTabId: active.tabId } : {}),
+      ...(projectContext ? { projectContext } : {}),
       sessions,
     };
   }

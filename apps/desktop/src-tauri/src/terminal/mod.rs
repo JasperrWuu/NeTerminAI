@@ -63,24 +63,6 @@ pub enum TerminalProfile {
     GitBash,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum SshAuthentication {
-    Password,
-    Key,
-    Config,
-}
-
-/// Controls how the one-time SSH host-key preflight behaves.  The default
-/// policy accepts a first key but still rejects a changed key.  Replacing a
-/// key is an explicit user action for cases such as a reinstalled VM.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub enum SshHostKeyAction {
-    Strict,
-    Replace,
-}
-
 struct TerminalRuntime {
     connection_type: &'static str,
     control: Arc<SessionControl>,
@@ -580,9 +562,6 @@ impl TerminalManager {
         host: String,
         port: u16,
         username: String,
-        authentication: SshAuthentication,
-        identity_file: String,
-        host_key_action: SshHostKeyAction,
         columns: u16,
         rows: u16,
         control: Arc<SessionControl>,
@@ -592,7 +571,6 @@ impl TerminalManager {
         let _initialization_guard = InitializationGuard::new(Arc::clone(&runtime));
         let host = host.trim();
         let username = username.trim();
-        let identity_file = identity_file.trim();
         if host.is_empty() || port == 0 {
             return self.fail_starting_ssh(
                 &session_id,
@@ -600,40 +578,31 @@ impl TerminalManager {
                 "SSH 主机地址或端口无效".to_owned(),
             );
         }
-        if host.contains(['\r', '\n'])
-            || username.contains(['\r', '\n'])
-            || identity_file.contains(['\r', '\n'])
-        {
+        if host.contains(['\r', '\n']) || username.contains(['\r', '\n']) {
             return self.fail_starting_ssh(
                 &session_id,
                 &runtime,
                 "SSH 连接信息包含无效换行符".to_owned(),
             );
         }
-        if authentication == SshAuthentication::Password && username.is_empty() {
+        if username.is_empty() {
             return self.fail_starting_ssh(
                 &session_id,
                 &runtime,
                 "密码认证需要填写 SSH 账号".to_owned(),
             );
         }
-        if authentication == SshAuthentication::Key && identity_file.is_empty() {
-            return self.fail_starting_ssh(
-                &session_id,
-                &runtime,
-                "私钥认证需要选择私钥文件".to_owned(),
-            );
-        }
-        if host_key_action == SshHostKeyAction::Replace
-            && let Err(error) = remove_ssh_known_host(host, port)
-        {
+        // A reinstalled VM legitimately presents a new host key. Remove the
+        // old entry before every connection so OpenSSH can record the current
+        // key with its normal accept-new verification behavior.
+        if let Err(error) = remove_ssh_known_host(host, port) {
             return self.fail_starting_ssh(&session_id, &runtime, error);
         }
 
         self.create_command(
             app,
             session_id,
-            ssh_command(host, port, username, authentication, identity_file),
+            ssh_command(host, port, username),
             columns,
             rows,
             "ssh",
@@ -1212,13 +1181,7 @@ fn shutdown_terminal_resources(mut resources: TerminalResources) {
     drop(resources.master);
 }
 
-fn ssh_command(
-    host: &str,
-    port: u16,
-    username: &str,
-    authentication: SshAuthentication,
-    identity_file: &str,
-) -> CommandBuilder {
+fn ssh_command(host: &str, port: u16, username: &str) -> CommandBuilder {
     let mut command = CommandBuilder::new(ssh_executable());
     command.arg("-p");
     command.arg(port.to_string());
@@ -1229,7 +1192,7 @@ fn ssh_command(
     // accept-new verifies changed keys while avoiding an interactive first-use
     // prompt that cannot be answered reliably inside the terminal view.
     command.args(["-o", "StrictHostKeyChecking=accept-new"]);
-    configure_ssh_authentication(&mut command, authentication, identity_file);
+    configure_ssh_password_authentication(&mut command);
     command.arg("-tt");
     command.arg("--");
     command.arg(if username.is_empty() {
@@ -1240,30 +1203,14 @@ fn ssh_command(
     command
 }
 
-fn configure_ssh_authentication(
-    command: &mut CommandBuilder,
-    authentication: SshAuthentication,
-    identity_file: &str,
-) {
+fn configure_ssh_password_authentication(command: &mut CommandBuilder) {
     command.args(["-o", "BatchMode=no"]);
     command.args(["-o", "NumberOfPasswordPrompts=3"]);
-    match authentication {
-        SshAuthentication::Password => {
-            command.args([
-                "-o",
-                "PreferredAuthentications=keyboard-interactive,password",
-            ]);
-            command.args(["-o", "PubkeyAuthentication=no"]);
-        }
-        SshAuthentication::Key => {
-            command.args(["-o", "PreferredAuthentications=publickey"]);
-            command.args(["-o", "IdentitiesOnly=yes"]);
-            if !identity_file.is_empty() {
-                command.args(["-i", identity_file]);
-            }
-        }
-        SshAuthentication::Config => {}
-    }
+    command.args([
+        "-o",
+        "PreferredAuthentications=keyboard-interactive,password",
+    ]);
+    command.args(["-o", "PubkeyAuthentication=no"]);
 }
 
 fn remove_ssh_known_host(host: &str, port: u16) -> Result<(), String> {
@@ -1277,7 +1224,7 @@ fn remove_ssh_known_host(host: &str, port: u16) -> Result<(), String> {
     }
 
     let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    if detail.to_ascii_lowercase().contains("not found") {
+    if known_hosts_entry_absent(&detail) {
         return Ok(());
     }
     if detail.is_empty() {
@@ -1285,6 +1232,14 @@ fn remove_ssh_known_host(host: &str, port: u16) -> Result<(), String> {
     } else {
         Err(format!("无法更新 SSH known_hosts 中的主机密钥：{detail}"))
     }
+}
+
+fn known_hosts_entry_absent(detail: &str) -> bool {
+    let detail = detail.to_ascii_lowercase();
+    detail.contains("not found")
+        || detail.contains("no such file")
+        || detail.contains("cannot stat")
+        || detail.contains("does not exist")
 }
 
 fn ssh_known_host_lookup(host: &str, port: u16) -> String {
@@ -1464,14 +1419,8 @@ mod tests {
     }
 
     #[test]
-    fn ssh_command_uses_safe_host_key_policy_and_authentication_options() {
-        let command = ssh_command(
-            "server.example",
-            2222,
-            "operator",
-            SshAuthentication::Key,
-            "C:\\keys\\id_ed25519",
-        );
+    fn ssh_command_uses_updated_host_key_policy_and_password_authentication() {
+        let command = ssh_command("server.example", 2222, "operator");
         let arguments = command
             .get_argv()
             .iter()
@@ -1484,15 +1433,16 @@ mod tests {
                 .any(|value| value == "StrictHostKeyChecking=accept-new")
         );
         assert!(arguments.windows(2).any(|pair| pair == ["-p", "2222"]));
+        assert!(arguments.windows(2).any(|pair| {
+            pair == [
+                "-o",
+                "PreferredAuthentications=keyboard-interactive,password",
+            ]
+        }));
         assert!(
             arguments
                 .windows(2)
-                .any(|pair| pair == ["-i", "C:\\keys\\id_ed25519"])
-        );
-        assert!(
-            arguments
-                .windows(2)
-                .any(|pair| pair == ["-o", "IdentitiesOnly=yes"])
+                .any(|pair| pair == ["-o", "PubkeyAuthentication=no"])
         );
         assert_eq!(arguments[arguments.len() - 2], "--");
         assert_eq!(
@@ -1516,5 +1466,16 @@ mod tests {
             "[2001:db8::10]:2222"
         );
         assert_eq!(ssh_known_host_lookup("2001:db8::10", 22), "2001:db8::10");
+    }
+
+    #[test]
+    fn missing_known_hosts_file_is_safe_to_replace() {
+        assert!(known_hosts_entry_absent(
+            "Cannot stat C:\\Users\\operator\\.ssh\\known_hosts: No such file or directory"
+        ));
+        assert!(known_hosts_entry_absent(
+            "Host server.example not found in known_hosts"
+        ));
+        assert!(!known_hosts_entry_absent("Permission denied"));
     }
 }

@@ -1,15 +1,15 @@
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
-import type { TerminalContextProvider } from "./TerminalContextProvider";
+import type { TerminalContextCapability } from "../../capabilities/terminal";
 
-const terminalContext = createContext<TerminalContextProvider | null>(null);
+const terminalContext = createContext<TerminalContextCapability | null>(null);
 
 /** Makes the read-only context provider available to future AI surfaces. */
 export function TerminalContextScope({
   provider,
   children,
 }: {
-  provider: TerminalContextProvider;
+  provider: TerminalContextCapability;
   children: ReactNode;
 }) {
   return <terminalContext.Provider value={provider}>{children}</terminalContext.Provider>;

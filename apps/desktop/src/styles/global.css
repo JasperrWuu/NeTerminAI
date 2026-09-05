@@ -37,8 +37,12 @@
   --success: #65c88a;
   --warning: #e3aa5f;
   --shadow-panel: 0 14px 36px rgba(0, 0, 0, 0.18);
+  --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(255, 255, 255, 0.22);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.36);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.48);
+  --scrollbar-thumb-border: 2px;
+  --scrollbar-radius: 999px;
 }
 
 :root[data-theme="light"] {
@@ -63,8 +67,10 @@
   --success: #4f7754;
   --warning: #a76532;
   --shadow-panel: 0 14px 36px rgba(78, 63, 51, 0.09);
+  --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(78, 63, 51, 0.24);
   --scrollbar-thumb-hover: rgba(78, 63, 51, 0.38);
+  --scrollbar-thumb-active: rgba(78, 63, 51, 0.52);
 }
 
 * {
@@ -72,7 +78,7 @@
 }
 
 * {
-  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   scrollbar-width: thin;
 }
 
@@ -83,19 +89,24 @@
 
 *::-webkit-scrollbar-track,
 *::-webkit-scrollbar-corner {
-  background: transparent;
+  background: var(--scrollbar-track);
 }
 
 *::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   background-clip: padding-box;
-  border: 2px solid transparent;
-  border-radius: 999px;
+  border: var(--scrollbar-thumb-border) solid transparent;
+  border-radius: var(--scrollbar-radius);
   min-height: 24px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
   background-clip: padding-box;
 }
 
@@ -396,7 +407,21 @@ button:focus-visible,
 
 .sidebar-left {
   flex: 0 0 var(--left-sidebar-width);
+  min-width: 0;
+  overflow: hidden;
   width: var(--left-sidebar-width);
+  transition:
+    flex-basis var(--motion-standard) var(--ease-in-out),
+    width var(--motion-standard) var(--ease-in-out),
+    opacity var(--motion-fast) ease;
+}
+
+.sidebar-left[data-collapsed="true"] {
+  flex-basis: 0;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  width: 0;
 }
 
 .sidebar-right {
@@ -541,6 +566,15 @@ button:focus-visible,
   position: relative;
   touch-action: none;
   z-index: 3;
+}
+
+.resize-handle-left[data-collapsed="true"] {
+  flex-basis: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+  width: 0;
 }
 
 .resize-handle::after {
@@ -1154,22 +1188,27 @@ button:focus-visible,
 .terminal-pane .terminal-container .xterm .xterm-viewport {
   background-color: transparent;
   overflow-x: hidden;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-  scrollbar-width: thin;
+  /* xterm owns scrolling through its overlay scrollbar. Keep this element as
+     the scroll owner, but suppress the browser-drawn track/thumb/corner so
+     two scrollbar implementations cannot occupy the same edge. */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .terminal-pane .terminal-container .xterm .xterm-viewport::-webkit-scrollbar {
-  height: var(--scrollbar-size);
-  width: var(--scrollbar-size);
+  display: none;
+  height: 0;
+  width: 0;
 }
 .terminal-pane .terminal-container .xterm .xterm-viewport::-webkit-scrollbar-corner {
-  background: transparent;
+  display: none;
 }
 
-/* xterm.js ships arrow controls in its custom scrollbar. They are the
-   small triangle visible in the lower-right corner, not part of our UI. */
-.terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .scra {
-  display: none !important;
+/* xterm.js renders its own overlay scrollbar. Match the shared scrollbar
+   tokens and keep the track/thumb on one geometry axis. */
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar {
+  background: var(--scrollbar-track) !important;
+  box-sizing: border-box;
 }
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
   width: var(--scrollbar-size) !important;
@@ -1179,12 +1218,26 @@ button:focus-visible,
 }
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .slider {
   background: var(--scrollbar-thumb) !important;
-  border: 2px solid transparent;
-  border-radius: 999px;
+  border: var(--scrollbar-thumb-border) solid transparent;
+  border-radius: var(--scrollbar-radius);
   background-clip: padding-box !important;
+  box-sizing: border-box;
+  transition: background-color var(--motion-fast) ease;
+}
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  left: 0 !important;
+  width: 100% !important;
+}
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar.horizontal > .slider {
+  height: 100% !important;
+  top: 0 !important;
 }
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .slider:hover {
   background: var(--scrollbar-thumb-hover) !important;
+  background-clip: padding-box !important;
+}
+.terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .slider.active {
+  background: var(--scrollbar-thumb-active) !important;
   background-clip: padding-box !important;
 }
 

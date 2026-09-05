@@ -5,6 +5,8 @@ import "./styles/global.css";
 import "./styles/controls.css";
 import "./styles/settings.css";
 import "./styles/telnet.css";
+import "./styles/desktop-materials.css";
+import "./styles/projects.css";
 
 const root = document.getElementById("root");
 

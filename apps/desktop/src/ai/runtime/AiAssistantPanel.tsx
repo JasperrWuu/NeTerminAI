@@ -1,12 +1,12 @@
 import { useState, useSyncExternalStore } from "react";
 import type { AiAssistant } from "./AiAssistant.ts";
-import type { AiContextSelection } from "../context/selection.ts";
+import type { ContextSelection } from "../../capabilities/terminal";
 import type { TerminalCommandProposal } from "../analysis/types.ts";
 import type { AiProviderMode, AiProviderPreset } from "../providers/types.ts";
 
 interface AiAssistantPanelProps {
   assistant: AiAssistant;
-  selection: AiContextSelection;
+  selection: ContextSelection;
   contextCount: number;
   providerMode: AiProviderMode;
   providerPreset: AiProviderPreset;

@@ -9,6 +9,10 @@ function IconFrame({ children, ...props }: IconProps) {
       fill="none"
       height="18"
       stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      focusable="false"
       viewBox="0 0 24 24"
       width="18"
       {...props}
@@ -72,8 +76,8 @@ export function SidebarIcon(props: IconProps) {
 export function AssistantIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
-      <path d="M12 3.5 13.6 8l4.4 1.6-4.4 1.6L12 15.5l-1.6-4.3L6 9.6 10.4 8 12 3.5Z" />
-      <path d="m18.5 15 .7 2 .8.3-.8.3-.7 1.9-.7-1.9-.8-.3.8-.3.7-2Z" />
+      <path d="M10 4c.8 4.6 2.4 6.2 7 7-4.6.8-6.2 2.4-7 7-.8-4.6-2.4-6.2-7-7 4.6-.8 6.2-2.4 7-7Z" />
+      <path d="M18.5 3v5M16 5.5h5M18.5 16v4M16.5 18h4" />
     </IconFrame>
   );
 }
@@ -98,8 +102,8 @@ export function MoonIcon(props: IconProps) {
 export function FolderIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
-      <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4.2l1.7 2h8.6a1 1 0 0 1 1 1v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5v-10Z" />
-      <path d="M4 9h16" opacity=".55" />
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" fill="currentColor" fillOpacity=".12" />
+      <path d="M3 10h18" opacity=".6" />
     </IconFrame>
   );
 }
@@ -132,6 +136,27 @@ export function CloseIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
       <path d="m7 7 10 10M17 7 7 17" />
+    </IconFrame>
+  );
+}
+
+/** Shared visual vocabulary for connection rows, launchers and session tabs. */
+export function ConnectionProtocolIcon({ kind, ...props }: IconProps & {
+  kind: "localTerminal" | "ssh" | "telnet" | "serial" | "rdp";
+}) {
+  return (
+    <IconFrame {...props}>
+      {kind === "rdp" ? (
+        <><rect x="3" y="4" width="18" height="13" rx="2.5" /><path d="M8 21h8M12 17v4" /></>
+      ) : kind === "serial" ? (
+        <><path d="M7 8h10v4a5 5 0 0 1-10 0V8ZM9 4v4m6-4v4M12 17v4" /><path d="M10 11h4" /></>
+      ) : kind === "telnet" ? (
+        <><rect x="8" y="3" width="8" height="6" rx="1.5" /><path d="M12 9v5M5 17v-3h14v3" /><rect x="2" y="17" width="6" height="4" rx="1" /><rect x="16" y="17" width="6" height="4" rx="1" /></>
+      ) : kind === "ssh" ? (
+        <><path d="m4 8 4 4-4 4M10 16h4" /><rect x="15" y="5" width="6" height="6" rx="1.5" /><path d="M16.5 5V3.5a1.5 1.5 0 0 1 3 0V5" /></>
+      ) : (
+        <><path d="m5 7 5 5-5 5M13 17h6" /></>
+      )}
     </IconFrame>
   );
 }

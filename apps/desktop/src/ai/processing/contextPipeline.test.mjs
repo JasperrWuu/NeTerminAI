@@ -64,6 +64,7 @@ test("pipeline returns labeled structured sessions instead of concatenating term
     getContexts: () => contexts,
     getActiveContext: () => contexts[0],
     listSessions: () => [{ tabId: "a" }, { tabId: "b" }],
+    listOwnedTerminalIds: () => ["a", "b"],
   };
   const pipeline = new ContextProcessingPipeline(fakeProvider);
   const result = pipeline.capture({ scope: "selected", selectedTabIds: ["a", "b"] });
@@ -76,4 +77,27 @@ test("pipeline returns labeled structured sessions instead of concatenating term
   assert.equal(result.sessions[0].recentOutput, "FW1 output");
   assert.equal(result.sessions[1].recentOutput, "FW2 output");
   assert.notEqual(result.sessions[0].memory, result.sessions[1].memory);
+});
+
+test("pipeline carries the active project's persistent context", () => {
+  const contexts = [snapshot("a", "s1", "FW1 output")];
+  const fakeProvider = {
+    getContexts: () => contexts,
+    getActiveContext: () => contexts[0],
+    listSessions: () => [{ tabId: "a" }],
+    listOwnedTerminalIds: () => ["a"],
+  };
+  const projectContext = {
+    goal: "验证 NAT64",
+    topology: "PC6 → FW1",
+    keyConfigurations: [],
+    confirmedFacts: [],
+    progress: "进行中",
+    issues: [],
+    conclusions: [],
+    nextSteps: ["验证 TCP"],
+    updatedAt: 100,
+  };
+  const pipeline = new ContextProcessingPipeline(fakeProvider, undefined, undefined, () => projectContext);
+  assert.deepEqual(pipeline.capture({ scope: "active", selectedTabIds: [] }).projectContext, projectContext);
 });

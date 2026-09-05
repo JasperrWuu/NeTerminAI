@@ -17,6 +17,8 @@ import {
 import { usePanelResize } from "./usePanelResize";
 import { TerminalPane } from "../terminal/TerminalPane";
 import { useTerminalSessionRegistry } from "../terminal/TerminalSessionRegistry";
+import { RdpPane } from "../rdp/RdpPane";
+import { useRdpSessionRegistry } from "../rdp/RdpSessionRegistry";
 import { WorkspaceArea } from "../workspace/WorkspaceArea";
 import { useWorkspaceTabs } from "../workspace/useWorkspaceTabs";
 import type { WorkspaceTab } from "../workspace/types";
@@ -29,20 +31,29 @@ import { SessionFolderDialog } from "../connections/SessionFolderDialog";
 import { ConnectionsSidebar } from "../connections/ConnectionsSidebar";
 import { SerialConnectionDialog } from "../serial/SerialConnectionDialog";
 import { SshConnectionDialog } from "../ssh/SshConnectionDialog";
-import type { ConnectionFolder, SavedConnectionSession, SavedSerialSession, SavedSshSession, SavedTelnetSession } from "../connections/types";
+import { RdpConnectionDialog } from "../rdp/RdpConnectionDialog";
+import type { ConnectionFolder, SavedConnectionSession, SavedRdpSession, SavedSerialSession, SavedSshSession, SavedTelnetSession } from "../connections/types";
 import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 import { collectVisibleTabIds } from "../workspace/layout";
 import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
 import { systemApi } from "../ipc/system";
 import {
-  TerminalContextProvider,
   TerminalContextScope,
   AiContextSelector,
   useAiContextSelection,
-  type TerminalContextWorkspace,
 } from "../ai/context";
+import { TerminalCapabilityAdapter, type TerminalCapabilityWorkspace } from "../capabilities/terminalAdapter";
+import type { ProjectContextCapability } from "../capabilities/project";
 import { AiAssistant, createAiProvider } from "../ai/runtime";
 import { AiAssistantPanel } from "../ai/runtime/AiAssistantPanel";
+import {
+  ProjectSidebar,
+  projectSessionsFromTabs,
+  resolveProjectTabs,
+  restoreProjectWorkspace,
+  useProjects,
+  type Project,
+} from "../projects";
 
 interface WorkbenchProps {
   preferences: WorkbenchPreferencesController;
@@ -85,33 +96,53 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const statusNoticeTimerRef = useRef<number | undefined>(undefined);
   const mountedRef = useRef(true);
-  const workspaceTabs = useWorkspaceTabs();
+  const connectionLibrary = useConnectionLibrary();
+  const projectManager = useProjects();
+  const initialProjectState = useMemo(() => {
+    const tabs = resolveProjectTabs(projectManager.activeProject, connectionLibrary.sessions);
+    return restoreProjectWorkspace(projectManager.activeProject, tabs);
+  }, [connectionLibrary.sessions, projectManager.activeProject]);
+  const workspaceTabs = useWorkspaceTabs(projectManager.activeProjectId, initialProjectState);
   const openTabIds = useMemo(() => workspaceTabs.tabs.map((tab) => tab.id), [workspaceTabs.tabs]);
   const runtimeRegistry = useTerminalSessionRegistry(openTabIds);
-  const workspaceContextRef = useRef<TerminalContextWorkspace>({
+  const rdpRegistry = useRdpSessionRegistry(openTabIds);
+  const activeProjectIdRef = useRef(projectManager.activeProjectId);
+  activeProjectIdRef.current = projectManager.activeProjectId;
+  const projectContextRef = useRef(projectManager.activeProject.context);
+  projectContextRef.current = projectManager.activeProject.context;
+  const workspaceContextRef = useRef<TerminalCapabilityWorkspace>({
     tabs: workspaceTabs.tabs,
     layout: workspaceTabs.layout,
     activePaneId: workspaceTabs.activePaneId,
     activeTabId: workspaceTabs.activeTabId,
+    projectId: projectManager.activeProjectId,
   });
   workspaceContextRef.current = {
     tabs: workspaceTabs.tabs,
     layout: workspaceTabs.layout,
     activePaneId: workspaceTabs.activePaneId,
     activeTabId: workspaceTabs.activeTabId,
+    projectId: projectManager.activeProjectId,
   };
-  const terminalContextProvider = useMemo(
-    () => new TerminalContextProvider(runtimeRegistry, () => workspaceContextRef.current),
+  const terminalCapability = useMemo(
+    () => new TerminalCapabilityAdapter(runtimeRegistry, () => workspaceContextRef.current),
     [runtimeRegistry],
   );
+  const projectContextCapability = useMemo<ProjectContextCapability>(() => ({
+    get: () => projectContextRef.current,
+    update: (patch) => projectManager.updateContext(activeProjectIdRef.current, patch),
+  }), [projectManager.updateContext]);
   const aiAssistant = useMemo(
-    () => new AiAssistant(createAiProvider(settings.ai, runtimeApiKey), terminalContextProvider, runtimeRegistry),
-    [runtimeRegistry, terminalContextProvider],
+    () => new AiAssistant(createAiProvider(settings.ai, runtimeApiKey), terminalCapability, terminalCapability, {
+      projectContext: projectContextCapability,
+      enabled: settings.ai.enabled,
+    }),
+    [projectContextCapability, terminalCapability],
   );
   useEffect(() => {
     aiAssistant.setProvider(createAiProvider(settings.ai, runtimeApiKey));
+    aiAssistant.setEnabled(settings.ai.enabled);
   }, [aiAssistant, runtimeApiKey, settings.ai]);
-  const connectionLibrary = useConnectionLibrary();
   const [telnetDialog, setTelnetDialog] = useState<{
     open: boolean;
     session?: SavedTelnetSession;
@@ -124,20 +155,53 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     open: boolean;
     session?: SavedSshSession;
   }>({ open: false });
+  const [rdpDialog, setRdpDialog] = useState<{
+    open: boolean;
+    session?: SavedRdpSession;
+  }>({ open: false });
   const [folderDialog, setFolderDialog] = useState<{
     open: boolean;
     folder?: ConnectionFolder;
   }>({ open: false });
-  const dialogOpen = telnetDialog.open || serialDialog.open || sshDialog.open || folderDialog.open;
+  const dialogOpen = telnetDialog.open || serialDialog.open || sshDialog.open || rdpDialog.open || folderDialog.open;
   const visibleTabIds = useMemo(
     () => collectVisibleTabIds(workspaceTabs.layout),
     [workspaceTabs.layout],
   );
-  const aiContextSelection = useAiContextSelection(
-    openTabIds,
-    workspaceTabs.activeTabId,
-    visibleTabIds,
+  const projectTabIds = useMemo(
+    () => workspaceTabs.tabs
+      .filter((tab) => tab.projectId === projectManager.activeProjectId && isCharacterTerminal(tab))
+      .map((tab) => tab.id),
+    [projectManager.activeProjectId, workspaceTabs.tabs],
   );
+  const aiVisibleTabIds = useMemo(
+    () => visibleTabIds.filter((tabId) => projectTabIds.includes(tabId)),
+    [projectTabIds, visibleTabIds],
+  );
+  const aiContextSelection = useAiContextSelection(
+    projectTabIds,
+    workspaceTabs.activeTabId,
+    aiVisibleTabIds,
+    projectManager.activeProject.runtime.aiContextSelection,
+    projectManager.activeProjectId,
+  );
+  const currentProjectWorkspace = useMemo(() => ({
+    sessions: projectSessionsFromTabs(workspaceTabs.tabs, projectManager.activeProjectId),
+    layout: workspaceTabs.layout,
+    activePaneId: workspaceTabs.activePaneId,
+    activeTabId: workspaceTabs.activeTabId,
+  }), [projectManager.activeProjectId, workspaceTabs.activePaneId, workspaceTabs.activeTabId, workspaceTabs.layout, workspaceTabs.tabs]);
+  useEffect(() => {
+    if (workspaceTabs.projectId !== projectManager.activeProjectId) return;
+    projectManager.updateWorkspace(projectManager.activeProjectId, currentProjectWorkspace);
+  }, [currentProjectWorkspace, projectManager.activeProjectId, projectManager.updateWorkspace, workspaceTabs.projectId]);
+  useEffect(() => {
+    if (workspaceTabs.projectId !== projectManager.activeProjectId) return;
+    projectManager.updateRuntime(projectManager.activeProjectId, {
+      activeTabId: workspaceTabs.activeTabId,
+      aiContextSelection: aiContextSelection.selection,
+    });
+  }, [aiContextSelection.selection, projectManager.activeProjectId, projectManager.updateRuntime, workspaceTabs.activeTabId, workspaceTabs.projectId]);
   const visibleTerminalIds = useMemo(() => {
     const terminalIds = new Set(
       workspaceTabs.tabs.filter(isCharacterTerminal).map((tab) => tab.id),
@@ -155,10 +219,32 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     : null;
   const activeTerminalIdRef = useRef<string | null>(activeTerminalId);
   activeTerminalIdRef.current = activeTerminalId;
+
+  // All activation paths (mouse, Ctrl+Tab, pane selection and programmatic
+  // changes) converge here after React has committed the new active tab. The
+  // runtime registry then focuses the actual terminal view, including native
+  // RDP, instead of relying on the WebView's stale focus target.
+  useEffect(() => {
+    if (settingsOpen || !workspaceTabs.activeTabId) return;
+    const tabId = workspaceTabs.activeTabId;
+    const frame = requestAnimationFrame(() => {
+      const tab = workspaceTabs.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab) return;
+      if (tab.kind === "rdp") rdpRegistry.focus(tabId);
+      else if (isCharacterTerminal(tab)) runtimeRegistry.focus(tabId);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rdpRegistry, runtimeRegistry, settingsOpen, workspaceTabs.activeTabId, workspaceTabs.tabs]);
+
+  useEffect(() => {
+    aiAssistant.resetConversation();
+  }, [aiAssistant, projectManager.activeProjectId]);
+
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
   const closeSshDialog = useCallback(() => setSshDialog({ open: false }), []);
+  const closeRdpDialog = useCallback(() => setRdpDialog({ open: false }), []);
   const openSettings = useCallback((section: SettingsSection) => {
     setSettingsSection(section);
     setSettingsOpen(true);
@@ -253,15 +339,43 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     workspaceTabs.collapseWorkspace,
   ]);
   const openSavedConnection = (session: SavedConnectionSession) => {
-    if (session.kind === "telnet") workspaceTabs.openTelnet(session);
-    else if (session.kind === "serial") workspaceTabs.openSerial(session);
-    else workspaceTabs.openSsh(session);
+    if (session.kind === "telnet") workspaceTabs.openTelnet(session, session.id);
+    else if (session.kind === "serial") workspaceTabs.openSerial(session, session.id);
+    else if (session.kind === "ssh") workspaceTabs.openSsh(session, session.id);
+    else workspaceTabs.openRdp(session, session.id);
   };
   const editSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") setTelnetDialog({ open: true, session });
     else if (session.kind === "serial") setSerialDialog({ open: true, session });
-    else setSshDialog({ open: true, session });
+    else if (session.kind === "ssh") setSshDialog({ open: true, session });
+    else setRdpDialog({ open: true, session });
   };
+
+  const switchProject = useCallback((project: Project) => {
+    if (project.id === projectManager.activeProjectId) return;
+    // Invalidate any in-flight analysis before changing the context source so
+    // a late provider response cannot update the project being left.
+    aiAssistant.resetConversation();
+    const currentSnapshot = workspaceTabs.captureProjectState();
+    projectManager.updateWorkspace(projectManager.activeProjectId, {
+      sessions: projectSessionsFromTabs(currentSnapshot.tabs, projectManager.activeProjectId),
+      layout: currentSnapshot.layout,
+      activePaneId: currentSnapshot.activePaneId,
+      activeTabId: workspaceTabs.activeTabId,
+    });
+    projectManager.updateRuntime(projectManager.activeProjectId, {
+      activeTabId: workspaceTabs.activeTabId,
+      aiContextSelection: aiContextSelection.selection,
+    });
+    const targetTabs = resolveProjectTabs(project, connectionLibrary.sessions, workspaceTabs.tabs);
+    workspaceTabs.switchProject(project.id, restoreProjectWorkspace(project, targetTabs));
+    projectManager.activateProject(project.id);
+  }, [aiAssistant, aiContextSelection.selection, connectionLibrary.sessions, projectManager, workspaceTabs]);
+
+  const createProject = useCallback((name: string) => {
+    const project = projectManager.createProject(name);
+    switchProject(project);
+  }, [projectManager, switchProject]);
 
   const getLeftSidebarMaximum = () =>
     Math.max(
@@ -373,7 +487,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           connectionId={tab.id}
           paneId={paneId}
           connection={tab.connection}
-          hostKeyAction={tab.hostKeyAction}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
           onInput={synchronizedInput.routeInput}
@@ -387,11 +500,25 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         />
       );
     }
+    if (tab.kind === "rdp") {
+      return (
+        <RdpPane
+          active={active && !settingsOpen && !tabDragging}
+          connection={tab.connection}
+          key={tab.id}
+          onActivate={() => workspaceTabs.activatePane(paneId)}
+          paneActive={workspaceTabs.activePaneId === paneId}
+          paneId={paneId}
+          registry={rdpRegistry}
+          tabId={tab.id}
+        />
+      );
+    }
     return null;
   };
 
   return (
-    <TerminalContextScope provider={terminalContextProvider}>
+    <TerminalContextScope provider={terminalCapability}>
       <div className="workbench" style={layoutStyle}>
       <header className="titlebar" data-tauri-drag-region="deep">
         <div className="brand" aria-label="NeTerminAI">
@@ -436,6 +563,10 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                 data-active={!settingsOpen && activity === item.id}
                 key={item.id}
                 onClick={() => {
+                  if (!settingsOpen && activity === item.id) {
+                    preferences.toggleLeftSidebar();
+                    return;
+                  }
                   setSettingsOpen(false);
                   setActivity(item.id);
                   if (!preferences.leftSidebarOpen) preferences.toggleLeftSidebar();
@@ -452,7 +583,13 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             <button
               className="activity-button"
               data-active={settingsOpen}
-              onClick={() => settingsOpen ? setSettingsOpen(false) : openSettings(settingsSection)}
+              onClick={() => {
+                if (settingsOpen) {
+                  preferences.toggleLeftSidebar();
+                  return;
+                }
+                openSettings(settingsSection);
+              }}
               title="设置"
               type="button"
             >
@@ -462,47 +599,66 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           </div>
         </nav>
 
-        {preferences.leftSidebarOpen && (
-          <>
-            <aside className="sidebar sidebar-left">
-              <PanelHeader title={settingsOpen ? "设置" : activePanel.title} />
-              <div className="activity-panel-content" key={settingsOpen ? "settings" : activity}>
-                {settingsOpen ? (
-                  <SettingsSidebar section={settingsSection} onSelect={setSettingsSection} />
-                ) : activity === "connections" ? (
-                  <ConnectionsSidebar
-                    folders={connectionLibrary.folders}
-                    sessions={connectionLibrary.sessions}
-                    onConnect={openSavedConnection}
-                    onCreateFolder={() => setFolderDialog({ open: true })}
-                    onCreateLocal={workspaceTabs.createTerminal}
-                    onCreateTelnet={() => setTelnetDialog({ open: true })}
-                    onCreateSerial={() => setSerialDialog({ open: true })}
-                    onCreateSsh={() => setSshDialog({ open: true })}
-                    onEdit={editSavedConnection}
-                    onRemoveFolder={connectionLibrary.removeFolder}
-                    onRemoveSession={connectionLibrary.removeSession}
-                    onRenameFolder={(folder) => setFolderDialog({ open: true, folder })}
-                  />
-                ) : (
-                  <EmptyPanel description={activePanel.description} />
-                )}
-              </div>
-            </aside>
-            <div
-              aria-label="调整左侧栏宽度"
-              aria-orientation="vertical"
-              aria-valuemax={getLeftSidebarMaximum()}
-              aria-valuemin={180}
-              aria-valuenow={Math.round(preferences.leftSidebarWidth)}
-              className="resize-handle resize-handle-left"
-              onDoubleClick={() => preferences.setLeftSidebarWidth(260)}
-              role="separator"
-              tabIndex={0}
-              {...leftResize}
-            />
-          </>
-        )}
+        <>
+          <aside
+            aria-hidden={!preferences.leftSidebarOpen}
+            className="sidebar sidebar-left"
+            data-collapsed={!preferences.leftSidebarOpen}
+          >
+            <PanelHeader title={settingsOpen ? "设置" : activePanel.title} />
+            <div className="activity-panel-content" key={settingsOpen ? "settings" : activity}>
+              {settingsOpen ? (
+                <SettingsSidebar section={settingsSection} onSelect={setSettingsSection} />
+              ) : activity === "connections" ? (
+                <ConnectionsSidebar
+                  folders={connectionLibrary.folders}
+                  sessions={connectionLibrary.sessions}
+                  onConnect={openSavedConnection}
+                  onCreateFolder={() => setFolderDialog({ open: true })}
+                  onCreateLocal={workspaceTabs.createTerminal}
+                  onCreateTelnet={() => setTelnetDialog({ open: true })}
+                  onCreateSerial={() => setSerialDialog({ open: true })}
+                  onCreateSsh={() => setSshDialog({ open: true })}
+                  onCreateRdp={() => setRdpDialog({ open: true })}
+                  onEdit={editSavedConnection}
+                  onRemoveFolder={connectionLibrary.removeFolder}
+                  onRemoveSession={connectionLibrary.removeSession}
+                  onRenameFolder={(folder) => setFolderDialog({ open: true, folder })}
+                />
+              ) : activity === "workspace" ? (
+                <ProjectSidebar
+                  activeProjectId={projectManager.activeProjectId}
+                  connections={connectionLibrary.sessions}
+                  onActivateProject={(projectId) => {
+                    const target = projectManager.projects.find((project) => project.id === projectId);
+                    if (target) switchProject(target);
+                  }}
+                  onAddDevice={projectManager.addDevice}
+                  onCreateProject={createProject}
+                  onRemoveDevice={projectManager.removeDevice}
+                  onUpdateContext={projectManager.updateContext}
+                  projects={projectManager.projects}
+                />
+              ) : (
+                <EmptyPanel description={activePanel.description} />
+              )}
+            </div>
+          </aside>
+          <div
+            aria-hidden={!preferences.leftSidebarOpen}
+            aria-label="调整左侧栏宽度"
+            aria-orientation="vertical"
+            aria-valuemax={getLeftSidebarMaximum()}
+            aria-valuemin={180}
+            aria-valuenow={Math.round(preferences.leftSidebarWidth)}
+            className="resize-handle resize-handle-left"
+            data-collapsed={!preferences.leftSidebarOpen}
+            onDoubleClick={() => preferences.setLeftSidebarWidth(260)}
+            role="separator"
+            tabIndex={preferences.leftSidebarOpen ? 0 : -1}
+            {...leftResize}
+          />
+        </>
 
         <main className="main-area" data-settings-open={settingsOpen}>
           <div className="workspace-session-layer" data-visible={!settingsOpen}>
@@ -561,15 +717,14 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                 onSelectAll={aiContextSelection.selectAll}
                 onSelectVisible={aiContextSelection.selectVisible}
                 onToggle={aiContextSelection.toggle}
-                provider={terminalContextProvider}
-                registry={runtimeRegistry}
+                provider={terminalCapability}
                 selection={aiContextSelection.selection}
-                visibleTabIds={visibleTabIds}
+                visibleTabIds={aiVisibleTabIds}
               />
               <AiAssistantPanel
                 apiKey={runtimeApiKey}
                 assistant={aiAssistant}
-                contextCount={terminalContextProvider.getContexts(aiContextSelection.selection).length}
+                contextCount={terminalCapability.getContexts(aiContextSelection.selection).length}
                 onApiKeyChange={setRuntimeApiKey}
                 providerMode={settings.ai.providerMode}
                 providerPreset={settings.ai.providerPreset}
@@ -632,14 +787,25 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       )}
       {sshDialog.open && (
         <SshConnectionDialog
-          folders={connectionLibrary.folders}
           initialSession={sshDialog.session}
           onCancel={closeSshDialog}
-          onCreateFolder={connectionLibrary.createFolder}
-          onSubmit={(connection, save, folderId, hostKeyAction, connect) => {
-            if (save) connectionLibrary.saveSsh(connection, folderId, sshDialog.session?.id);
-            if (!sshDialog.session || connect) workspaceTabs.openSsh(connection, hostKeyAction);
+          onSubmit={(connection, save) => {
+            if (save) connectionLibrary.saveSsh(connection, sshDialog.session?.folderId ?? null, sshDialog.session?.id);
+            if (!sshDialog.session) workspaceTabs.openSsh(connection);
             closeSshDialog();
+          }}
+        />
+      )}
+      {rdpDialog.open && (
+        <RdpConnectionDialog
+          folders={connectionLibrary.folders}
+          initialSession={rdpDialog.session}
+          onCancel={closeRdpDialog}
+          onCreateFolder={connectionLibrary.createFolder}
+          onSubmit={(connection, save, folderId) => {
+            if (save) connectionLibrary.saveRdp(connection, folderId, rdpDialog.session?.id);
+            if (!rdpDialog.session) workspaceTabs.openRdp(connection);
+            closeRdpDialog();
           }}
         />
       )}

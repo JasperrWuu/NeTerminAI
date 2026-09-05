@@ -69,6 +69,41 @@ test("assistant captures latest selected contexts on every send", async () => {
   assert.match(requests[1].context.sessions[0].recentOutput, /second/);
 });
 
+test("core AI gate blocks new requests and cancels an active request", async () => {
+  const context = {
+    listSessions: () => [],
+    getActiveContext: () => null,
+    getContexts: () => [],
+  };
+  let calls = 0;
+  const provider = {
+    id: "gate-test",
+    analyze: (_request, options = {}) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        if (options.signal?.aborted) {
+          reject(Object.assign(new Error("cancelled"), { code: "cancelled" }));
+          return;
+        }
+        options.signal?.addEventListener("abort", () => {
+          reject(Object.assign(new Error("cancelled"), { code: "cancelled" }));
+        }, { once: true });
+      });
+    },
+  };
+  const assistant = new AiAssistant(provider, context, { dispatchInput: () => ({ ok: true }) }, { enabled: false });
+  const selection = { scope: "active", selectedTabIds: [] };
+  assert.equal(await assistant.send(selection, "blocked"), null);
+  assert.equal(calls, 0);
+
+  assistant.setEnabled(true);
+  const pending = assistant.send(selection, "running");
+  assistant.setEnabled(false);
+  await pending;
+  assert.equal(assistant.getSnapshot().status, "cancelled");
+  assert.equal(calls, 1);
+});
+
 test("API provider exposes auth and cancellation as provider errors", async () => {
   const unauthorized = new ApiAiProvider({ baseUrl: "https://example.test", model: "test" }, async () => ({ ok: false, status: 401 }));
   await assert.rejects(() => unauthorized.analyze({ context: assembly(), question: "x" }), (error) => error.code === "auth");

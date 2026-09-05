@@ -1,19 +1,15 @@
 use tauri::{AppHandle, Manager};
 
 use super::run_blocking;
-use crate::terminal::{SshAuthentication, SshHostKeyAction, TerminalManager};
+use crate::terminal::TerminalManager;
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn create_ssh(
     app: AppHandle,
     session_id: String,
     host: String,
     port: u16,
     username: String,
-    authentication: SshAuthentication,
-    identity_file: String,
-    host_key_action: SshHostKeyAction,
     columns: u16,
     rows: u16,
 ) -> Result<(), String> {
@@ -26,9 +22,6 @@ pub async fn create_ssh(
             host,
             port,
             username,
-            authentication,
-            identity_file,
-            host_key_action,
             columns,
             rows,
             cancellation,

@@ -1,6 +1,7 @@
 import type { MultiSessionContextAssembly } from "../processing/types";
-import type { TerminalContextTarget } from "../context/types";
+import type { TerminalTarget } from "../../capabilities/terminal";
 import type { AiConversationMessage } from "../providers/types";
+import type { ProjectContextPatch } from "../../capabilities/project";
 
 export interface ContextAnalysisRequest {
   context: MultiSessionContextAssembly;
@@ -9,13 +10,13 @@ export interface ContextAnalysisRequest {
 }
 
 export interface AnalysisEvidence {
-  target: TerminalContextTarget;
+  target: TerminalTarget;
   detail: string;
 }
 
 export interface TerminalCommandProposal {
   id: string;
-  target: TerminalContextTarget;
+  target: TerminalTarget;
   command: string;
   explanation: string;
 }
@@ -25,6 +26,8 @@ export interface ContextAnalysisResult {
   evidence: AnalysisEvidence[];
   suggestedChecks: string[];
   proposals: TerminalCommandProposal[];
+  /** Optional structured facts returned by a provider for the active Project. */
+  projectContextUpdate?: ProjectContextPatch;
 }
 
 export interface ContextAnalyzer {

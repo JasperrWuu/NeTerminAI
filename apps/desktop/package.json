@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test:ipc": "node --experimental-strip-types --test src/ipc/validation.test.mjs",
     "test:workspace": "node --experimental-strip-types --test src/workspace/layout.test.mjs",
+    "test:projects": "node --experimental-strip-types --test src/projects/project.test.mjs",
     "test:settings": "node --experimental-strip-types --test src/settings/applicationSettings.test.mjs src/settings/keybindings.test.mjs",
     "test:ai-context": "node --experimental-strip-types --test src/terminal/TerminalSnapshot.test.mjs src/ai/context/TerminalContextProvider.test.mjs",
     "test:ai-core": "node --experimental-strip-types --test src/ai/processing/contextPipeline.test.mjs src/ai/actions/TerminalActionExecutor.test.mjs",
