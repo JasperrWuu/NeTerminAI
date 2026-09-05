@@ -1,5 +1,6 @@
 use tauri::Manager;
 
+pub(crate) mod ai_process;
 mod commands;
 pub(crate) mod connection_state;
 pub(crate) mod io_pump;
@@ -16,8 +17,11 @@ pub fn run() {
         .manage(terminal::TerminalManager::default())
         .manage(telnet::TelnetManager::default())
         .manage(serial::SerialManager::default())
+        .manage(ai_process::AiProcessManager::default())
         .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![
+            commands::ai::run_ai_process,
+            commands::ai::cancel_ai_process,
             commands::terminal::create_terminal,
             commands::terminal::write_terminal,
             commands::terminal::resize_terminal,

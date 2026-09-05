@@ -7,6 +7,11 @@ export type IpcErrorCode =
   | "invalid_argument"
   | "io_error"
   | "invalid_response"
+  | "ai_cancelled"
+  | "ai_timeout"
+  | "ai_process"
+  | "ai_provider"
+  | "ai_not_found"
   | "internal";
 
 export class IpcError extends Error {
@@ -38,6 +43,10 @@ export function invalidResponse(message: string) {
 
 function classifyMessage(message: string): IpcErrorCode {
   if (/队列繁忙|backpressure/i.test(message)) return "backpressure";
+  if (/ai_cancelled|AI 请求已停止|已取消/i.test(message)) return "ai_cancelled";
+  if (/ai_timeout|AI 请求超时/i.test(message)) return "ai_timeout";
+  if (/ai_not_found|AI 请求不存在/i.test(message)) return "ai_not_found";
+  if (/ai_process|AI 进程/i.test(message)) return "ai_process";
   if (/超时|timeout/i.test(message)) return "timeout";
   if (/不存在|session not found|unknown session|session/i.test(message)) return "session_not_found";
   if (/已关闭|仍在连接|正在连接|closing|closed/i.test(message)) return "invalid_state";
@@ -57,6 +66,11 @@ function isIpcErrorCode(value: unknown): value is IpcErrorCode {
     "invalid_argument",
     "io_error",
     "invalid_response",
+    "ai_cancelled",
+    "ai_timeout",
+    "ai_process",
+    "ai_provider",
+    "ai_not_found",
     "internal",
   ].includes(value);
 }

@@ -9,7 +9,10 @@ use std::{
 
 use tauri::{AppHandle, Manager};
 
-use crate::{serial::SerialManager, telnet::TelnetManager, terminal::TerminalManager};
+use crate::{
+    ai_process::AiProcessManager, serial::SerialManager, telnet::TelnetManager,
+    terminal::TerminalManager,
+};
 
 const GLOBAL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const IDLE: u8 = 0;
@@ -49,12 +52,17 @@ impl ShutdownCoordinator {
             .name("neterminai-shutdown".to_owned())
             .spawn(move || {
                 let deadline = Instant::now() + GLOBAL_SHUTDOWN_TIMEOUT;
+                let ai_processes = app.state::<AiProcessManager>();
+                ai_processes.cancel_all();
                 app.state::<TerminalManager>().shutdown(deadline);
                 app.state::<TelnetManager>().shutdown(deadline);
                 app.state::<SerialManager>().shutdown(deadline);
                 app.state::<TerminalManager>().stop_cleanup();
                 app.state::<TelnetManager>().stop_cleanup();
                 app.state::<SerialManager>().stop_cleanup();
+                while Instant::now() < deadline && ai_processes.active_count() > 0 {
+                    thread::sleep(Duration::from_millis(20));
+                }
 
                 let coordinator = app.state::<ShutdownCoordinator>();
                 coordinator.state.store(READY, Ordering::Release);
