@@ -54,6 +54,13 @@ export class TerminalInputPump {
     this.pendingBytes = 0;
   }
 
+  /** Drop queued input when a tab starts a fresh runtime instance. */
+  reset() {
+    if (this.disposed) return;
+    this.queue = [];
+    this.pendingBytes = 0;
+  }
+
   private async drain() {
     if (this.draining) return;
     this.draining = true;

@@ -20,6 +20,8 @@ export type {
 export interface TerminalRuntimeControllerOptions {
   connectionType: TerminalConnectionType;
   container: HTMLElement;
+  /** A reconnect can be prepared while its view is detached. */
+  initiallyAttached?: boolean;
   supportsResize: boolean;
   isActive: () => boolean;
   fit: () => void;
@@ -36,8 +38,8 @@ type Unlisten = () => void;
 /**
  * Owns one backend terminal runtime without owning the terminal renderer.
  * The controller is intentionally small: it coordinates listener/session
- * lifecycle and leaves rendering, input, buffering and visual settings to
- * TerminalPane.
+ * lifecycle and leaves rendering, input, buffering and visual settings to the
+ * TerminalSessionRuntime / attached view boundary.
  */
 export class TerminalRuntimeController {
   private readonly sessionId = crypto.randomUUID();
@@ -52,11 +54,20 @@ export class TerminalRuntimeController {
   private closePromise: Promise<void> | undefined;
   private resizeObserver: ResizeObserver | undefined;
   private resizeFrame: number | undefined;
+  private viewContainer: HTMLElement;
+  private viewAttached: boolean;
 
-  constructor(private readonly options: TerminalRuntimeControllerOptions) {}
+  constructor(private readonly options: TerminalRuntimeControllerOptions) {
+    this.viewContainer = options.container;
+    this.viewAttached = options.initiallyAttached ?? true;
+  }
 
   get id() {
     return this.sessionId;
+  }
+
+  get connectionType() {
+    return this.options.connectionType;
   }
 
   get isReady() {
@@ -77,15 +88,30 @@ export class TerminalRuntimeController {
     this.performResize();
   }
 
-  dispose() {
+  attachView(container: HTMLElement) {
     if (this.disposed) return;
-    this.disposed = true;
+    this.viewContainer = container;
+    this.viewAttached = true;
+    if (this.started) {
+      this.installResizeObserver();
+      this.performResize();
+    }
+  }
+
+  detachView() {
+    this.viewAttached = false;
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
     if (this.resizeFrame !== undefined) {
       cancelAnimationFrame(this.resizeFrame);
       this.resizeFrame = undefined;
     }
+  }
+
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.detachView();
     this.removeListeners();
     // Cleanup is intentionally non-blocking; all pending registrations still
     // settle without creating an unhandled rejection.
@@ -94,6 +120,8 @@ export class TerminalRuntimeController {
   }
 
   private installResizeObserver() {
+    if (!this.viewAttached) return;
+    this.resizeObserver?.disconnect();
     this.resizeObserver = new ResizeObserver(() => {
       if (this.resizeFrame !== undefined) return;
       this.resizeFrame = requestAnimationFrame(() => {
@@ -101,11 +129,11 @@ export class TerminalRuntimeController {
         this.performResize();
       });
     });
-    this.resizeObserver.observe(this.options.container);
+    this.resizeObserver.observe(this.viewContainer);
   }
 
   private performResize() {
-    if (this.disposed || !this.options.isActive()) return;
+    if (this.disposed || !this.viewAttached || !this.options.isActive()) return;
     this.options.fit();
     if (!this.options.supportsResize || !this.isReady) return;
     const size = this.options.getTerminalSize();
@@ -118,7 +146,7 @@ export class TerminalRuntimeController {
 
   private async startRuntime() {
     try {
-      this.options.fit();
+      if (this.viewAttached) this.options.fit();
       await this.registerOutputListener();
       if (this.disposed) return;
       await this.registerStateListener();
