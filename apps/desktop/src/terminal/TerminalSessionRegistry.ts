@@ -47,6 +47,15 @@ export class TerminalSessionRegistry {
     return this.revision;
   }
 
+  dispatchInput(tabId: string, sessionId: string, data: string) {
+    const runtime = this.runtimes.get(tabId);
+    if (!runtime || runtime.sessionId !== sessionId || runtime.isDisposed) {
+      return { ok: false as const, code: "stale_session" as const };
+    }
+    if (!runtime.enqueueInput(data)) return { ok: false as const, code: "unavailable" as const };
+    return { ok: true as const };
+  }
+
   reconnect(tabId: string) {
     this.runtimes.get(tabId)?.reconnect();
   }

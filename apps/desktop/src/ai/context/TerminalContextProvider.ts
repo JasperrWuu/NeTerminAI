@@ -5,13 +5,13 @@ import {
   type TerminalSnapshotLimits,
 } from "../../terminal/TerminalSnapshot.ts";
 import type { TerminalSessionRuntimeSnapshot } from "../../terminal/TerminalSessionRuntime";
-import { collectVisibleTabIds, findPane, findPaneContainingTab } from "../../workspace/layout.ts";
+import { findPane, findPaneContainingTab } from "../../workspace/layout.ts";
 import type { WorkspaceLayoutNode, WorkspaceTab } from "../../workspace/types";
 import type { TerminalContextSnapshot, TerminalConnectionMetadata } from "./types";
 import {
   resolveContextSelection,
   type AiContextSelection,
-} from "./selection";
+} from "./selection.ts";
 
 export interface TerminalContextWorkspace {
   tabs: readonly WorkspaceTab[];
@@ -105,15 +105,33 @@ export class TerminalContextProvider {
 
   getContexts(selection: AiContextSelection): TerminalContextSnapshot[] {
     const workspace = this.getWorkspace();
-    return resolveContextSelection(
+    const tabIds = resolveContextSelection(
       selection,
       workspace.tabs,
       workspace.layout,
       workspace.activePaneId,
-    ).flatMap((tabId) => {
-      const context = this.getContextForTab(tabId);
-      return context ? [context] : [];
-    });
+    );
+    const activeTabId = activeTabForWorkspace(workspace);
+    const orderedIds = activeTabId && tabIds.includes(activeTabId)
+      ? [activeTabId, ...tabIds.filter((tabId) => tabId !== activeTabId)]
+      : tabIds;
+    const contexts: TerminalContextSnapshot[] = [];
+    let remainingChars = MAX_VISIBLE_CHARS;
+    for (const tabId of orderedIds.slice(0, MAX_VISIBLE_CONTEXTS)) {
+      if (remainingChars <= 0) break;
+      const requested = tabId === activeTabId
+        ? DEFAULT_TERMINAL_SNAPSHOT_LIMITS
+        : VISIBLE_CONTEXT_LIMITS;
+      const context = this.getContextForTab(tabId, {
+        maxLines: requested.maxLines,
+        maxChars: Math.min(requested.maxChars, remainingChars),
+      });
+      if (!context) continue;
+      contexts.push(context);
+      remainingChars -= context.terminal.recentText.length
+        + (context.terminal.selection?.length ?? 0);
+    }
+    return contexts;
   }
 
   listSessions(): TerminalContextSessionDescriptor[] {
@@ -139,30 +157,7 @@ export class TerminalContextProvider {
    * panes remains available until the bounded budget is exhausted.
    */
   getVisibleContexts(): TerminalContextSnapshot[] {
-    const workspace = this.getWorkspace();
-    const visibleIds = unique(collectVisibleTabIds(workspace.layout));
-    const activeTabId = activeTabForWorkspace(workspace);
-    const orderedIds = activeTabId && visibleIds.includes(activeTabId)
-      ? [activeTabId, ...visibleIds.filter((id) => id !== activeTabId)]
-      : visibleIds;
-    const contexts: TerminalContextSnapshot[] = [];
-    let remainingChars = MAX_VISIBLE_CHARS;
-
-    for (const tabId of orderedIds.slice(0, MAX_VISIBLE_CONTEXTS)) {
-      if (remainingChars <= 0) break;
-      const active = tabId === activeTabId;
-      const requested = active ? DEFAULT_TERMINAL_SNAPSHOT_LIMITS : VISIBLE_CONTEXT_LIMITS;
-      const limits: TerminalSnapshotLimits = {
-        maxLines: requested.maxLines,
-        maxChars: Math.min(requested.maxChars, remainingChars),
-      };
-      const context = this.getContextForTab(tabId, limits);
-      if (!context) continue;
-      contexts.push(context);
-      remainingChars -= context.terminal.recentText.length
-        + (context.terminal.selection?.length ?? 0);
-    }
-    return contexts;
+    return this.getContexts({ scope: "visible", selectedTabIds: [] });
   }
 }
 
@@ -188,8 +183,4 @@ function connectionMetadataForTab(tab: WorkspaceTab): TerminalConnectionMetadata
     portName: tab.connection.portName,
     baudRate: tab.connection.baudRate,
   };
-}
-
-function unique(values: readonly string[]) {
-  return [...new Set(values)];
 }

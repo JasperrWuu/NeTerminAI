@@ -33,12 +33,12 @@ export class TerminalInputPump {
   }
 
   enqueue(data: string) {
-    if (this.disposed || data.length === 0) return;
+    if (this.disposed || data.length === 0) return false;
 
     const bytes = this.encoder.encode(data).byteLength;
     if (bytes > this.maxPendingBytes || this.pendingBytes + bytes > this.maxPendingBytes) {
       this.onError(new Error("终端输入队列繁忙，请稍后重试"));
-      return;
+      return false;
     }
 
     for (const chunk of splitUtf8(data, this.encoder, this.maxChunkBytes)) {
@@ -46,6 +46,7 @@ export class TerminalInputPump {
     }
     this.pendingBytes += bytes;
     void this.drain();
+    return true;
   }
 
   dispose() {

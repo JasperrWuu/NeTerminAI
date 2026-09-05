@@ -124,3 +124,25 @@ test("reconnect uses the current runtime session identity and rejects a stale ki
   runtimes.set("local-tab", runtime("telnet", "stale"));
   assert.equal(provider.getActiveContext(), undefined);
 });
+
+test("selected scope can read a hidden open tab without following tile visibility", () => {
+  const workspace = {
+    tabs: [localTab, telnetTab, serialTab],
+    layout: {
+      type: "split", id: "split", direction: "row", ratio: 0.5,
+      first: pane("pane-a", ["local-tab", "telnet-tab"], "telnet-tab"),
+      second: pane("pane-b", ["serial-tab"], "serial-tab"),
+    },
+    activePaneId: "pane-b",
+    activeTabId: "serial-tab",
+  };
+  const provider = providerWith(workspace, new Map([
+    ["local-tab", runtime("local", "session-l")],
+    ["telnet-tab", runtime("telnet", "session-t")],
+    ["serial-tab", runtime("serial", "session-s")],
+  ]));
+  assert.deepEqual(
+    provider.getContexts({ scope: "selected", selectedTabIds: ["local-tab"] }).map((context) => context.tabId),
+    ["local-tab"],
+  );
+});

@@ -133,6 +133,12 @@ export class TerminalSessionRuntime {
     return this.disposed;
   }
 
+  /** Queue approved AI input through the same serialized path as keyboard input. */
+  enqueueInput(data: string) {
+    if (this.disposed || !this.controller.isReady) return false;
+    return this.inputPump.enqueue(data);
+  }
+
   getSnapshot() {
     return this.snapshot;
   }
