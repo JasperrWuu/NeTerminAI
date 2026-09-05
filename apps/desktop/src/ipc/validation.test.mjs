@@ -102,4 +102,5 @@ test("IPC errors preserve stable codes and readable messages", () => {
   const typed = normalizeIpcError({ code: "timeout", message: "连接超时" });
   assert.equal(typed.code, "timeout");
   assert.equal(typed.message, "连接超时");
+  assert.equal(normalizeIpcError("终端输入通道已关闭").code, "invalid_state");
 });
