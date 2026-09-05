@@ -35,6 +35,7 @@ pub fn run() {
             commands::serial::close_serial,
             commands::serial::list_serial_ports,
             commands::fonts::list_system_fonts,
+            commands::system::get_local_ipv4,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build NeTerminAI")

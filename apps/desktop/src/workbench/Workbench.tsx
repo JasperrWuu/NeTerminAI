@@ -32,6 +32,7 @@ import type { ConnectionFolder, SavedConnectionSession, SavedSerialSession, Save
 import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 import { collectVisibleTabIds } from "../workspace/layout";
 import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
+import { systemApi } from "../ipc/system";
 import {
   TerminalContextProvider,
   TerminalContextScope,
@@ -80,6 +81,9 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("terminal");
   const [tabDragging, setTabDragging] = useState(false);
   const [runtimeApiKey, setRuntimeApiKey] = useState("");
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const statusNoticeTimerRef = useRef<number | undefined>(undefined);
+  const mountedRef = useRef(true);
   const workspaceTabs = useWorkspaceTabs();
   const openTabIds = useMemo(() => workspaceTabs.tabs.map((tab) => tab.id), [workspaceTabs.tabs]);
   const runtimeRegistry = useTerminalSessionRegistry(openTabIds);
@@ -144,6 +148,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     && workspaceTabs.tabs.some((tab) => tab.id === workspaceTabs.activeTabId && isCharacterTerminal(tab))
     ? workspaceTabs.activeTabId
     : null;
+  const activeTerminalIdRef = useRef<string | null>(activeTerminalId);
+  activeTerminalIdRef.current = activeTerminalId;
   const activePanel = panelCopy[activity];
   const closeTelnetDialog = useCallback(() => setTelnetDialog({ open: false }), []);
   const closeSerialDialog = useCallback(() => setSerialDialog({ open: false }), []);
@@ -152,6 +158,46 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     setSettingsOpen(true);
     if (!preferences.leftSidebarOpen) preferences.toggleLeftSidebar();
   }, [preferences.leftSidebarOpen, preferences.toggleLeftSidebar]);
+
+  const showStatusNotice = useCallback((message: string) => {
+    if (!mountedRef.current) return;
+    setStatusNotice(message);
+    if (statusNoticeTimerRef.current !== undefined) {
+      window.clearTimeout(statusNoticeTimerRef.current);
+    }
+    statusNoticeTimerRef.current = window.setTimeout(() => {
+      statusNoticeTimerRef.current = undefined;
+      setStatusNotice(null);
+    }, 3_000);
+  }, []);
+
+  const insertLocalIpv4 = useCallback((targetTabId: string | null) => {
+    if (!targetTabId) return;
+    void systemApi.getLocalIpv4()
+      .then((address) => {
+        if (activeTerminalIdRef.current !== targetTabId) return;
+        if (!address) {
+          showStatusNotice("未找到可用的本机 IPv4 地址");
+          return;
+        }
+        synchronizedInput.routeInput(targetTabId, address);
+      })
+      .catch(() => {
+        if (activeTerminalIdRef.current === targetTabId) {
+          showStatusNotice("无法读取本机 IPv4 地址");
+        }
+      });
+  }, [showStatusNotice, synchronizedInput.routeInput]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (statusNoticeTimerRef.current !== undefined) {
+        window.clearTimeout(statusNoticeTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -174,6 +220,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       } else if (command.id === "stopSynchronizedInput") {
         synchronizedInput.disable();
         synchronizedInput.focus(activeTerminalId);
+      } else if (command.id === "insertLocalIpv4") {
+        insertLocalIpv4(activeTerminalId);
       } else if (command.id === "balanceWorkspace") {
         workspaceTabs.balanceWorkspace();
       } else if (command.id === "collapseWorkspace") {
@@ -193,6 +241,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     synchronizedInput.disable,
     synchronizedInput.enable,
     synchronizedInput.focus,
+    insertLocalIpv4,
     workspaceTabs.activateNextSession,
     workspaceTabs.balanceWorkspace,
     workspaceTabs.collapseWorkspace,
@@ -517,6 +566,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             <i /> 同步输入 · {visibleTerminalIds.length} 个终端
           </button>
         )}
+        {statusNotice && <span aria-live="polite" className="status-notice" role="status">{statusNotice}</span>}
         <span className="status-spacer" />
         <span>本地工作区</span>
         <span>UTF-8</span>

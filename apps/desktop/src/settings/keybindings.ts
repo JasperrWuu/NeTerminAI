@@ -19,6 +19,11 @@ export const keybindingCommands: KeybindingCommand[] = [
     description: "停止广播输入，并将输入焦点交还当前终端。",
   },
   {
+    id: "insertLocalIpv4",
+    label: "输入本机 IPv4",
+    description: "将当前默认网络路径使用的本机 IPv4 输入到活动终端，不自动回车。",
+  },
+  {
     id: "focusNextSession",
     label: "切换到下一个会话",
     description: "按照会话创建顺序循环切换当前会话。",

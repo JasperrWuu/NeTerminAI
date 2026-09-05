@@ -9,6 +9,7 @@ export type AiProviderPreset = "openaiCompatible" | "claude" | "opencode" | "pow
 export type KeybindingCommandId =
   | "synchronizeVisibleTerminals"
   | "stopSynchronizedInput"
+  | "insertLocalIpv4"
   | "focusNextSession"
   | "balanceWorkspace"
   | "collapseWorkspace";

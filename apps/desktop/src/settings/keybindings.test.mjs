@@ -19,6 +19,22 @@ test("enabled Ctrl+Equal resolves to tile layout", () => {
   assert.equal(command?.id, "balanceWorkspace");
 });
 
+test("default synchronized input shortcuts resolve without conflict", () => {
+  const settings = createDefaultApplicationSettings();
+  assert.equal(
+    resolveKeyboardShortcut(keyEvent({ key: "l", code: "KeyL", ctrlKey: true }), settings.keybindings)?.id,
+    "synchronizeVisibleTerminals",
+  );
+  assert.equal(
+    resolveKeyboardShortcut(keyEvent({ key: "l", code: "KeyL", ctrlKey: true, shiftKey: true }), settings.keybindings)?.id,
+    "stopSynchronizedInput",
+  );
+  assert.equal(
+    resolveKeyboardShortcut(keyEvent({ key: "i", code: "KeyI", ctrlKey: true }), settings.keybindings)?.id,
+    "insertLocalIpv4",
+  );
+});
+
 test("disabled shortcut keeps its binding but is not resolved", () => {
   const settings = createDefaultApplicationSettings();
   settings.keybindings.balanceWorkspace.enabled = false;

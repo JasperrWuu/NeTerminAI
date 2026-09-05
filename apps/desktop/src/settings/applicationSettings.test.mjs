@@ -21,6 +21,9 @@ class MemoryStorage {
 
 test("defaults expose one versioned settings model", () => {
   const settings = createDefaultApplicationSettings();
+  assert.equal(settings.keybindings.synchronizeVisibleTerminals.binding, "Ctrl+L");
+  assert.equal(settings.keybindings.stopSynchronizedInput.binding, "Ctrl+Shift+L");
+  assert.equal(settings.keybindings.insertLocalIpv4.binding, "Ctrl+I");
   assert.equal(settings.schemaVersion, CURRENT_SETTINGS_SCHEMA_VERSION);
   assert.equal(settings.keybindings.balanceWorkspace.binding, "Ctrl+Equal");
   assert.equal(settings.keybindings.balanceWorkspace.enabled, true);
@@ -54,13 +57,29 @@ test("legacy settings migrate bindings, workspace preferences and partial fields
   assert.equal(settings.schemaVersion, CURRENT_SETTINGS_SCHEMA_VERSION);
   assert.equal(settings.terminal.fontFamilyLatin, "JetBrains Mono");
   assert.equal(settings.terminal.fontSize, 14);
-  assert.equal(settings.keybindings.synchronizeVisibleTerminals.binding, "Ctrl+Alt+I");
+  assert.equal(settings.keybindings.synchronizeVisibleTerminals.binding, "Ctrl+L");
   assert.equal(settings.keybindings.synchronizeVisibleTerminals.enabled, true);
+  assert.equal(settings.keybindings.stopSynchronizedInput.binding, "Ctrl+Shift+L");
+  assert.equal(settings.keybindings.insertLocalIpv4.binding, "Ctrl+I");
   assert.equal(settings.keybindings.balanceWorkspace.binding, "Ctrl+Equal");
   assert.equal(settings.keybindings.collapseWorkspace.enabled, false);
   assert.equal(settings.workspacePreferences.leftSidebarOpen, false);
   assert.equal(settings.workspacePreferences.leftSidebarWidth, 410);
   assert.equal(settings.workspacePreferences.rightSidebarWidth, 320);
+});
+
+test("migration preserves explicit shortcut customizations", () => {
+  const settings = migrateSettings({
+    keybindings: {
+      synchronizeVisibleTerminals: { binding: "Alt+L", enabled: false },
+      stopSynchronizedInput: { binding: "Alt+Shift+L" },
+      insertLocalIpv4: { binding: "Ctrl+Alt+I" },
+    },
+  });
+  assert.equal(settings.keybindings.synchronizeVisibleTerminals.binding, "Alt+L");
+  assert.equal(settings.keybindings.synchronizeVisibleTerminals.enabled, false);
+  assert.equal(settings.keybindings.stopSynchronizedInput.binding, "Alt+Shift+L");
+  assert.equal(settings.keybindings.insertLocalIpv4.binding, "Ctrl+Alt+I");
 });
 
 test("migration is deterministic and safe for malformed or unknown data", () => {

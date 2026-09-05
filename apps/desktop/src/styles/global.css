@@ -168,6 +168,12 @@ button:focus-visible,
   display: flex;
 }
 
+.status-notice {
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .brand {
   gap: 9px;
   min-width: 0;

@@ -15,6 +15,7 @@ export const LEGACY_WORKBENCH_STORAGE_KEY = "neterminai.workbench.preferences.v2
 const KEYBINDING_IDS: readonly KeybindingCommandId[] = [
   "synchronizeVisibleTerminals",
   "stopSynchronizedInput",
+  "insertLocalIpv4",
   "focusNextSession",
   "balanceWorkspace",
   "collapseWorkspace",
@@ -47,12 +48,17 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
     keybindings: {
       synchronizeVisibleTerminals: {
         id: "synchronizeVisibleTerminals",
-        binding: "Ctrl+Alt+I",
+        binding: "Ctrl+L",
         enabled: true,
       },
       stopSynchronizedInput: {
         id: "stopSynchronizedInput",
-        binding: "Ctrl+Alt+Shift+I",
+        binding: "Ctrl+Shift+L",
+        enabled: true,
+      },
+      insertLocalIpv4: {
+        id: "insertLocalIpv4",
+        binding: "Ctrl+I",
         enabled: true,
       },
       focusNextSession: {
@@ -279,23 +285,8 @@ function normalizeKeybindings(
     }];
   })) as KeybindingSettings;
 
-  // The old Ctrl+L defaults conflicted with common network-device commands.
-  // Keep the existing safety migration while preserving each shortcut's
-  // explicit enabled state.
-  if (settings.synchronizeVisibleTerminals.binding === "Ctrl+L"
-    && settings.stopSynchronizedInput.binding === "Ctrl+Shift+L") {
-    return {
-      ...settings,
-      synchronizeVisibleTerminals: {
-        ...settings.synchronizeVisibleTerminals,
-        binding: defaults.synchronizeVisibleTerminals.binding,
-      },
-      stopSynchronizedInput: {
-        ...settings.stopSynchronizedInput,
-        binding: defaults.stopSynchronizedInput.binding,
-      },
-    };
-  }
+  // A stored binding is treated as a user choice. Defaults only fill missing
+  // commands, so changing defaults never overwrites an existing customization.
   return settings;
 }
 
