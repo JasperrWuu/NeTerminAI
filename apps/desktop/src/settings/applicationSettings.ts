@@ -227,7 +227,7 @@ function normalizeKeybindings(
   value: Record<string, unknown> | null,
   defaults: KeybindingSettings,
 ): KeybindingSettings {
-  return Object.fromEntries(KEYBINDING_IDS.map((id) => {
+  const settings = Object.fromEntries(KEYBINDING_IDS.map((id) => {
     const stored = asRecord(value?.[id]);
     const legacyBinding = typeof value?.[id] === "string" ? value[id] : null;
     const binding = stringValue(stored?.binding) ?? legacyBinding ?? defaults[id].binding;
@@ -237,6 +237,25 @@ function normalizeKeybindings(
       enabled: typeof stored?.enabled === "boolean" ? stored.enabled : true,
     }];
   })) as KeybindingSettings;
+
+  // The old Ctrl+L defaults conflicted with common network-device commands.
+  // Keep the existing safety migration while preserving each shortcut's
+  // explicit enabled state.
+  if (settings.synchronizeVisibleTerminals.binding === "Ctrl+L"
+    && settings.stopSynchronizedInput.binding === "Ctrl+Shift+L") {
+    return {
+      ...settings,
+      synchronizeVisibleTerminals: {
+        ...settings.synchronizeVisibleTerminals,
+        binding: defaults.synchronizeVisibleTerminals.binding,
+      },
+      stopSynchronizedInput: {
+        ...settings.stopSynchronizedInput,
+        binding: defaults.stopSynchronizedInput.binding,
+      },
+    };
+  }
+  return settings;
 }
 
 function normalizeBalanceWorkspaceShortcut(value: string, id: KeybindingCommandId) {

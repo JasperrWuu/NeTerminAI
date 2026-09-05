@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:ipc": "node --experimental-strip-types --test src/ipc/validation.test.mjs",
+    "test:settings": "node --experimental-strip-types --test src/settings/applicationSettings.test.mjs src/settings/keybindings.test.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
