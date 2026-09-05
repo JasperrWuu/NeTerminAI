@@ -152,6 +152,35 @@ mod tests {
     }
 
     #[test]
+    fn output_queue_keeps_the_next_chunk_when_batch_limit_is_reached() {
+        let (sender, mut receiver) = output_queue();
+        let cancellation = CancellationToken::new();
+        sender.send(vec![1; 4], &cancellation).unwrap();
+        sender.send(vec![2; 4], &cancellation).unwrap();
+
+        assert_eq!(
+            receiver.next_batch(&cancellation, 5).unwrap(),
+            Some(vec![1; 4])
+        );
+        assert_eq!(
+            receiver.next_batch(&cancellation, 5).unwrap(),
+            Some(vec![2; 4])
+        );
+    }
+
+    #[test]
+    fn input_queue_reports_backpressure_instead_of_dropping_bytes() {
+        let (sender, _receiver) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);
+        for _ in 0..INPUT_QUEUE_CAPACITY {
+            sender.try_send(vec![1]).unwrap();
+        }
+        assert!(matches!(
+            sender.try_send(vec![2]),
+            Err(TrySendError::Full(_))
+        ));
+    }
+
+    #[test]
     fn output_queue_rejects_oversized_chunks_without_truncating() {
         let (sender, _receiver) = output_queue();
         let cancellation = CancellationToken::new();

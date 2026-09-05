@@ -1164,6 +1164,7 @@ fn connect(
             "Telnet 连接已取消".to_owned(),
         ));
     }
+    let deadline = Instant::now() + CONNECT_TIMEOUT;
     let addresses = (host, port)
         .to_socket_addrs()
         .map_err(|error| {
@@ -1181,7 +1182,13 @@ fn connect(
             "Telnet 连接已取消".to_owned(),
         ));
     }
-    let deadline = Instant::now() + CONNECT_TIMEOUT;
+    if Instant::now() >= deadline {
+        return Err(TelnetConnectFailure::new(
+            DisconnectReason::Timeout,
+            ConnectionErrorKind::Connection,
+            format!("解析 Telnet 地址超时：{address}"),
+        ));
+    }
     let mut last_error = None;
     for socket_address in addresses {
         if cancellation.is_cancelled() {
