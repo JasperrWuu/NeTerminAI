@@ -11,7 +11,10 @@ import {
  */
 export class TerminalSessionRegistry {
   private readonly runtimes = new Map<string, TerminalSessionRuntime>();
+  private readonly listeners = new Set<() => void>();
+  private readonly runtimeUnsubscribers = new Map<string, () => void>();
   private accepting = true;
+  private revision = 0;
 
   acquire(tabId: string, definition: TerminalSessionDefinition, view: TerminalViewAttachment) {
     if (!this.accepting) throw new Error("终端工作区正在关闭");
@@ -19,6 +22,8 @@ export class TerminalSessionRegistry {
     if (!runtime || runtime.isDisposed) {
       runtime = new TerminalSessionRuntime(tabId, definition, view);
       this.runtimes.set(tabId, runtime);
+      this.runtimeUnsubscribers.set(tabId, runtime.subscribe(() => this.notify()));
+      this.notify();
     } else {
       runtime.attachView(view);
     }
@@ -33,6 +38,15 @@ export class TerminalSessionRegistry {
     return this.runtimes.get(tabId);
   }
 
+  subscribe(listener: () => void) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  getRevision() {
+    return this.revision;
+  }
+
   reconnect(tabId: string) {
     this.runtimes.get(tabId)?.reconnect();
   }
@@ -43,6 +57,9 @@ export class TerminalSessionRegistry {
       if (open.has(tabId)) continue;
       runtime.dispose();
       this.runtimes.delete(tabId);
+      this.runtimeUnsubscribers.get(tabId)?.();
+      this.runtimeUnsubscribers.delete(tabId);
+      this.notify();
     }
   }
 
@@ -51,6 +68,9 @@ export class TerminalSessionRegistry {
     if (!runtime) return;
     runtime.dispose();
     this.runtimes.delete(tabId);
+    this.runtimeUnsubscribers.get(tabId)?.();
+    this.runtimeUnsubscribers.delete(tabId);
+    this.notify();
   }
 
   disposeAll() {
@@ -58,6 +78,14 @@ export class TerminalSessionRegistry {
     this.accepting = false;
     for (const runtime of this.runtimes.values()) runtime.dispose();
     this.runtimes.clear();
+    for (const unsubscribe of this.runtimeUnsubscribers.values()) unsubscribe();
+    this.runtimeUnsubscribers.clear();
+    this.notify();
+  }
+
+  private notify() {
+    this.revision += 1;
+    for (const listener of this.listeners) listener();
   }
 }
 

@@ -8,12 +8,26 @@ import type { TerminalSessionRuntimeSnapshot } from "../../terminal/TerminalSess
 import { collectVisibleTabIds, findPane, findPaneContainingTab } from "../../workspace/layout.ts";
 import type { WorkspaceLayoutNode, WorkspaceTab } from "../../workspace/types";
 import type { TerminalContextSnapshot, TerminalConnectionMetadata } from "./types";
+import {
+  resolveContextSelection,
+  type AiContextSelection,
+} from "./selection";
 
 export interface TerminalContextWorkspace {
   tabs: readonly WorkspaceTab[];
   layout: WorkspaceLayoutNode;
   activePaneId: string;
   activeTabId: string | null;
+}
+
+export interface TerminalContextSessionDescriptor {
+  tabId: string;
+  title: string;
+  connectionKind: TerminalConnectionType;
+  connection: TerminalConnectionMetadata;
+  sessionId?: string;
+  connectionState: ReturnType<RuntimeContextReader["getSnapshot"]>["state"];
+  disconnectReason?: ReturnType<RuntimeContextReader["getSnapshot"]>["reason"];
 }
 
 interface RuntimeContextSource {
@@ -87,6 +101,36 @@ export class TerminalContextProvider {
       connection: connectionMetadataForTab(tab),
       terminal,
     };
+  }
+
+  getContexts(selection: AiContextSelection): TerminalContextSnapshot[] {
+    const workspace = this.getWorkspace();
+    return resolveContextSelection(
+      selection,
+      workspace.tabs,
+      workspace.layout,
+      workspace.activePaneId,
+    ).flatMap((tabId) => {
+      const context = this.getContextForTab(tabId);
+      return context ? [context] : [];
+    });
+  }
+
+  listSessions(): TerminalContextSessionDescriptor[] {
+    const workspace = this.getWorkspace();
+    return workspace.tabs.map((tab) => {
+      const runtime = this.registry.get(tab.id);
+      const runtimeSnapshot = runtime?.getSnapshot();
+      return {
+        tabId: tab.id,
+        title: tab.title,
+        connectionKind: connectionKindForTab(tab),
+        connection: connectionMetadataForTab(tab),
+        ...(runtimeSnapshot ? { sessionId: runtimeSnapshot.sessionId } : {}),
+        connectionState: runtimeSnapshot?.state ?? "connecting",
+        ...(runtimeSnapshot?.reason ? { disconnectReason: runtimeSnapshot.reason } : {}),
+      };
+    });
   }
 
   /**

@@ -35,6 +35,8 @@ import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
 import {
   TerminalContextProvider,
   TerminalContextScope,
+  AiContextSelector,
+  useAiContextSelection,
   type TerminalContextWorkspace,
 } from "../ai/context";
 
@@ -76,7 +78,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("terminal");
   const [tabDragging, setTabDragging] = useState(false);
   const workspaceTabs = useWorkspaceTabs();
-  const runtimeRegistry = useTerminalSessionRegistry(workspaceTabs.tabs.map((tab) => tab.id));
+  const openTabIds = useMemo(() => workspaceTabs.tabs.map((tab) => tab.id), [workspaceTabs.tabs]);
+  const runtimeRegistry = useTerminalSessionRegistry(openTabIds);
   const workspaceContextRef = useRef<TerminalContextWorkspace>({
     tabs: workspaceTabs.tabs,
     layout: workspaceTabs.layout,
@@ -110,6 +113,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const visibleTabIds = useMemo(
     () => collectVisibleTabIds(workspaceTabs.layout),
     [workspaceTabs.layout],
+  );
+  const aiContextSelection = useAiContextSelection(
+    openTabIds,
+    workspaceTabs.activeTabId,
+    visibleTabIds,
   );
   const visibleTerminalIds = useMemo(() => {
     const terminalIds = new Set(
@@ -464,6 +472,18 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             />
             <aside className="sidebar sidebar-right">
               <PanelHeader title="AI 助手" icon={<AssistantIcon />} />
+              <AiContextSelector
+                activeTabId={workspaceTabs.activeTabId}
+                onClear={aiContextSelection.clear}
+                onSelectActive={aiContextSelection.selectActive}
+                onSelectAll={aiContextSelection.selectAll}
+                onSelectVisible={aiContextSelection.selectVisible}
+                onToggle={aiContextSelection.toggle}
+                provider={terminalContextProvider}
+                registry={runtimeRegistry}
+                selection={aiContextSelection.selection}
+                visibleTabIds={visibleTabIds}
+              />
               <div className="assistant-empty">
                 <div className="assistant-orb" aria-hidden="true">
                   <AssistantIcon />
