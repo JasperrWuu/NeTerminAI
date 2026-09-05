@@ -315,29 +315,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   return (
     <TerminalContextScope provider={terminalContextProvider}>
       <div className="workbench" style={layoutStyle}>
-      <header
-        className="titlebar"
-        onDoubleClick={(event) => {
-          if ((event.target as HTMLElement).closest("[data-titlebar-control]")) return;
-          if ("__TAURI_INTERNALS__" in window) {
-            void getCurrentWindow().toggleMaximize().catch((error: unknown) => {
-              reportWindowActionError("toggle maximize", error);
-            });
-          }
-        }}
-        onPointerDown={(event) => {
-          if (
-            event.button !== 0 ||
-            event.detail > 1 ||
-            (event.target as HTMLElement).closest("[data-titlebar-control]")
-          ) return;
-          if ("__TAURI_INTERNALS__" in window) {
-            void getCurrentWindow().startDragging().catch((error: unknown) => {
-              console.error("Unable to start dragging the NeTerminAI window", error);
-            });
-          }
-        }}
-      >
+      <header className="titlebar" data-tauri-drag-region="deep">
         <div className="brand" aria-label="NeTerminAI">
           <img className="brand-mark" src="/brand/neterminai-logo.png" alt="" />
           <span className="brand-name">NeTerminAI</span>
@@ -345,7 +323,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
 
         <div className="titlebar-center">终端工作台</div>
 
-        <div className="titlebar-actions" data-titlebar-control>
+        <div className="titlebar-actions" data-tauri-drag-region="false">
           <IconButton
             dataTitlebarControl
             label={preferences.leftSidebarOpen ? "收起左侧栏" : "展开左侧栏"}
@@ -651,9 +629,7 @@ function WindowControls() {
   return (
     <div
       className="window-controls"
-      data-titlebar-control
-      onDoubleClick={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
+      data-tauri-drag-region="false"
     >
       <button aria-label="最小化" className="window-control" data-titlebar-control onClick={() => appWindow && runWindowAction(() => appWindow.minimize(), "minimize window")} type="button">
         <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>

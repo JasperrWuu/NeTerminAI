@@ -74,31 +74,62 @@ export function countWorkspacePanes(node: WorkspaceLayoutNode): number {
     : countWorkspacePanes(node.first) + countWorkspacePanes(node.second);
 }
 
-/**
- * Creates a near-complete binary layout for the supplied tabs. Alternating the
- * split direction at each level keeps the common 4-tab case as a 2×2 grid,
- * while odd counts remain balanced without introducing empty panes.
- */
-export function buildBalancedWorkspaceLayout(tabIds: readonly string[], depth = 0): WorkspaceLayoutNode {
-  if (tabIds.length <= 1) {
-    return {
-      type: "pane",
-      id: crypto.randomUUID(),
-      tabIds: [...tabIds],
-      activeTabId: tabIds[0] ?? null,
-    };
-  }
+function createWorkspacePane(tabId: string | undefined): WorkspacePaneNode {
+  return {
+    type: "pane",
+    id: crypto.randomUUID(),
+    tabIds: tabId ? [tabId] : [],
+    activeTabId: tabId ?? null,
+  };
+}
 
-  const splitIndex = Math.ceil(tabIds.length / 2);
-  const direction: WorkspaceSplitDirection = depth % 2 === 0 ? "row" : "column";
+function buildBalancedSplit(
+  nodes: readonly WorkspaceLayoutNode[],
+  direction: WorkspaceSplitDirection,
+): WorkspaceLayoutNode {
+  if (nodes.length === 1) return nodes[0];
+
+  const firstCount = Math.ceil(nodes.length / 2);
   return {
     type: "split",
     id: crypto.randomUUID(),
     direction,
-    ratio: 0.5,
-    first: buildBalancedWorkspaceLayout(tabIds.slice(0, splitIndex), depth + 1),
-    second: buildBalancedWorkspaceLayout(tabIds.slice(splitIndex), depth + 1),
+    // The ratio is based on the number of leaves in each child. Using the
+    // same ratio for the flex weights keeps every pane in this group equal.
+    ratio: firstCount / nodes.length,
+    first: buildBalancedSplit(nodes.slice(0, firstCount), direction),
+    second: buildBalancedSplit(nodes.slice(firstCount), direction),
   };
+}
+
+/**
+ * Creates a balanced grid for the supplied tabs. Rows are as close to square
+ * as possible, and any remainder is assigned to the first rows. Each row and
+ * the row stack are then represented by ordinary split nodes, so the existing
+ * pane tree and runtime identities remain unchanged.
+ */
+export function buildBalancedWorkspaceLayout(tabIds: readonly string[]): WorkspaceLayoutNode {
+  if (tabIds.length <= 1) {
+    return createWorkspacePane(tabIds[0]);
+  }
+
+  const columns = Math.ceil(Math.sqrt(tabIds.length));
+  const rows = Math.ceil(tabIds.length / columns);
+  const baseRowSize = Math.floor(tabIds.length / rows);
+  const extraRows = tabIds.length % rows;
+  const rowNodes: WorkspaceLayoutNode[] = [];
+  let offset = 0;
+
+  for (let row = 0; row < rows; row += 1) {
+    const rowSize = baseRowSize + (row < extraRows ? 1 : 0);
+    const rowPanes = tabIds
+      .slice(offset, offset + rowSize)
+      .map((tabId) => createWorkspacePane(tabId));
+    rowNodes.push(buildBalancedSplit(rowPanes, "row"));
+    offset += rowSize;
+  }
+
+  return buildBalancedSplit(rowNodes, "column");
 }
 
 export function collapseWorkspaceLayout(
@@ -165,7 +196,10 @@ export function resizeWorkspaceSplit(
 ): WorkspaceLayoutNode {
   if (node.type === "pane") return node;
   if (node.id === splitId) {
-    return { ...node, ratio: Math.min(0.82, Math.max(0.18, ratio)) };
+    const nextRatio = Number.isFinite(ratio)
+      ? Math.min(1, Math.max(0, ratio))
+      : node.ratio ?? 0.5;
+    return { ...node, ratio: nextRatio };
   }
   return {
     ...node,

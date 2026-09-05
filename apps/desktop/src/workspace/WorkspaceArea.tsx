@@ -44,6 +44,8 @@ interface PaneBounds {
   y: number;
 }
 
+const MIN_SPLIT_CHILD_SIZE = 120;
+
 export function WorkspaceArea(props: WorkspaceAreaProps) {
   const { onDraggingChange, onMoveTab } = props;
   const [draggedTab, setDraggedTab] = useState<DraggedTab | null>(null);
@@ -136,6 +138,7 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
 
   const tabsById = new Map(props.tabs.map((tab) => [tab.id, tab]));
   const tabPlacements = collectTabPlacements(props.layout);
+  const layoutStructureKey = collectLayoutStructureKey(props.layout);
 
   useLayoutEffect(() => {
     const layout = layoutRef.current;
@@ -177,7 +180,7 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
       window.removeEventListener("resize", scheduleMeasure);
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [props.layout]);
+  }, [layoutStructureKey]);
 
   return (
     <div className="workspace-layout" ref={layoutRef}>
@@ -243,14 +246,14 @@ interface LayoutNodeProps extends WorkspaceAreaProps {
 
 function LayoutNode({ node, ...props }: LayoutNodeProps) {
   if (node.type === "split") {
-    const ratio = node.ratio ?? 0.5;
+    const ratio = Math.min(1, Math.max(0, node.ratio ?? 0.5));
     return (
       <div className="workspace-split" data-direction={node.direction}>
-        <div className="workspace-split-child" style={{ flexBasis: `${ratio * 100}%` }}>
+        <div className="workspace-split-child" style={{ flex: `${ratio} 1 0%` }}>
           <LayoutNode {...props} node={node.first} />
         </div>
         <SplitResizeHandle direction={node.direction} onResize={props.onResizeSplit} splitId={node.id} />
-        <div className="workspace-split-child">
+        <div className="workspace-split-child" style={{ flex: `${1 - ratio} 1 0%` }}>
           <LayoutNode {...props} node={node.second} />
         </div>
       </div>
@@ -314,7 +317,7 @@ function SplitResizeHandle({
   splitId: string;
 }) {
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !event.isPrimary) return;
     event.preventDefault();
     event.stopPropagation();
     const handle = event.currentTarget;
@@ -326,22 +329,58 @@ function SplitResizeHandle({
     const axisStart = direction === "row" ? event.clientX : event.clientY;
     const total = direction === "row" ? splitBounds.width : splitBounds.height;
     const firstSize = direction === "row" ? firstBounds.width : firstBounds.height;
-    if (total <= 0) return;
+    const handleBounds = handle.getBoundingClientRect();
+    const handleSize = direction === "row" ? handleBounds.width : handleBounds.height;
+    const available = total - handleSize;
+    if (total <= 0 || available <= 0) return;
+
+    const minChildSize = Math.min(MIN_SPLIT_CHILD_SIZE, available / 2);
+    const minRatio = minChildSize / available;
+    const maxRatio = 1 - minRatio;
+    const clampRatio = (value: number) => Math.min(maxRatio, Math.max(minRatio, value));
+    let latestRatio = clampRatio(firstSize / available);
+    const initialRatio = latestRatio;
+    let changed = false;
+    let frame: number | undefined;
+    let active = true;
     const pointerId = event.pointerId;
     try { handle.setPointerCapture(pointerId); } catch { /* synthetic pointer */ }
+    const resizeClass = direction === "row" ? "is-resizing-split-row" : "is-resizing-split-column";
+    document.body.classList.add(resizeClass);
+
     const move = (pointerEvent: PointerEvent) => {
+      if (!active) return;
+      pointerEvent.preventDefault();
       const delta = (direction === "row" ? pointerEvent.clientX : pointerEvent.clientY) - axisStart;
-      onResize(splitId, (firstSize + delta) / total);
+      latestRatio = clampRatio((firstSize + delta) / available);
+      changed = changed || latestRatio !== initialRatio;
+      if (frame !== undefined) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        if (active) onResize(splitId, latestRatio);
+      });
     };
     const end = () => {
+      if (!active) return;
+      active = false;
+      if (frame !== undefined) {
+        cancelAnimationFrame(frame);
+        frame = undefined;
+      }
+      if (changed) onResize(splitId, latestRatio);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
-      try { handle.releasePointerCapture(pointerId); } catch { /* already released */ }
+      window.removeEventListener("blur", end);
+      document.body.classList.remove(resizeClass);
+      try {
+        if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+      } catch { /* already released */ }
     };
-    window.addEventListener("pointermove", move);
+    window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", end, { once: true });
     window.addEventListener("pointercancel", end, { once: true });
+    window.addEventListener("blur", end, { once: true });
   };
   return (
     <div
@@ -369,6 +408,11 @@ function collectTabPlacements(node: WorkspaceLayoutNode) {
   };
   visit(node);
   return placements;
+}
+
+function collectLayoutStructureKey(node: WorkspaceLayoutNode): string {
+  if (node.type === "pane") return `pane:${node.id}`;
+  return `split:${node.id}:${node.direction}(${collectLayoutStructureKey(node.first)},${collectLayoutStructureKey(node.second)})`;
 }
 
 function sameBounds(current: Record<string, PaneBounds>, next: Record<string, PaneBounds>) {

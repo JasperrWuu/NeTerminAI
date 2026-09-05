@@ -11,7 +11,7 @@ export function AiSettingsView({ settings, onChange, onReset }: AiSettingsViewPr
     <div className="settings-view">
       <div className="settings-view-heading"><span className="settings-kicker">AI ASSISTANT</span><h1>AI 助手</h1><p>配置分析服务。API 密钥只在本次运行中使用，不会写入设置。</p></div>
       <section className="settings-card">
-        <label className="settings-row"><span><strong>启用 AI 助手</strong><small>关闭后终端仍可正常工作</small></span><input checked={settings.enabled} onChange={(event) => onChange({ enabled: event.target.checked })} type="checkbox" /></label>
+        <div className="settings-row"><span><strong>启用 AI 助手</strong><small>关闭后终端仍可正常工作</small></span><button aria-checked={settings.enabled} aria-label="启用 AI 助手" className="switch" data-active={settings.enabled} onClick={() => onChange({ enabled: !settings.enabled })} role="switch" type="button"><span /></button></div>
         <label className="settings-row"><span><strong>运行方式</strong><small>OpenAI 兼容 API 或本地 CLI</small></span><select value={settings.providerMode} onChange={(event) => onChange({ providerMode: event.target.value as AiSettings["providerMode"] })}><option value="api">兼容 API</option><option value="process">本地进程</option></select></label>
         {settings.providerMode === "api" ? <>
           <label className="settings-field"><span>服务地址</span><input value={settings.baseUrl} onChange={(event) => onChange({ baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" /></label>

@@ -567,6 +567,18 @@ button:focus-visible,
 
 .is-resizing * { cursor: col-resize !important; }
 
+.is-resizing-split-row,
+.is-resizing-split-row * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.is-resizing-split-column,
+.is-resizing-split-column * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+
 .main-area {
   background: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
   container-type: inline-size;
@@ -628,6 +640,8 @@ button:focus-visible,
   flex: 0 0 8px;
   position: relative;
   z-index: 26;
+  touch-action: none;
+  user-select: none;
 }
 
 .workspace-split-handle::after {
