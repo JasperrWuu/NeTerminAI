@@ -83,7 +83,14 @@ export class TerminalContextProvider {
     const runtime = this.registry.get(tabId);
     if (!runtime || runtime.connectionType !== connectionKindForTab(tab)) return undefined;
     const runtimeSnapshot = runtime.getSnapshot();
-    const terminal = runtime.getTerminalSnapshot(limits);
+    const terminalSnapshot = runtime.getTerminalSnapshot(limits);
+    const terminal = {
+      ...terminalSnapshot,
+      recentText: redactSensitive(terminalSnapshot.recentText),
+      ...(terminalSnapshot.selection
+        ? { selection: redactSensitive(terminalSnapshot.selection) }
+        : {}),
+    };
     const pane = findPaneContainingTab(workspace.layout, tabId);
     return {
       version: 1,
@@ -96,7 +103,7 @@ export class TerminalContextProvider {
       connectionState: runtimeSnapshot.state,
       ...(runtimeSnapshot.reason ? { disconnectReason: runtimeSnapshot.reason } : {}),
       ...(runtimeSnapshot.error ? { error: runtimeSnapshot.error } : {}),
-      ...(runtimeSnapshot.message ? { message: runtimeSnapshot.message } : {}),
+      ...(runtimeSnapshot.message ? { message: redactSensitive(runtimeSnapshot.message) } : {}),
       target: { tabId, sessionId: runtimeSnapshot.sessionId },
       connection: connectionMetadataForTab(tab),
       terminal,
@@ -183,4 +190,10 @@ function connectionMetadataForTab(tab: WorkspaceTab): TerminalConnectionMetadata
     portName: tab.connection.portName,
     baudRate: tab.connection.baudRate,
   };
+}
+
+function redactSensitive(value: string) {
+  return value
+    .replace(/\b(password|passwd|secret)\s*[:=]\s*\S+/giu, "$1: [redacted]")
+    .replace(/(密码|口令)\s*[:：=]\s*\S+/gu, "$1：[已隐藏]");
 }

@@ -42,6 +42,22 @@ test("memory is isolated by tab and resets on a new runtime identity", () => {
   assert.equal(store.get("a"), undefined);
 });
 
+test("memory facts and events remain bounded", () => {
+  const store = new SessionContextMemoryStore();
+  const context = normalizeContextSnapshot(snapshot("a", "s1", "output"));
+  const initial = store.prepare(context);
+  store.commit({
+    ...initial,
+    summary: "x".repeat(3000),
+    importantFacts: Array.from({ length: 40 }, (_, index) => `fact-${index}`),
+    recentEvents: Array.from({ length: 40 }, (_, index) => `event-${index}`),
+  });
+  const bounded = store.get("a");
+  assert.equal(bounded.importantFacts.length, 24);
+  assert.equal(bounded.recentEvents.length, 24);
+  assert.ok(bounded.summary.length <= 2048);
+});
+
 test("pipeline returns labeled structured sessions instead of concatenating terminals", () => {
   const contexts = [snapshot("a", "s1", "FW1 output"), snapshot("b", "s2", "FW2 output")];
   const fakeProvider = {
