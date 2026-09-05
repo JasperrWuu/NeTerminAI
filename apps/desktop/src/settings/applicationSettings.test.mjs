@@ -87,10 +87,12 @@ test("read and persist migrate storage without touching connection library keys"
   const loaded = readApplicationSettings();
   assert.equal(loaded.terminal.fontSize, 18);
   assert.equal(loaded.workspacePreferences.rightSidebarOpen, true);
+  loaded.keybindings.collapseWorkspace.enabled = false;
   persistApplicationSettings(loaded);
 
   assert.ok(storage.getItem(SETTINGS_STORAGE_KEY));
   assert.equal(storage.getItem(LEGACY_SETTINGS_STORAGE_KEY), null);
   assert.equal(storage.getItem(LEGACY_WORKBENCH_STORAGE_KEY), null);
   assert.equal(storage.getItem("neterminai.connection-library.v3"), "keep me");
+  assert.equal(readApplicationSettings().keybindings.collapseWorkspace.enabled, false);
 });
