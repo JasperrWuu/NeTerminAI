@@ -20,6 +20,8 @@ export class TerminalSessionRegistry {
     if (!this.accepting) throw new Error("终端工作区正在关闭");
     let runtime = this.runtimes.get(tabId);
     if (!runtime || runtime.isDisposed) {
+      this.runtimeUnsubscribers.get(tabId)?.();
+      this.runtimeUnsubscribers.delete(tabId);
       runtime = new TerminalSessionRuntime(tabId, definition, view);
       this.runtimes.set(tabId, runtime);
       this.runtimeUnsubscribers.set(tabId, runtime.subscribe(() => this.notify()));

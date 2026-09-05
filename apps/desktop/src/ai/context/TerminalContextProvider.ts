@@ -40,7 +40,6 @@ interface RuntimeContextReader {
   getTerminalSnapshot(limits?: TerminalSnapshotLimits): TerminalSnapshot;
 }
 
-const MAX_VISIBLE_CONTEXTS = 8;
 const MAX_VISIBLE_CHARS = 64 * 1024;
 const VISIBLE_CONTEXT_LIMITS: Readonly<TerminalSnapshotLimits> = {
   maxLines: 80,
@@ -124,8 +123,7 @@ export class TerminalContextProvider {
       : tabIds;
     const contexts: TerminalContextSnapshot[] = [];
     let remainingChars = MAX_VISIBLE_CHARS;
-    for (const tabId of orderedIds.slice(0, MAX_VISIBLE_CONTEXTS)) {
-      if (remainingChars <= 0) break;
+    for (const tabId of orderedIds) {
       const requested = tabId === activeTabId
         ? DEFAULT_TERMINAL_SNAPSHOT_LIMITS
         : VISIBLE_CONTEXT_LIMITS;
@@ -135,8 +133,12 @@ export class TerminalContextProvider {
       });
       if (!context) continue;
       contexts.push(context);
-      remainingChars -= context.terminal.recentText.length
-        + (context.terminal.selection?.length ?? 0);
+      remainingChars = Math.max(
+        0,
+        remainingChars
+          - context.terminal.recentText.length
+          - (context.terminal.selection?.length ?? 0),
+      );
     }
     return contexts;
   }
