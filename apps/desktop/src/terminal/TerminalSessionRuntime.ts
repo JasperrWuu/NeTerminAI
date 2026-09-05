@@ -99,7 +99,7 @@ export class TerminalSessionRuntime {
         if (this.disposed || !controller.isReady) return;
         await terminalApi.write({ kind: controller.connectionType, sessionId: controller.id, data });
       },
-      onError: (error) => this.updateError(String(error)),
+      onError: (error) => this.setViewMessage(String(error)),
     });
     this.inputSubscription = this.terminal.onData((data) => {
       if (!this.disposed && this.view?.active) this.view.onInput(data);
@@ -245,6 +245,12 @@ export class TerminalSessionRuntime {
     this.notify();
   }
 
+  private setViewMessage(message: string) {
+    if (this.disposed) return;
+    this.snapshot = { ...this.snapshot, message };
+    this.notify();
+  }
+
   private registerInputTarget(view: TerminalViewAttachment) {
     this.unregisterInputTarget?.();
     this.unregisterInputTarget = view.registerInputTarget(this.tabId, {
@@ -281,7 +287,7 @@ export class TerminalSessionRuntime {
         this.flushOutput();
       });
     } catch (error) {
-      this.updateError(`终端输出解析失败：${String(error)}`);
+      this.setViewMessage(`终端输出解析失败：${String(error)}`);
     }
   }
 
