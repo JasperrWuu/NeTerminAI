@@ -277,7 +277,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     <div className="workbench" style={layoutStyle}>
       <header
         className="titlebar"
-        data-tauri-drag-region
         onDoubleClick={(event) => {
           if ((event.target as HTMLElement).closest("[data-titlebar-control]")) return;
           if ("__TAURI_INTERNALS__" in window) void getCurrentWindow().toggleMaximize();
@@ -564,9 +563,14 @@ function WindowControls() {
     };
   }, [appWindow]);
 
-  const toggleMaximize = () => {
+  const toggleMaximize = async () => {
     if (!appWindow) return;
-    void appWindow.toggleMaximize().then(() => setMaximized((current) => !current));
+    try {
+      await appWindow.toggleMaximize();
+      setMaximized(await appWindow.isMaximized());
+    } catch {
+      // Native window controls can be unavailable in the browser preview.
+    }
   };
 
   return (
