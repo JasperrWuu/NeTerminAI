@@ -26,7 +26,12 @@ function pane(id, tabIds, activeTabId) {
 function runtime(kind, sessionId, state = "connected", text = "output") {
   return {
     connectionType: kind,
-    getSnapshot: () => ({ sessionId, state, reason: state === "disconnected" ? "remoteClosed" : undefined }),
+    getSnapshot: () => ({
+      sessionId,
+      state,
+      reason: state === "disconnected" ? "remoteClosed" : undefined,
+      error: state === "failed" ? "connection" : undefined,
+    }),
     getTerminalSnapshot: (limits) => ({
       sessionId,
       cols: 100,
@@ -100,6 +105,7 @@ test("failed and disconnected runtimes remain readable, while closed tabs do not
   ]);
   const provider = providerWith(workspace, runtimes);
   assert.equal(provider.getActiveContext()?.connectionState, "failed");
+  assert.equal(provider.getActiveContext()?.error, "connection");
   assert.equal(provider.getContextForTab("telnet-tab")?.disconnectReason, "remoteClosed");
   workspace.tabs = [localTab];
   assert.equal(provider.getContextForTab("telnet-tab"), undefined);
