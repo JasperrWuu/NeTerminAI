@@ -5,7 +5,7 @@ import {
   type TerminalSnapshotLimits,
 } from "../../terminal/TerminalSnapshot.ts";
 import type { TerminalSessionRuntimeSnapshot } from "../../terminal/TerminalSessionRuntime";
-import { collectVisibleTabIds, findPaneContainingTab } from "../../workspace/layout.ts";
+import { collectVisibleTabIds, findPane, findPaneContainingTab } from "../../workspace/layout.ts";
 import type { WorkspaceLayoutNode, WorkspaceTab } from "../../workspace/types";
 import type { TerminalContextSnapshot, TerminalConnectionMetadata } from "./types";
 
@@ -53,8 +53,9 @@ export class TerminalContextProvider {
 
   getActiveContext(): TerminalContextSnapshot | undefined {
     const workspace = this.getWorkspace();
-    if (!workspace.activeTabId) return undefined;
-    return this.getContextForTab(workspace.activeTabId);
+    const activeTabId = activeTabForWorkspace(workspace);
+    if (!activeTabId) return undefined;
+    return this.getContextForTab(activeTabId);
   }
 
   getContextForTab(
@@ -96,15 +97,16 @@ export class TerminalContextProvider {
   getVisibleContexts(): TerminalContextSnapshot[] {
     const workspace = this.getWorkspace();
     const visibleIds = unique(collectVisibleTabIds(workspace.layout));
-    const orderedIds = workspace.activeTabId && visibleIds.includes(workspace.activeTabId)
-      ? [workspace.activeTabId, ...visibleIds.filter((id) => id !== workspace.activeTabId)]
+    const activeTabId = activeTabForWorkspace(workspace);
+    const orderedIds = activeTabId && visibleIds.includes(activeTabId)
+      ? [activeTabId, ...visibleIds.filter((id) => id !== activeTabId)]
       : visibleIds;
     const contexts: TerminalContextSnapshot[] = [];
     let remainingChars = MAX_VISIBLE_CHARS;
 
     for (const tabId of orderedIds.slice(0, MAX_VISIBLE_CONTEXTS)) {
       if (remainingChars <= 0) break;
-      const active = tabId === workspace.activeTabId;
+      const active = tabId === activeTabId;
       const requested = active ? DEFAULT_TERMINAL_SNAPSHOT_LIMITS : VISIBLE_CONTEXT_LIMITS;
       const limits: TerminalSnapshotLimits = {
         maxLines: requested.maxLines,
@@ -118,6 +120,11 @@ export class TerminalContextProvider {
     }
     return contexts;
   }
+}
+
+function activeTabForWorkspace(workspace: TerminalContextWorkspace) {
+  const activePane = findPane(workspace.layout, workspace.activePaneId);
+  return activePane?.activeTabId ?? workspace.activeTabId;
 }
 
 function connectionKindForTab(tab: WorkspaceTab): TerminalConnectionType {
