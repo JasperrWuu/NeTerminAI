@@ -85,12 +85,15 @@ export function captureTerminalSnapshot(
   limits: TerminalSnapshotLimits = DEFAULT_TERMINAL_SNAPSHOT_LIMITS,
 ): TerminalSnapshot {
   const selection = terminal.getSelection?.() ?? "";
+  const selectionLimit = Math.min(normalizeLimit(limits.maxChars), 8 * 1024);
   return {
     sessionId,
     cols: terminal.cols,
     rows: terminal.rows,
     recentText: captureTerminalText(terminal.buffer.active, limits),
-    ...(selection ? { selection } : {}),
+    ...(selection && selectionLimit > 0
+      ? { selection: truncateUnicode(selection, selectionLimit) }
+      : {}),
   };
 }
 
