@@ -142,6 +142,7 @@ export class TerminalSessionRuntime {
     this.registerInputTarget(view);
     this.applySettings(view.settings, view.theme);
     this.controller.attachView(view.container);
+    this.flushOutput();
     if (view.active) {
       this.controller.resize();
       this.focus();
@@ -173,6 +174,7 @@ export class TerminalSessionRuntime {
   reconnect() {
     if (this.disposed) return;
     this.inputPump.reset();
+    this.flushOutput();
     this.outputDecoder = new TextDecoder();
     this.controller.dispose();
     const container = this.view?.container ?? this.parkingHost;
