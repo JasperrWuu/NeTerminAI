@@ -14,6 +14,7 @@ import {
 } from "./TerminalRuntimeController";
 import { terminalApi } from "../ipc/terminal";
 import type {
+  TerminalConnectionError,
   TerminalConnectionState,
   TerminalConnectionType,
   TerminalCreateRequest,
@@ -21,6 +22,12 @@ import type {
   TerminalSize,
 } from "../ipc/types";
 import type { TerminalInputTarget } from "./useSynchronizedInput";
+import {
+  captureTerminalSnapshot,
+  DEFAULT_TERMINAL_SNAPSHOT_LIMITS,
+  type TerminalSnapshot,
+  type TerminalSnapshotLimits,
+} from "./TerminalSnapshot";
 
 export type TerminalSessionDefinition =
   | { sessionType: "local"; profileId: LocalTerminalProfileId }
@@ -40,6 +47,7 @@ export interface TerminalSessionRuntimeSnapshot {
   sessionId: string;
   state: TerminalConnectionState;
   reason?: TerminalDisconnectReason;
+  error?: TerminalConnectionError;
   message?: string;
 }
 
@@ -126,6 +134,13 @@ export class TerminalSessionRuntime {
 
   getSnapshot() {
     return this.snapshot;
+  }
+
+  /** Capture a bounded, read-only snapshot through xterm's public API. */
+  getTerminalSnapshot(
+    limits: TerminalSnapshotLimits = DEFAULT_TERMINAL_SNAPSHOT_LIMITS,
+  ): TerminalSnapshot {
+    return captureTerminalSnapshot(this.terminal, this.sessionId, limits);
   }
 
   subscribe(listener: SnapshotListener) {
@@ -231,6 +246,7 @@ export class TerminalSessionRuntime {
       sessionId: event.sessionId,
       state: event.state,
       reason: event.reason,
+      error: event.error,
       message: event.message,
     };
     this.notify();
