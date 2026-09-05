@@ -319,11 +319,23 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         className="titlebar"
         onDoubleClick={(event) => {
           if ((event.target as HTMLElement).closest("[data-titlebar-control]")) return;
-          if ("__TAURI_INTERNALS__" in window) void getCurrentWindow().toggleMaximize();
+          if ("__TAURI_INTERNALS__" in window) {
+            void getCurrentWindow().toggleMaximize().catch((error: unknown) => {
+              reportWindowActionError("toggle maximize", error);
+            });
+          }
         }}
         onPointerDown={(event) => {
-          if (event.button !== 0 || (event.target as HTMLElement).closest("[data-titlebar-control]")) return;
-          if ("__TAURI_INTERNALS__" in window) void getCurrentWindow().startDragging();
+          if (
+            event.button !== 0 ||
+            event.detail > 1 ||
+            (event.target as HTMLElement).closest("[data-titlebar-control]")
+          ) return;
+          if ("__TAURI_INTERNALS__" in window) {
+            void getCurrentWindow().startDragging().catch((error: unknown) => {
+              console.error("Unable to start dragging the NeTerminAI window", error);
+            });
+          }
         }}
       >
         <div className="brand" aria-label="NeTerminAI">
@@ -333,7 +345,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
 
         <div className="titlebar-center">终端工作台</div>
 
-        <div className="titlebar-actions">
+        <div className="titlebar-actions" data-titlebar-control>
           <IconButton
             dataTitlebarControl
             label={preferences.leftSidebarOpen ? "收起左侧栏" : "展开左侧栏"}
@@ -627,24 +639,39 @@ function WindowControls() {
     try {
       await appWindow.toggleMaximize();
       setMaximized(await appWindow.isMaximized());
-    } catch {
-      // Native window controls can be unavailable in the browser preview.
+    } catch (error) {
+      reportWindowActionError("toggle maximize", error);
     }
   };
 
+  const runWindowAction = (action: () => Promise<void>, name: string) => {
+    void action().catch((error: unknown) => reportWindowActionError(name, error));
+  };
+
   return (
-    <div className="window-controls" data-titlebar-control>
-      <button aria-label="最小化" className="window-control" data-titlebar-control onClick={() => void appWindow?.minimize()} type="button">
+    <div
+      className="window-controls"
+      data-titlebar-control
+      onDoubleClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button aria-label="最小化" className="window-control" data-titlebar-control onClick={() => appWindow && runWindowAction(() => appWindow.minimize(), "minimize window")} type="button">
         <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
       </button>
       <button aria-label={maximized ? "还原" : "最大化"} className="window-control" data-titlebar-control onClick={toggleMaximize} type="button">
         <svg aria-hidden="true" viewBox="0 0 16 16">{maximized ? <path d="M5.5 5.5h6v6h-6zM4.5 10.5h-1v-6h6v1" /> : <rect x="3.5" y="3.5" width="9" height="9" rx="1" />}</svg>
       </button>
-      <button aria-label="关闭" className="window-control window-control-close" data-titlebar-control onClick={() => void appWindow?.close()} type="button">
+      <button aria-label="关闭" className="window-control window-control-close" data-titlebar-control onClick={() => appWindow && runWindowAction(() => appWindow.close(), "close window")} type="button">
         <svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
       </button>
     </div>
   );
+}
+
+function reportWindowActionError(action: string, error: unknown) {
+  if ("__TAURI_INTERNALS__" in window) {
+    console.error(`Unable to ${action}`, error);
+  }
 }
 
 function PanelHeader({ title, icon }: { title: string; icon?: ReactNode }) {
