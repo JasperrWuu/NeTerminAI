@@ -4,7 +4,7 @@ use std::{
     sync::{
         Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -16,6 +16,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::connection_state::{ConnectionErrorKind, ConnectionStateTracker, DisconnectReason};
+use crate::io_pump::{
+    MAX_IO_CHUNK_BYTES, OUTPUT_BATCH_BYTES, OutputReceiver, OutputSender, QueueSendError,
+    output_queue,
+};
 use crate::lifecycle::{
     AdmissionGate, AdmissionPermit, CancellationToken, CloseOnce, Lifecycle, LifecycleStage,
     WorkerKind, WorkerSupervisor,
@@ -54,6 +58,7 @@ pub enum TerminalProfile {
 struct TerminalRuntime {
     control: Arc<SessionControl>,
     resources: Mutex<Option<TerminalResources>>,
+    output_sender: Mutex<Option<OutputSender>>,
     workers: WorkerSupervisor,
     start_gate: Arc<StartGate>,
     initializing: AtomicBool,
@@ -74,7 +79,7 @@ pub(crate) struct SessionControl {
 struct TerminalResources {
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn Child + Send + Sync>,
-    writer: Sender<TerminalWriterMessage>,
+    writer: SyncSender<TerminalWriterMessage>,
 }
 
 struct OpenResources {
@@ -237,6 +242,7 @@ impl TerminalRuntime {
         Self {
             control: Arc::new(SessionControl::new(session_id)),
             resources: Mutex::new(None),
+            output_sender: Mutex::new(None),
             workers: WorkerSupervisor::new(),
             start_gate: Arc::new(StartGate::new()),
             initializing: AtomicBool::new(true),
@@ -359,6 +365,48 @@ impl TerminalManager {
             resources,
         } = open;
         *lock_unpoisoned(&runtime.resources) = Some(resources);
+        let (output_sender, output_receiver) = output_queue();
+        *lock_unpoisoned(&runtime.output_sender) = Some(output_sender.clone());
+
+        let output_control = Arc::clone(&runtime.control);
+        let output_gate = Arc::clone(&runtime.start_gate);
+        let output_session = session_id.clone();
+        let output_cleanup = self.cleanup.sender.clone();
+        let output_app = app.clone();
+        if runtime
+            .workers
+            .spawn(WorkerKind::Other, move |worker_cancel| {
+                run_terminal_output_pump(
+                    output_app,
+                    output_session,
+                    output_receiver,
+                    worker_cancel,
+                    output_control,
+                    output_gate,
+                    output_cleanup,
+                );
+            })
+            .is_err()
+        {
+            runtime.control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("本地终端输出线程启动失败".to_owned()),
+            );
+            runtime
+                .control
+                .request_close_with(DisconnectReason::ReadFailed);
+            runtime.start_gate.cancel();
+            runtime.workers.stop_accepting();
+            runtime.workers.request_shutdown();
+            lock_unpoisoned(&runtime.output_sender).take();
+            let resources = lock_unpoisoned(&runtime.resources).take();
+            shutdown_terminal_resources(
+                resources.expect("resources installed before output worker spawn"),
+            );
+            runtime.request_cleanup(&session_id, Instant::now() + SESSION_CLOSE_TIMEOUT);
+            return Err("本地终端输出线程启动失败".to_owned());
+        }
 
         let writer_control = Arc::clone(&runtime.control);
         let writer_gate = Arc::clone(&runtime.start_gate);
@@ -406,6 +454,7 @@ impl TerminalManager {
                     app,
                     reader_session,
                     reader,
+                    output_sender,
                     worker_cancel,
                     reader_control,
                     reader_gate,
@@ -488,7 +537,8 @@ impl TerminalManager {
                 return Err(format!("无法写入终端：{error}"));
             }
         };
-        let (writer_sender, writer_receiver) = mpsc::channel();
+        let (writer_sender, writer_receiver) =
+            mpsc::sync_channel(crate::io_pump::INPUT_QUEUE_CAPACITY);
         Ok(OpenResources {
             reader,
             writer,
@@ -502,15 +552,23 @@ impl TerminalManager {
     }
 
     pub(crate) fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
+        if data.len() > MAX_IO_CHUNK_BYTES {
+            return Err(format!(
+                "终端单次输入超过 {} KB，请分段粘贴",
+                MAX_IO_CHUNK_BYTES / 1024
+            ));
+        }
         let runtime = self.running_runtime(session_id)?;
         let writer = lock_unpoisoned(&runtime.resources)
             .as_ref()
             .filter(|_| runtime.control.writable())
             .map(|resources| resources.writer.clone())
             .ok_or_else(|| "终端输入通道已关闭".to_owned())?;
-        writer
-            .send(TerminalWriterMessage::Bytes(data.to_vec()))
-            .map_err(|_| "终端输入通道已关闭".to_owned())
+        match writer.try_send(TerminalWriterMessage::Bytes(data.to_vec())) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => Err("终端输入队列繁忙，请稍后重试".to_owned()),
+            Err(TrySendError::Disconnected(_)) => Err("终端输入通道已关闭".to_owned()),
+        }
     }
 
     pub(crate) fn resize(&self, session_id: &str, columns: u16, rows: u16) -> Result<(), String> {
@@ -790,6 +848,7 @@ fn cleanup_one(
     runtime.start_gate.cancel();
     runtime.workers.stop_accepting();
     runtime.workers.request_shutdown();
+    lock_unpoisoned(&runtime.output_sender).take();
     if let Some(resources) = lock_unpoisoned(&runtime.resources).take() {
         shutdown_terminal_resources(resources);
     }
@@ -831,7 +890,15 @@ fn run_terminal_writer(
     if !start_gate.wait(&control.cancellation) {
         return;
     }
-    while let Ok(message) = receiver.recv() {
+    loop {
+        if worker_cancellation.is_cancelled() || !control.writable() {
+            break;
+        }
+        let message = match receiver.recv_timeout(crate::io_pump::QUEUE_RETRY_INTERVAL) {
+            Ok(message) => message,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         match message {
             TerminalWriterMessage::Bytes(bytes) => {
                 if worker_cancellation.is_cancelled() || !control.writable() {
@@ -857,10 +924,12 @@ fn run_terminal_writer(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_terminal_reader(
     app: AppHandle,
     session_id: String,
     mut reader: Box<dyn Read + Send>,
+    output_sender: OutputSender,
     worker_cancellation: CancellationToken,
     control: Arc<SessionControl>,
     start_gate: Arc<StartGate>,
@@ -883,13 +952,20 @@ fn run_terminal_reader(
             }
             Ok(length) => {
                 if control.writable() {
-                    let _ = app.emit(
-                        OUTPUT_EVENT,
-                        TerminalOutput {
-                            session_id: session_id.clone(),
-                            data: STANDARD.encode(&buffer[..length]),
-                        },
-                    );
+                    match output_sender.send(buffer[..length].to_vec(), &worker_cancellation) {
+                        Ok(()) => {}
+                        Err(QueueSendError::Cancelled) => break,
+                        Err(QueueSendError::Closed) => {
+                            terminal_reason = Some(DisconnectReason::ReadFailed);
+                            terminal_error = Some("终端输出通道已关闭".to_owned());
+                            break;
+                        }
+                        Err(QueueSendError::ChunkTooLarge { .. }) => {
+                            terminal_reason = Some(DisconnectReason::ReadFailed);
+                            terminal_error = Some("终端输出块超过队列限制".to_owned());
+                            break;
+                        }
+                    }
                 }
             }
             Err(error) => {
@@ -923,8 +999,50 @@ fn run_terminal_reader(
     });
 }
 
+fn run_terminal_output_pump(
+    app: AppHandle,
+    session_id: String,
+    mut receiver: OutputReceiver,
+    worker_cancellation: CancellationToken,
+    control: Arc<SessionControl>,
+    start_gate: Arc<StartGate>,
+    cleanup_sender: Sender<CleanupRequest>,
+) {
+    if !start_gate.wait(&control.cancellation) {
+        return;
+    }
+    while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
+        if !control.writable() {
+            break;
+        }
+        if app
+            .emit(
+                OUTPUT_EVENT,
+                TerminalOutput {
+                    session_id: session_id.clone(),
+                    data: STANDARD.encode(batch),
+                },
+            )
+            .is_err()
+        {
+            control.mark_failed_with(
+                DisconnectReason::ReadFailed,
+                ConnectionErrorKind::Transport,
+                Some("终端输出事件发送失败".to_owned()),
+            );
+            control.request_close_with(DisconnectReason::ReadFailed);
+            let _ = cleanup_sender.send(CleanupRequest::Session {
+                session_id,
+                instance: Arc::clone(&control.instance),
+                deadline: Instant::now() + SESSION_CLOSE_TIMEOUT,
+            });
+            break;
+        }
+    }
+}
+
 fn shutdown_terminal_resources(mut resources: TerminalResources) {
-    let _ = resources.writer.send(TerminalWriterMessage::Shutdown);
+    let _ = resources.writer.try_send(TerminalWriterMessage::Shutdown);
     let _ = resources.child.kill();
     let _ = resources.child.wait();
     drop(resources.master);
