@@ -1,6 +1,7 @@
 import { connectionStateApi } from "../ipc/connectionState";
 import { IpcError, normalizeIpcError } from "../ipc/errors";
 import { terminalApi } from "../ipc/terminal";
+import { isCurrentSessionEvent } from "../ipc/validation";
 import type {
   TerminalConnectionState,
   TerminalConnectionStateEvent,
@@ -146,7 +147,7 @@ export class TerminalRuntimeController {
       terminalApi.subscribeOutput(this.options.connectionType, (payload) => {
         if (!this.disposed
           && this.connectionState === "connected"
-          && payload.sessionId === this.sessionId) {
+          && isCurrentSessionEvent(payload, this.sessionId)) {
           this.options.onOutput(payload.data);
         }
       }).then((unlisten) => {
@@ -162,7 +163,7 @@ export class TerminalRuntimeController {
   private registerStateListener() {
     return this.trackRegistration(
       connectionStateApi.subscribe((payload) => {
-        if (this.disposed || payload.sessionId !== this.sessionId) return;
+        if (this.disposed || !isCurrentSessionEvent(payload, this.sessionId)) return;
         if (this.sessionEnded) return;
         this.connectionState = payload.state;
         if (payload.state === "failed" || payload.state === "disconnected") {

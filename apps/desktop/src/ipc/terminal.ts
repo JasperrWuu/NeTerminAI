@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { invalidResponse, normalizeIpcError } from "./errors";
+import { createCommandArguments, decodeOutputEvent } from "./validation";
 import type {
   TerminalCloseRequest,
   TerminalConnectionType,
@@ -13,7 +14,7 @@ import type {
 const COMMANDS = {
   create: { local: "create_terminal", telnet: "create_telnet", serial: "create_serial" },
   write: { local: "write_terminal", telnet: "write_telnet", serial: "write_serial" },
-  resize: { local: "resize_terminal", telnet: "resize_telnet", serial: "resize_serial" },
+  resize: { local: "resize_terminal", telnet: "resize_telnet" },
   close: { local: "close_terminal", telnet: "close_telnet", serial: "close_serial" },
 } as const;
 
@@ -27,7 +28,7 @@ type Unlisten = () => void;
 
 export const terminalApi = {
   create(request: TerminalCreateRequest) {
-    return invokeCommand<void>(COMMANDS.create[request.kind], createArguments(request));
+    return invokeCommand<void>(COMMANDS.create[request.kind], createCommandArguments(request));
   },
 
   write(request: TerminalWriteRequest) {
@@ -65,52 +66,10 @@ export const terminalApi = {
   },
 };
 
-function createArguments(request: TerminalCreateRequest) {
-  if (request.kind === "local") {
-    return {
-      sessionId: request.sessionId,
-      profile: request.profile,
-      columns: request.columns,
-      rows: request.rows,
-    };
-  }
-  if (request.kind === "telnet") {
-    return {
-      sessionId: request.sessionId,
-      host: request.host,
-      port: request.port,
-      username: request.username,
-      password: request.password,
-      columns: request.columns,
-      rows: request.rows,
-    };
-  }
-  return {
-    sessionId: request.sessionId,
-    portName: request.portName,
-    baudRate: request.baudRate,
-    dataBits: request.dataBits,
-    stopBits: request.stopBits,
-    parity: request.parity,
-    flowControl: request.flowControl,
-  };
-}
-
 async function invokeCommand<T>(command: string, args: Record<string, unknown>): Promise<T> {
   try {
     return await invoke<T>(command, args);
   } catch (error) {
     throw normalizeIpcError(error);
   }
-}
-
-function decodeOutputEvent(value: unknown): TerminalOutputEvent | null {
-  if (!isRecord(value) || typeof value.sessionId !== "string" || typeof value.data !== "string") {
-    return null;
-  }
-  return { sessionId: value.sessionId, data: value.data };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
