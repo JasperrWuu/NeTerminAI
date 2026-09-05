@@ -14,6 +14,7 @@
   --motion-standard: 220ms;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --scrollbar-size: 8px;
 
   --bg-canvas: #111214;
   --bg-panel: rgba(26, 27, 30, 0.9);
@@ -76,8 +77,8 @@
 }
 
 *::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
+  height: var(--scrollbar-size);
+  width: var(--scrollbar-size);
 }
 
 *::-webkit-scrollbar-track,
@@ -200,6 +201,8 @@ button:focus-visible,
 .titlebar-actions {
   gap: 2px;
   justify-self: end;
+  position: relative;
+  z-index: 1;
 }
 
 .window-controls {
@@ -207,6 +210,8 @@ button:focus-visible,
   display: flex;
   gap: 2px;
   margin-left: 10px;
+  position: relative;
+  z-index: 1;
 }
 
 .window-control {
@@ -1128,8 +1133,17 @@ button:focus-visible,
 
 .terminal-pane .terminal-container .xterm .xterm-viewport {
   background-color: transparent;
+  overflow-x: hidden;
   scrollbar-color: var(--scrollbar-thumb) transparent;
   scrollbar-width: thin;
+}
+
+.terminal-pane .terminal-container .xterm .xterm-viewport::-webkit-scrollbar {
+  height: var(--scrollbar-size);
+  width: var(--scrollbar-size);
+}
+.terminal-pane .terminal-container .xterm .xterm-viewport::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* xterm.js ships arrow controls in its custom scrollbar. They are the
@@ -1138,10 +1152,10 @@ button:focus-visible,
   display: none !important;
 }
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
-  width: 8px !important;
+  width: var(--scrollbar-size) !important;
 }
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar.horizontal {
-  height: 8px !important;
+  height: var(--scrollbar-size) !important;
 }
 .terminal-pane .xterm .xterm-scrollable-element > .scrollbar > .slider {
   background: var(--scrollbar-thumb) !important;
