@@ -1,9 +1,11 @@
 import type { MultiSessionContextAssembly } from "../processing/types";
 import type { TerminalContextTarget } from "../context/types";
+import type { AiConversationMessage } from "../providers/types";
 
 export interface ContextAnalysisRequest {
   context: MultiSessionContextAssembly;
   question?: string;
+  history?: readonly AiConversationMessage[];
 }
 
 export interface AnalysisEvidence {
