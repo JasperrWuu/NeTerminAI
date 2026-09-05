@@ -1,15 +1,14 @@
-import type { AppearanceTheme, KeybindingSettings, SettingsSection, TerminalSettings } from "./types";
+import type { AppearanceTheme, KeybindingPatch, KeybindingSettings, SettingsSection, TerminalSettings } from "./types";
 import { KeyboardShortcutsView } from "./KeyboardShortcutsView";
 import { TerminalSettingsView } from "./TerminalSettingsView";
 
 interface SettingsPageProps {
   appearanceTheme: AppearanceTheme;
   keybindings: KeybindingSettings;
-  onChangeKeybindings: (settings: Partial<KeybindingSettings>) => void;
+  onChangeKeybindings: (settings: KeybindingPatch) => void;
   onChangeTerminal: (settings: Partial<TerminalSettings>) => void;
   onResetKeybindings: () => void;
   onResetTerminal: () => void;
-  onSelectSection: (section: SettingsSection) => void;
   section: SettingsSection;
   terminal: TerminalSettings;
 }
@@ -21,7 +20,6 @@ export function SettingsPage({
   onChangeTerminal,
   onResetKeybindings,
   onResetTerminal,
-  onSelectSection,
   section,
   terminal,
 }: SettingsPageProps) {
@@ -38,7 +36,6 @@ export function SettingsPage({
         ) : (
           <KeyboardShortcutsView
             onChange={onChangeKeybindings}
-            onOpenTerminalSettings={() => onSelectSection("terminal")}
             onReset={onResetKeybindings}
             settings={keybindings}
           />

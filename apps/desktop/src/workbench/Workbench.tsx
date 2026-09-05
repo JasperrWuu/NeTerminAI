@@ -23,7 +23,7 @@ import type { WorkspaceTab } from "../workspace/types";
 import { SettingsPage } from "../settings/SettingsPage";
 import { SettingsSidebar } from "../settings/SettingsSidebar";
 import type { SettingsSection } from "../settings/types";
-import { keybindingCommands, matchesKeyboardShortcut } from "../settings/keybindings";
+import { resolveKeyboardShortcut } from "../settings/keybindings";
 import { TelnetConnectionDialog } from "../telnet/TelnetConnectionDialog";
 import { SessionFolderDialog } from "../connections/SessionFolderDialog";
 import { ConnectionsSidebar } from "../connections/ConnectionsSidebar";
@@ -125,9 +125,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       // must not mutate the hidden session layout while the user is editing it.
       if (settingsOpen) return;
 
-      const command = keybindingCommands.find((item) =>
-        matchesKeyboardShortcut(event, settings.keybindings[item.id]),
-      );
+      const command = resolveKeyboardShortcut(event, settings.keybindings);
       if (!command) return;
 
       event.preventDefault();
@@ -423,7 +421,6 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
               onChangeTerminal={settings.updateTerminal}
               onResetKeybindings={settings.resetKeybindings}
               onResetTerminal={settings.resetTerminal}
-              onSelectSection={setSettingsSection}
               section={settingsSection}
               terminal={settings.terminal}
             />

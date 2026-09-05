@@ -64,6 +64,13 @@ export function matchesKeyboardShortcut(event: KeyboardEvent, shortcut: string) 
       : normalizeKey(event.key) === key;
 }
 
+export function resolveKeyboardShortcut(event: KeyboardEvent, settings: KeybindingSettings) {
+  return keybindingCommands.find((command) => {
+    const setting = settings[command.id];
+    return setting.enabled && matchesKeyboardShortcut(event, setting.binding);
+  }) ?? null;
+}
+
 export function shortcutParts(shortcut: string) {
   if (!shortcut) return [];
   // A plus key is also the delimiter, so legacy `Ctrl++` needs one small
@@ -90,7 +97,9 @@ export function findKeybindingConflict(
 ) {
   if (!shortcut) return null;
   return keybindingCommands.find(
-    (command) => command.id !== commandId && settings[command.id] === shortcut,
+    (command) => command.id !== commandId
+      && settings[command.id].enabled
+      && settings[command.id].binding === shortcut,
   ) ?? null;
 }
 

@@ -7,13 +7,11 @@ import {
   keybindingCommands,
   shortcutParts,
 } from "./keybindings";
-import type { KeybindingCommandId, KeybindingSettings } from "./types";
-import { CloseIcon } from "../workbench/icons";
+import type { KeybindingCommandId, KeybindingPatch, KeybindingSettings } from "./types";
 
 interface KeyboardShortcutsViewProps {
   settings: KeybindingSettings;
-  onChange: (settings: Partial<KeybindingSettings>) => void;
-  onOpenTerminalSettings: () => void;
+  onChange: (settings: KeybindingPatch) => void;
   onReset: () => void;
 }
 
@@ -25,7 +23,6 @@ interface KeybindingMessage {
 export function KeyboardShortcutsView({
   settings,
   onChange,
-  onOpenTerminalSettings,
   onReset,
 }: KeyboardShortcutsViewProps) {
   const [recording, setRecording] = useState<KeybindingCommandId | null>(null);
@@ -42,7 +39,7 @@ export function KeyboardShortcutsView({
     }
     if ((event.key === "Backspace" || event.key === "Delete")
       && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey) {
-      onChange({ [commandId]: "" });
+      onChange({ [commandId]: { binding: "" } });
       setRecording(null);
       setMessages((current) => ({ ...current, [commandId]: undefined }));
       return;
@@ -65,7 +62,7 @@ export function KeyboardShortcutsView({
       return;
     }
 
-    onChange({ [commandId]: shortcut });
+    onChange({ [commandId]: { binding: shortcut } });
     setRecording(null);
     setMessages((current) => ({
       ...current,
@@ -85,7 +82,6 @@ export function KeyboardShortcutsView({
             <p>为工作台命令录制自己的组合键。点击快捷键后直接按下新的组合键。</p>
           </div>
           <div className="settings-heading-actions">
-            <button className="secondary-button" onClick={onOpenTerminalSettings} type="button">终端设置</button>
             <button className="secondary-button" onClick={onReset} type="button">恢复默认</button>
           </div>
         </header>
@@ -105,6 +101,15 @@ export function KeyboardShortcutsView({
                     </span>
                     <div className="keybinding-editor">
                       <button
+                        aria-checked={shortcut.enabled}
+                        aria-label={`${shortcut.enabled ? "停用" : "启用"}${command.label}`}
+                        className="switch compact-switch keybinding-enable"
+                        data-active={shortcut.enabled}
+                        onClick={() => onChange({ [command.id]: { enabled: !shortcut.enabled } })}
+                        role="switch"
+                        type="button"
+                      ><span /></button>
+                      <button
                         aria-label={`修改${command.label}`}
                         className="keybinding-recorder"
                         data-keybinding-recorder="true"
@@ -119,22 +124,12 @@ export function KeyboardShortcutsView({
                       >
                         {isRecording ? (
                           <span className="keybinding-recording-label"><i />请按下组合键</span>
-                        ) : shortcut ? (
-                          <ShortcutKeys shortcut={shortcut} />
+                        ) : shortcut.binding ? (
+                          <ShortcutKeys shortcut={shortcut.binding} />
                         ) : (
                           <span className="keybinding-empty-label">未分配</span>
                         )}
                       </button>
-                      <button
-                        aria-label={`清除${command.label}快捷键`}
-                        className="keybinding-clear-button"
-                        disabled={!shortcut}
-                        onClick={() => {
-                          onChange({ [command.id]: "" });
-                          setMessages((current) => ({ ...current, [command.id]: undefined }));
-                        }}
-                        type="button"
-                      ><CloseIcon /></button>
                       {messages[command.id] && (
                         <small
                           aria-live="polite"
@@ -150,7 +145,7 @@ export function KeyboardShortcutsView({
               })}
             </div>
             <p className="keybinding-help">
-              录制时按 Esc 取消，按 Backspace 或 Delete 清除。单独的 Ctrl + 字母通常属于远端终端，请谨慎覆盖。
+              使用开关暂时停用快捷键，绑定仍会保留。录制时按 Esc 取消，按 Backspace 或 Delete 清除。单独的 Ctrl + 字母通常属于远端终端，请谨慎覆盖。
             </p>
           </section>
         </div>

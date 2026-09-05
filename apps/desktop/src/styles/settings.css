@@ -741,11 +741,13 @@
   align-items: center;
   display: grid;
   gap: 6px;
-  grid-template-columns: minmax(190px, 1fr) 28px;
+  grid-template-columns: 31px minmax(190px, 1fr);
   justify-self: end;
   min-width: 250px;
   position: relative;
 }
+
+.keybinding-enable { justify-self: center; }
 
 .keybinding-recorder {
   align-items: center;
@@ -792,22 +794,6 @@
 .keybinding-recording-label { align-items: center; color: var(--accent-strong); display: flex; font-size: 12px; gap: 7px; }
 .keybinding-recording-label i { background: currentColor; border-radius: 50%; height: 6px; width: 6px; }
 .keybinding-empty-label { color: var(--text-secondary); font-size: 12px; }
-
-.keybinding-clear-button {
-  align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--text-tertiary);
-  display: flex;
-  height: 28px;
-  justify-content: center;
-  width: 28px;
-}
-
-.keybinding-clear-button:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-subtle); color: var(--text-primary); }
-.keybinding-clear-button:disabled { opacity: 0.3; }
-.keybinding-clear-button svg { height: 13px; width: 13px; }
 
 .keybinding-message {
   font-size: 11px;
