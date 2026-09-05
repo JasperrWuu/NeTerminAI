@@ -31,7 +31,7 @@ export const defaultApplicationSettings: ApplicationSettings = {
     synchronizeVisibleTerminals: "Ctrl+Alt+I",
     stopSynchronizedInput: "Ctrl+Alt+Shift+I",
     focusNextSession: "Ctrl+Tab",
-    balanceWorkspace: "Ctrl++",
+    balanceWorkspace: "Ctrl+Equal",
     collapseWorkspace: "Ctrl+-",
   },
 };
@@ -167,13 +167,14 @@ function normalizeHighlightSet(value: unknown): TerminalHighlightSet[] {
 
 function normalizeKeybindings(value: Record<string, unknown> | null): KeybindingSettings {
   const defaults = defaultApplicationSettings.keybindings;
+  const storedBalanceWorkspace = stringValue(value?.balanceWorkspace);
   const settings = {
     synchronizeVisibleTerminals: stringValue(value?.synchronizeVisibleTerminals)
       ?? defaults.synchronizeVisibleTerminals,
     stopSynchronizedInput: stringValue(value?.stopSynchronizedInput)
       ?? defaults.stopSynchronizedInput,
     focusNextSession: stringValue(value?.focusNextSession) ?? defaults.focusNextSession,
-    balanceWorkspace: stringValue(value?.balanceWorkspace) ?? defaults.balanceWorkspace,
+    balanceWorkspace: normalizeBalanceWorkspaceShortcut(storedBalanceWorkspace ?? defaults.balanceWorkspace),
     collapseWorkspace: stringValue(value?.collapseWorkspace) ?? defaults.collapseWorkspace,
   };
 
@@ -186,6 +187,12 @@ function normalizeKeybindings(value: Record<string, unknown> | null): Keybinding
         stopSynchronizedInput: defaults.stopSynchronizedInput,
       }
     : settings;
+}
+
+function normalizeBalanceWorkspaceShortcut(value: string) {
+  // `Ctrl++` was the previous label for the physical Equal key. Preserve
+  // existing user settings while moving to the unambiguous Ctrl + Equal name.
+  return value === "Ctrl++" || value === "Ctrl+=" ? "Ctrl+Equal" : value;
 }
 
 function normalizeHighlightRule(value: unknown): TerminalHighlightRule[] {

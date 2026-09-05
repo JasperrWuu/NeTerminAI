@@ -25,8 +25,8 @@ export const keybindingCommands: KeybindingCommand[] = [
   },
   {
     id: "balanceWorkspace",
-    label: "创建终端分区",
-    description: "在当前工作区创建一个独立终端，并自动交替使用左右与上下分区。",
+    label: "瓷砖排列会话",
+    description: "将当前已打开的会话排列为平衡的左右与上下分区，不创建新会话。",
   },
   {
     id: "collapseWorkspace",
@@ -38,14 +38,14 @@ export const keybindingCommands: KeybindingCommand[] = [
 export function keyboardEventToShortcut(event: KeyboardEvent | ReactKeyboardEvent) {
   if (isModifierKey(event.key)) return null;
   const plusKey = isPlusKey(event);
-  const key = normalizeKey(plusKey ? "+" : event.key);
+  const equalKey = event.code === "Equal" && (event.key === "=" || event.key === "+");
+  const key = equalKey ? "Equal" : normalizeKey(plusKey ? "+" : event.key);
   if (!key) return null;
 
   const modifiers = [
     event.ctrlKey ? "Ctrl" : null,
-    // On most keyboards `+` is produced with Shift+`=`, but users think of
-    // that gesture as Ctrl++. Keep the recorded shortcut compact and make it
-    // work for both the main keyboard and the numpad plus key.
+    // Preserve the physical Equal key for the tile command. It remains
+    // distinct from a user-assigned plus or numpad shortcut.
     event.shiftKey && !plusKey ? "Shift" : null,
     event.altKey ? "Alt" : null,
     event.metaKey ? "Meta" : null,
@@ -60,13 +60,14 @@ export function matchesKeyboardShortcut(event: KeyboardEvent, shortcut: string) 
   if (!key || !hasMatchingModifiers(event, parts)) return false;
   return key === "+" ? isPlusKey(event)
     : key === "-" ? isMinusKey(event)
+      : key === "Equal" ? event.code === "Equal"
       : normalizeKey(event.key) === key;
 }
 
 export function shortcutParts(shortcut: string) {
   if (!shortcut) return [];
-  // A plus key is also the delimiter, so `Ctrl++` needs one small piece of
-  // parsing instead of a plain split (which would drop the final key).
+  // A plus key is also the delimiter, so legacy `Ctrl++` needs one small
+  // piece of parsing instead of a plain split (which would drop the key).
   if (shortcut.endsWith("+")) {
     return [...shortcut.slice(0, -1).split("+").filter(Boolean), "+"];
   }
@@ -99,11 +100,12 @@ function isModifierKey(key: string) {
 
 function hasMatchingModifiers(event: KeyboardEvent, parts: string[]) {
   // Shift is a physical requirement for the main keyboard's `+`, not a
-  // separate modifier from the user's point of view. Treat Ctrl+Shift+= and
-  // Ctrl+NumpadAdd as the same Ctrl++ command.
+  // separate modifier from the user's point of view. Equal is likewise
+  // matched by physical code so keyboard layouts remain predictable.
   const usesPlusKey = parts.at(-1) === "+" && isPlusKey(event);
+  const usesEqualKey = parts.at(-1) === "Equal" && event.code === "Equal";
   const expectedShift = parts.includes("Shift");
-  const matchesShift = expectedShift ? event.shiftKey : usesPlusKey || !event.shiftKey;
+  const matchesShift = expectedShift ? event.shiftKey : usesPlusKey || usesEqualKey || !event.shiftKey;
   return event.ctrlKey === parts.includes("Ctrl")
     && matchesShift
     && event.altKey === parts.includes("Alt")

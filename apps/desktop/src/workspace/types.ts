@@ -4,8 +4,6 @@ import type { SerialConnection, TelnetConnection } from "../connections/types";
 interface WorkspaceTabBase {
   id: string;
   title: string;
-  /** Internal pane sessions are deliberately hidden from the tab strip. */
-  displayInTabBar?: boolean;
 }
 
 export interface LocalTerminalTab extends WorkspaceTabBase {
@@ -31,9 +29,13 @@ export type WorkspaceDropZone = "center" | "left" | "right" | "top" | "bottom";
 export interface WorkspacePaneNode {
   type: "pane";
   id: string;
+  /** A pane is a visible tab group. The id is its stable group/pane identity. */
   tabIds: string[];
   activeTabId: string | null;
 }
+
+/** A visible tab group is represented by a leaf in the pane tree. */
+export type WorkspaceTabGroup = WorkspacePaneNode;
 
 export interface WorkspaceSplitNode {
   type: "split";

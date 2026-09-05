@@ -57,10 +57,6 @@ function createLocalTerminalTab(
   };
 }
 
-function cloneWorkspaceTab(tab: WorkspaceTab): WorkspaceTab {
-  return { ...tab, id: crypto.randomUUID(), displayInTabBar: false } as WorkspaceTab;
-}
-
 export function useWorkspaceTabs() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() => {
     const initialTab = createLocalTerminalTab(crypto.randomUUID(), "powershell", []);
@@ -91,54 +87,37 @@ export function useWorkspaceTabs() {
 
   const balanceWorkspace = useCallback(() => {
     setWorkspace((current) => {
-      const tabIds = current.tabs.filter((tab) => tab.displayInTabBar !== false).map((tab) => tab.id);
-      const activeTabId = findPane(current.layout, current.activePaneId)?.activeTabId ?? tabIds[0] ?? null;
+      const tabIds = current.tabs.map((tab) => tab.id);
+      if (tabIds.length <= 1) return current;
+      const currentActiveTabId = findPane(current.layout, current.activePaneId)?.activeTabId;
+      const activeTabId = currentActiveTabId && tabIds.includes(currentActiveTabId)
+        ? currentActiveTabId
+        : tabIds[0] ?? null;
       const layout = buildBalancedWorkspaceLayout(tabIds);
       const activePane = activeTabId ? findPaneContainingTab(layout, activeTabId) : firstPane(layout);
       return {
         ...current,
-        tabs: current.tabs.filter((tab) => tab.displayInTabBar !== false),
         layout,
         activePaneId: activePane?.id ?? firstPane(layout).id,
       };
     });
   }, []);
 
-  const collapseWorkspace = useCallback(() => {
+  const mergeAllTabGroups = useCallback(() => {
     setWorkspace((current) => {
-      const tabs = current.tabs.filter((tab) => tab.displayInTabBar !== false);
-      const activeTabId = findPane(current.layout, current.activePaneId)?.activeTabId;
-      const layout = collapseWorkspaceLayout(tabs.map((tab) => tab.id), activeTabId ?? null);
-      return { ...current, tabs, layout, activePaneId: layout.id };
+      const tabIds = current.tabs.map((tab) => tab.id);
+      const currentActiveTabId = findPane(current.layout, current.activePaneId)?.activeTabId;
+      const activeTabId = currentActiveTabId && tabIds.includes(currentActiveTabId)
+        ? currentActiveTabId
+        : tabIds[0] ?? null;
+      const layout = collapseWorkspaceLayout(tabIds, activeTabId);
+      return { ...current, layout, activePaneId: layout.id };
     });
   }, []);
 
-  const splitActivePane = useCallback(() => {
-    setWorkspace((current) => {
-      const sourcePane = findPane(current.layout, current.activePaneId);
-      const sourceTab = sourcePane?.activeTabId
-        ? current.tabs.find((tab) => tab.id === sourcePane.activeTabId)
-        : undefined;
-      if (!sourcePane || !sourceTab) return current;
-
-      const clonedTab = cloneWorkspaceTab(sourceTab);
-      const newPane = createPane(clonedTab.id);
-      const direction = countWorkspacePanes(current.layout) % 2 === 1 ? "row" : "column";
-      const layout = replacePane(current.layout, sourcePane.id, (pane) => ({
-        type: "split",
-        id: crypto.randomUUID(),
-        direction,
-        ratio: 0.5,
-        first: pane,
-        second: newPane,
-      }));
-      return {
-        tabs: [...current.tabs, clonedTab],
-        layout,
-        activePaneId: newPane.id,
-      };
-    });
-  }, []);
+  // Keep the existing command-facing name while exposing the clearer layout
+  // operation for future Tab Group actions.
+  const collapseWorkspace = mergeAllTabGroups;
 
   const resizeSplit = useCallback((splitId: string, ratio: number) => {
     setWorkspace((current) => ({
@@ -155,7 +134,7 @@ export function useWorkspaceTabs() {
       const usedTabIds = new Set(collectTabIds(layout));
       const tabs = current.tabs.filter((tab) => usedTabIds.has(tab.id));
       const activePane = findPane(layout, current.activePaneId) ?? firstPane(layout);
-      return { tabs, layout, activePaneId: activePane.id };
+      return { ...current, tabs, layout, activePaneId: activePane.id };
     });
   }, []);
 
@@ -185,11 +164,11 @@ export function useWorkspaceTabs() {
 
   const activateNextSession = useCallback(() => {
     setWorkspace((current) => {
-      const sessions = current.tabs.filter((tab) => tab.displayInTabBar !== false);
+      const sessions = current.tabs;
       if (sessions.length === 0) return current;
       const activePane = findPane(current.layout, current.activePaneId) ?? firstPane(current.layout);
       const activeIndex = sessions.findIndex((tab) => tab.id === activePane.activeTabId);
-      const next = sessions[(activeIndex + 1) % sessions.length];
+      const next = sessions[(activeIndex >= 0 ? activeIndex + 1 : 0) % sessions.length];
       const nextPane = findPaneContainingTab(current.layout, next.id);
       if (!nextPane) return current;
       return {
@@ -298,8 +277,8 @@ export function useWorkspaceTabs() {
     openSerial,
     closeTab,
     moveTab,
+    mergeAllTabGroups,
     resizeSplit,
-    splitActivePane,
   }), [
     activateNextSession,
     activatePane,
@@ -312,11 +291,11 @@ export function useWorkspaceTabs() {
     closeTab,
     createTerminal,
     moveTab,
+    mergeAllTabGroups,
     openSerial,
     openTelnet,
     workspace.layout,
     workspace.tabs,
     resizeSplit,
-    splitActivePane,
   ]);
 }

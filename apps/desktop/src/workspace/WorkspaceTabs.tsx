@@ -83,13 +83,11 @@ export function WorkspaceTabs({
     return () => observer.disconnect();
   }, [positionActiveIndicator]);
 
-  const visibleTabs = tabs.filter((tab) => tab.displayInTabBar !== false);
-
   return (
     <div className="tabbar" data-active-pane={paneActive}>
       <div className="tab-list" ref={tabListRef} role="tablist" aria-label="工作区标签">
         <div aria-hidden="true" className="tab-active-indicator" ref={activeIndicatorRef} />
-        {visibleTabs.map((tab) => (
+        {tabs.map((tab) => (
           <div
             className="tab"
             data-active={activeTabId === tab.id}
@@ -127,7 +125,7 @@ export function WorkspaceTabs({
             </button>
           </div>
         ))}
-        {visibleTabs.length === 0 && (
+        {tabs.length === 0 && (
           <span className="pane-session-label">
             <WorkspaceTabIcon kind={tabs.find((tab) => tab.id === activeTabId)?.kind ?? "localTerminal"} />
             <span>{tabs.find((tab) => tab.id === activeTabId)?.title ?? "独立终端分区"}</span>

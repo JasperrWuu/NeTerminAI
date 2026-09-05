@@ -136,7 +136,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         synchronizedInput.disable();
         synchronizedInput.focus(activeTerminalId);
       } else if (command.id === "balanceWorkspace") {
-        workspaceTabs.splitActivePane();
+        workspaceTabs.balanceWorkspace();
       } else if (command.id === "collapseWorkspace") {
         workspaceTabs.collapseWorkspace();
       } else {
@@ -155,8 +155,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     synchronizedInput.enable,
     synchronizedInput.focus,
     workspaceTabs.activateNextSession,
+    workspaceTabs.balanceWorkspace,
     workspaceTabs.collapseWorkspace,
-    workspaceTabs.splitActivePane,
   ]);
   const openSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") workspaceTabs.openTelnet(session);
