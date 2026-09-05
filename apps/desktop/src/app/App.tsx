@@ -4,8 +4,8 @@ import { useWorkbenchPreferences } from "../workbench/useWorkbenchPreferences";
 import { useApplicationSettings } from "../settings/useApplicationSettings";
 
 export function App() {
-  const preferences = useWorkbenchPreferences();
   const settings = useApplicationSettings();
+  const preferences = useWorkbenchPreferences(settings);
 
   useEffect(() => {
     document.documentElement.dataset.theme = settings.appearance.theme;

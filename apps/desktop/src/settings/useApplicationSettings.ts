@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AppearanceSettings,
   ApplicationSettings,
+  KeybindingPatch,
   KeybindingSettings,
   TerminalSettings,
+  WorkspacePreferences,
 } from "./types";
 import {
-  defaultApplicationSettings,
+  createDefaultApplicationSettings,
   normalizeTerminalHighlightSelection,
   persistApplicationSettings,
   readApplicationSettings,
@@ -14,10 +16,12 @@ import {
 
 export interface ApplicationSettingsController extends ApplicationSettings {
   updateAppearance: (settings: Partial<AppearanceSettings>) => void;
-  updateKeybindings: (settings: Partial<KeybindingSettings>) => void;
+  updateKeybindings: (settings: KeybindingPatch) => void;
   updateTerminal: (settings: Partial<TerminalSettings>) => void;
+  updateWorkspacePreferences: (settings: Partial<WorkspacePreferences>) => void;
   resetKeybindings: () => void;
   resetTerminal: () => void;
+  resetSettings: () => void;
 }
 
 export function useApplicationSettings(): ApplicationSettingsController {
@@ -63,25 +67,42 @@ export function useApplicationSettings(): ApplicationSettingsController {
     });
   }, []);
 
-  const updateKeybindings = useCallback((patch: Partial<KeybindingSettings>) => {
+  const updateKeybindings = useCallback((patch: KeybindingPatch) => {
     setSettings((current) => ({
       ...current,
-      keybindings: { ...current.keybindings, ...patch },
+      keybindings: Object.fromEntries(
+        Object.entries(current.keybindings).map(([id, binding]) => {
+          const key = id as keyof KeybindingSettings;
+          const next = patch[key];
+          return [key, next ? { ...binding, ...next, id: binding.id } : binding];
+        }),
+      ) as KeybindingSettings,
+    }));
+  }, []);
+
+  const updateWorkspacePreferences = useCallback((patch: Partial<WorkspacePreferences>) => {
+    setSettings((current) => ({
+      ...current,
+      workspacePreferences: { ...current.workspacePreferences, ...patch },
     }));
   }, []);
 
   const resetKeybindings = useCallback(() => {
     setSettings((current) => ({
       ...current,
-      keybindings: defaultApplicationSettings.keybindings,
+      keybindings: createDefaultApplicationSettings().keybindings,
     }));
   }, []);
 
   const resetTerminal = useCallback(() => {
     setSettings((current) => ({
       ...current,
-      terminal: defaultApplicationSettings.terminal,
+      terminal: createDefaultApplicationSettings().terminal,
     }));
+  }, []);
+
+  const resetSettings = useCallback(() => {
+    setSettings(createDefaultApplicationSettings());
   }, []);
 
   return useMemo(() => ({
@@ -89,14 +110,18 @@ export function useApplicationSettings(): ApplicationSettingsController {
     updateAppearance,
     updateKeybindings,
     updateTerminal,
+    updateWorkspacePreferences,
     resetKeybindings,
     resetTerminal,
+    resetSettings,
   }), [
     resetKeybindings,
     resetTerminal,
+    resetSettings,
     settings,
     updateAppearance,
     updateKeybindings,
     updateTerminal,
+    updateWorkspacePreferences,
   ]);
 }

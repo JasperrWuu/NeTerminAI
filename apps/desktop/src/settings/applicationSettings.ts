@@ -1,84 +1,113 @@
 import type {
   ApplicationSettings,
+  KeybindingCommandId,
   KeybindingSettings,
   TerminalHighlightRule,
   TerminalHighlightSet,
+  WorkspacePreferences,
 } from "./types";
 
-const STORAGE_KEY = "neterminai.application.settings.v1";
+export const CURRENT_SETTINGS_SCHEMA_VERSION = 2;
+export const SETTINGS_STORAGE_KEY = "neterminai.application.settings.v2";
+export const LEGACY_SETTINGS_STORAGE_KEY = "neterminai.application.settings.v1";
+export const LEGACY_WORKBENCH_STORAGE_KEY = "neterminai.workbench.preferences.v2";
 
-export const defaultApplicationSettings: ApplicationSettings = {
-  appearance: { theme: "dark" },
-  terminal: {
-    fontFamilyLatin: "Cascadia Mono",
-    fontFamilyCjk: "Microsoft YaHei",
-    fontSize: 14,
-    fontWeight: 400,
-    lineHeight: 1.18,
-    cursorStyle: "bar",
-    cursorBlink: true,
-    scrollback: 10_000,
-    colorScheme: "adaptive",
-    activeHighlightSetId: "default-highlight-set",
-    highlightSets: [{
-      id: "default-highlight-set",
-      name: "默认突显集",
-      enabled: true,
-      rules: [],
-    }],
-  },
-  keybindings: {
-    synchronizeVisibleTerminals: "Ctrl+Alt+I",
-    stopSynchronizedInput: "Ctrl+Alt+Shift+I",
-    focusNextSession: "Ctrl+Tab",
-    balanceWorkspace: "Ctrl+Equal",
-    collapseWorkspace: "Ctrl+-",
-  },
-};
+const KEYBINDING_IDS: readonly KeybindingCommandId[] = [
+  "synchronizeVisibleTerminals",
+  "stopSynchronizedInput",
+  "focusNextSession",
+  "balanceWorkspace",
+  "collapseWorkspace",
+];
 
-export function readApplicationSettings(): ApplicationSettings {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return defaultApplicationSettings;
+export const defaultApplicationSettings = createDefaultApplicationSettings();
 
-    const settings = normalizeSettings(JSON.parse(stored));
-    if (settings.terminal.colorScheme === "paper") {
-      return { ...settings, appearance: { theme: "light" } };
-    }
-    if (settings.terminal.colorScheme === "graphite") {
-      return { ...settings, appearance: { theme: "dark" } };
-    }
-    return settings;
-  } catch {
-    return defaultApplicationSettings;
-  }
+export function createDefaultApplicationSettings(): ApplicationSettings {
+  return {
+    schemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
+    appearance: { theme: "dark" },
+    terminal: {
+      fontFamilyLatin: "Cascadia Mono",
+      fontFamilyCjk: "Microsoft YaHei",
+      fontSize: 14,
+      fontWeight: 400,
+      lineHeight: 1.18,
+      cursorStyle: "bar",
+      cursorBlink: true,
+      scrollback: 10_000,
+      colorScheme: "adaptive",
+      activeHighlightSetId: "default-highlight-set",
+      highlightSets: [{
+        id: "default-highlight-set",
+        name: "默认突显集",
+        enabled: true,
+        rules: [],
+      }],
+    },
+    keybindings: {
+      synchronizeVisibleTerminals: {
+        id: "synchronizeVisibleTerminals",
+        binding: "Ctrl+Alt+I",
+        enabled: true,
+      },
+      stopSynchronizedInput: {
+        id: "stopSynchronizedInput",
+        binding: "Ctrl+Alt+Shift+I",
+        enabled: true,
+      },
+      focusNextSession: {
+        id: "focusNextSession",
+        binding: "Ctrl+Tab",
+        enabled: true,
+      },
+      balanceWorkspace: {
+        id: "balanceWorkspace",
+        binding: "Ctrl+Equal",
+        enabled: true,
+      },
+      collapseWorkspace: {
+        id: "collapseWorkspace",
+        binding: "Ctrl+-",
+        enabled: true,
+      },
+    },
+    workspacePreferences: {
+      leftSidebarOpen: true,
+      rightSidebarOpen: false,
+      leftSidebarWidth: 260,
+      rightSidebarWidth: 320,
+    },
+  };
 }
 
-export function persistApplicationSettings(settings: ApplicationSettings) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Keep the in-memory settings usable when browser storage is unavailable.
-  }
-}
-
-function normalizeSettings(value: unknown): ApplicationSettings {
+/** Converts persisted data from any supported schema into the current model. */
+export function migrateSettings(
+  value: unknown,
+  legacyWorkspacePreferences?: unknown,
+): ApplicationSettings {
   const root = asRecord(value);
+  const defaults = createDefaultApplicationSettings();
   const appearance = asRecord(root?.appearance);
   const terminal = asRecord(root?.terminal);
   const keybindings = asRecord(root?.keybindings);
-  const defaults = defaultApplicationSettings;
-
+  const highlightSets = normalizeHighlightSets(terminal, defaults.terminal.highlightSets);
   const highlightSelection = normalizeTerminalHighlightSelection(
-    normalizeHighlightSets(terminal, defaults.terminal.highlightSets),
+    highlightSets,
     stringValue(terminal?.activeHighlightSetId),
   );
+  const workspaceValue = root?.workspacePreferences ?? legacyWorkspacePreferences;
+  const colorScheme = normalizeColorScheme(terminal?.colorScheme, defaults.terminal.colorScheme);
 
   return {
+    schemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
     appearance: {
-      theme: appearance?.theme === "light" || appearance?.theme === "dark"
-        ? appearance.theme
-        : defaults.appearance.theme,
+      theme: colorScheme === "paper"
+        ? "light"
+        : colorScheme === "graphite"
+          ? "dark"
+          : appearance?.theme === "light" || appearance?.theme === "dark"
+            ? appearance.theme
+            : defaults.appearance.theme,
     },
     terminal: {
       fontFamilyLatin: nonEmptyString(terminal?.fontFamilyLatin)
@@ -104,15 +133,60 @@ function normalizeSettings(value: unknown): ApplicationSettings {
         || terminal?.scrollback === 50_000
         ? terminal.scrollback
         : defaults.terminal.scrollback,
-      colorScheme: terminal?.colorScheme === "adaptive"
-        || terminal?.colorScheme === "graphite"
-        || terminal?.colorScheme === "paper"
-        ? terminal.colorScheme
-        : defaults.terminal.colorScheme,
+      colorScheme,
       ...highlightSelection,
     },
-    keybindings: normalizeKeybindings(keybindings),
+    keybindings: normalizeKeybindings(keybindings, defaults.keybindings),
+    workspacePreferences: normalizeWorkspacePreferences(workspaceValue, defaults.workspacePreferences),
   };
+}
+
+export function readApplicationSettings(): ApplicationSettings {
+  const storage = getStorage();
+  if (!storage) return createDefaultApplicationSettings();
+
+  const currentRaw = safeGet(storage, SETTINGS_STORAGE_KEY);
+  const legacyRaw = safeGet(storage, LEGACY_SETTINGS_STORAGE_KEY);
+  const parsedCurrent = parseJson(currentRaw);
+  const parsedLegacy = parseJson(legacyRaw);
+  const settingsValue = parsedCurrent ?? parsedLegacy;
+  const legacyWorkspace = parseJson(safeGet(storage, LEGACY_WORKBENCH_STORAGE_KEY));
+
+  return migrateSettings(settingsValue, legacyWorkspace);
+}
+
+export function persistApplicationSettings(settings: ApplicationSettings) {
+  const storage = getStorage();
+  if (!storage) return;
+
+  try {
+    const normalized = migrateSettings(settings);
+    storage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+    storage.removeItem(LEGACY_SETTINGS_STORAGE_KEY);
+    storage.removeItem(LEGACY_WORKBENCH_STORAGE_KEY);
+  } catch {
+    // Keep the in-memory settings usable when browser storage is unavailable.
+  }
+}
+
+export function normalizeTerminalHighlightSelection(
+  highlightSets: TerminalHighlightSet[],
+  requestedHighlightSetId: string | null,
+) {
+  const activeHighlightSetId = highlightSets.some((set) => set.id === requestedHighlightSetId)
+    ? requestedHighlightSetId
+    : highlightSets.find((set) => set.enabled)?.id ?? null;
+  return {
+    activeHighlightSetId,
+    highlightSets: highlightSets.map((set) => ({
+      ...set,
+      enabled: set.id === activeHighlightSetId,
+    })),
+  };
+}
+
+function normalizeColorScheme(value: unknown, fallback: ApplicationSettings["terminal"]["colorScheme"]) {
+  return value === "adaptive" || value === "graphite" || value === "paper" ? value : fallback;
 }
 
 function normalizeHighlightSets(
@@ -136,22 +210,6 @@ function normalizeHighlightSets(
   return defaults;
 }
 
-export function normalizeTerminalHighlightSelection(
-  highlightSets: TerminalHighlightSet[],
-  requestedHighlightSetId: string | null,
-) {
-  const activeHighlightSetId = highlightSets.some((set) => set.id === requestedHighlightSetId)
-    ? requestedHighlightSetId
-    : highlightSets.find((set) => set.enabled)?.id ?? null;
-  return {
-    activeHighlightSetId,
-    highlightSets: highlightSets.map((set) => ({
-      ...set,
-      enabled: set.id === activeHighlightSetId,
-    })),
-  };
-}
-
 function normalizeHighlightSet(value: unknown): TerminalHighlightSet[] {
   const set = asRecord(value);
   if (!set || typeof set.id !== "string") return [];
@@ -165,34 +223,44 @@ function normalizeHighlightSet(value: unknown): TerminalHighlightSet[] {
   }];
 }
 
-function normalizeKeybindings(value: Record<string, unknown> | null): KeybindingSettings {
-  const defaults = defaultApplicationSettings.keybindings;
-  const storedBalanceWorkspace = stringValue(value?.balanceWorkspace);
-  const settings = {
-    synchronizeVisibleTerminals: stringValue(value?.synchronizeVisibleTerminals)
-      ?? defaults.synchronizeVisibleTerminals,
-    stopSynchronizedInput: stringValue(value?.stopSynchronizedInput)
-      ?? defaults.stopSynchronizedInput,
-    focusNextSession: stringValue(value?.focusNextSession) ?? defaults.focusNextSession,
-    balanceWorkspace: normalizeBalanceWorkspaceShortcut(storedBalanceWorkspace ?? defaults.balanceWorkspace),
-    collapseWorkspace: stringValue(value?.collapseWorkspace) ?? defaults.collapseWorkspace,
-  };
-
-  const usesLegacyTerminalControlDefaults = settings.synchronizeVisibleTerminals === "Ctrl+L"
-    && settings.stopSynchronizedInput === "Ctrl+Shift+L";
-  return usesLegacyTerminalControlDefaults
-    ? {
-        ...settings,
-        synchronizeVisibleTerminals: defaults.synchronizeVisibleTerminals,
-        stopSynchronizedInput: defaults.stopSynchronizedInput,
-      }
-    : settings;
+function normalizeKeybindings(
+  value: Record<string, unknown> | null,
+  defaults: KeybindingSettings,
+): KeybindingSettings {
+  return Object.fromEntries(KEYBINDING_IDS.map((id) => {
+    const stored = asRecord(value?.[id]);
+    const legacyBinding = typeof value?.[id] === "string" ? value[id] : null;
+    const binding = stringValue(stored?.binding) ?? legacyBinding ?? defaults[id].binding;
+    return [id, {
+      id,
+      binding: normalizeBalanceWorkspaceShortcut(binding, id),
+      enabled: typeof stored?.enabled === "boolean" ? stored.enabled : true,
+    }];
+  })) as KeybindingSettings;
 }
 
-function normalizeBalanceWorkspaceShortcut(value: string) {
-  // `Ctrl++` was the previous label for the physical Equal key. Preserve
-  // existing user settings while moving to the unambiguous Ctrl + Equal name.
+function normalizeBalanceWorkspaceShortcut(value: string, id: KeybindingCommandId) {
+  if (id !== "balanceWorkspace") return value;
   return value === "Ctrl++" || value === "Ctrl+=" ? "Ctrl+Equal" : value;
+}
+
+function normalizeWorkspacePreferences(
+  value: unknown,
+  defaults: WorkspacePreferences,
+): WorkspacePreferences {
+  const root = asRecord(value);
+  return {
+    leftSidebarOpen: typeof root?.leftSidebarOpen === "boolean"
+      ? root.leftSidebarOpen
+      : defaults.leftSidebarOpen,
+    rightSidebarOpen: typeof root?.rightSidebarOpen === "boolean"
+      ? root.rightSidebarOpen
+      : defaults.rightSidebarOpen,
+    leftSidebarWidth: finiteNumberInRange(root?.leftSidebarWidth, 180, 1200)
+      ?? defaults.leftSidebarWidth,
+    rightSidebarWidth: finiteNumberInRange(root?.rightSidebarWidth, 240, 1200)
+      ?? defaults.rightSidebarWidth,
+  };
 }
 
 function normalizeHighlightRule(value: unknown): TerminalHighlightRule[] {
@@ -208,6 +276,31 @@ function normalizeHighlightRule(value: unknown): TerminalHighlightRule[] {
     color: rule.color.toUpperCase(),
     caseSensitive: typeof rule.caseSensitive === "boolean" ? rule.caseSensitive : false,
   }];
+}
+
+function getStorage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function safeGet(storage: Storage, key: string) {
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function parseJson(value: string | null): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

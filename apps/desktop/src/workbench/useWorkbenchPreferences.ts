@@ -1,62 +1,36 @@
-import { useEffect, useState } from "react";
-import type { WorkbenchPreferences } from "./types";
+import { useCallback, useMemo } from "react";
+import type { WorkspacePreferences } from "../settings/types";
+import type { ApplicationSettingsController } from "../settings/useApplicationSettings";
 
-const STORAGE_KEY = "neterminai.workbench.preferences.v2";
-
-const defaultPreferences: WorkbenchPreferences = {
-  leftSidebarOpen: true,
-  rightSidebarOpen: false,
-  leftSidebarWidth: 260,
-  rightSidebarWidth: 320,
-};
-
-function readPreferences(): WorkbenchPreferences {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored
-      ? { ...defaultPreferences, ...JSON.parse(stored) }
-      : defaultPreferences;
-  } catch {
-    return defaultPreferences;
-  }
-}
-
-export interface WorkbenchPreferencesController extends WorkbenchPreferences {
+export interface WorkbenchPreferencesController extends WorkspacePreferences {
   toggleLeftSidebar: () => void;
   toggleRightSidebar: () => void;
   setLeftSidebarWidth: (width: number) => void;
   setRightSidebarWidth: (width: number) => void;
 }
 
-export function useWorkbenchPreferences(): WorkbenchPreferencesController {
-  const [preferences, setPreferences] =
-    useState<WorkbenchPreferences>(readPreferences);
+type SettingsPreferencesSource = Pick<
+  ApplicationSettingsController,
+  "workspacePreferences" | "updateWorkspacePreferences"
+>;
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-    } catch {
-      // Layout remains usable for this window when persistence is unavailable.
-    }
-  }, [preferences]);
-
-  const update = (patch: Partial<WorkbenchPreferences>) => {
-    setPreferences((current) => ({ ...current, ...patch }));
-  };
-
-  return {
-    ...preferences,
-    toggleLeftSidebar: () =>
-      setPreferences((current) => ({
-        ...current,
-        leftSidebarOpen: !current.leftSidebarOpen,
-      })),
-    toggleRightSidebar: () =>
-      setPreferences((current) => ({
-        ...current,
-        rightSidebarOpen: !current.rightSidebarOpen,
-      })),
+/**
+ * Workbench preferences are a view of ApplicationSettings, not a second
+ * persistence store. Keeping the source in one hook makes updates atomic with
+ * terminal and shortcut settings.
+ */
+export function useWorkbenchPreferences(
+  settings: SettingsPreferencesSource,
+): WorkbenchPreferencesController {
+  const update = useCallback(
+    (patch: Partial<WorkspacePreferences>) => settings.updateWorkspacePreferences(patch),
+    [settings.updateWorkspacePreferences],
+  );
+  return useMemo(() => ({
+    ...settings.workspacePreferences,
+    toggleLeftSidebar: () => update({ leftSidebarOpen: !settings.workspacePreferences.leftSidebarOpen }),
+    toggleRightSidebar: () => update({ rightSidebarOpen: !settings.workspacePreferences.rightSidebarOpen }),
     setLeftSidebarWidth: (leftSidebarWidth) => update({ leftSidebarWidth }),
     setRightSidebarWidth: (rightSidebarWidth) => update({ rightSidebarWidth }),
-  };
+  }), [settings.workspacePreferences, update]);
 }

@@ -11,7 +11,17 @@ export type KeybindingCommandId =
   | "balanceWorkspace"
   | "collapseWorkspace";
 
-export type KeybindingSettings = Record<KeybindingCommandId, string>;
+export interface KeybindingSetting {
+  id: KeybindingCommandId;
+  binding: string;
+  enabled: boolean;
+}
+
+export type KeybindingSettings = Record<KeybindingCommandId, KeybindingSetting>;
+export type KeybindingPatch = Partial<Record<
+  KeybindingCommandId,
+  Partial<Pick<KeybindingSetting, "binding" | "enabled">>
+>>;
 
 export interface TerminalHighlightRule {
   id: string;
@@ -32,6 +42,14 @@ export interface TerminalHighlightSet {
 export interface AppearanceSettings {
   theme: AppearanceTheme;
 }
+
+export interface WorkspacePreferences {
+  leftSidebarOpen: boolean;
+  rightSidebarOpen: boolean;
+  leftSidebarWidth: number;
+  rightSidebarWidth: number;
+}
+
 export interface TerminalSettings {
   fontFamilyLatin: string;
   fontFamilyCjk: string;
@@ -47,7 +65,9 @@ export interface TerminalSettings {
 }
 
 export interface ApplicationSettings {
+  schemaVersion: number;
   appearance: AppearanceSettings;
   terminal: TerminalSettings;
   keybindings: KeybindingSettings;
+  workspacePreferences: WorkspacePreferences;
 }
