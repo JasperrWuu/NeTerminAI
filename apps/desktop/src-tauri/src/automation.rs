@@ -13,6 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -31,6 +32,10 @@ const MAX_COMMAND_BYTES: usize = 64 * 1024;
 const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_COMMAND_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const MAX_COLLECTED_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_INTERACTION_RESPONSES: usize = 32;
+const MAX_INTERACTION_PATTERN_BYTES: usize = 8 * 1024;
+const MAX_INTERACTION_RESPONSE_BYTES: usize = 8 * 1024;
+const MAX_INTERACTION_COUNT: usize = 32;
 const COMMAND_POLL: Duration = Duration::from_millis(25);
 const SHUTDOWN_POLL: Duration = Duration::from_millis(20);
 
@@ -44,10 +49,22 @@ import traceback
 SEND_PREFIX = "__NETERMINAI_AUTOMATION_SEND__"
 ACK_PREFIX = "__NETERMINAI_AUTOMATION_ACK__"
 
-def send(command, timeout=None):
+def send(command, timeout=None, responses=None):
     if not isinstance(command, str):
         command = str(command)
-    sys.stdout.write(SEND_PREFIX + json.dumps({"command": command, "timeout": timeout}, ensure_ascii=False) + "\n")
+    if responses is None:
+        responses = []
+    if not isinstance(responses, (list, tuple)):
+        raise TypeError("send() responses 必须是 (pattern, response) 对列表")
+    normalized_responses = []
+    for item in responses:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            raise ValueError("send() responses 中每一项必须是 (pattern, response)")
+        pattern, response = item
+        if not isinstance(pattern, str) or not isinstance(response, str):
+            raise TypeError("send() responses 的 pattern 和 response 必须是字符串")
+        normalized_responses.append([pattern, response])
+    sys.stdout.write(SEND_PREFIX + json.dumps({"command": command, "timeout": timeout, "responses": normalized_responses}, ensure_ascii=False) + "\n")
     sys.stdout.flush()
     while True:
         line = sys.stdin.readline()
@@ -62,6 +79,8 @@ def send(command, timeout=None):
                 message = response.get("error") or "终端命令执行失败"
                 if response.get("code") == "timeout":
                     raise TimeoutError(message)
+                if response.get("code") == "interaction_required":
+                    raise RuntimeError("[interaction_required] " + message)
                 raise RuntimeError(message)
             output = response.get("output", "")
             if not isinstance(output, str):
@@ -333,6 +352,8 @@ struct SendMessage {
     command: String,
     #[serde(default)]
     timeout: Option<f64>,
+    #[serde(default)]
+    responses: Vec<(String, String)>,
 }
 
 impl Default for AutomationManagerInner {
@@ -830,6 +851,13 @@ impl CommandFailure {
         }
     }
 
+    fn interaction_required(message: impl Into<String>) -> Self {
+        Self {
+            code: "interaction_required",
+            message: message.into(),
+        }
+    }
+
     fn io(message: impl Into<String>) -> Self {
         Self {
             code: "io_error",
@@ -851,6 +879,7 @@ fn execute_command(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| CommandFailure::session_not_found("目标终端已关闭或尚未建立连接"))?;
     let timeout = parse_command_timeout(message.timeout)?;
+    let interaction_responses = compile_interaction_responses(&message.responses)?;
     let deadline = Instant::now() + timeout;
     let transaction_started = Instant::now();
     transaction_log(target, session_id, "started", transaction_started);
@@ -868,6 +897,7 @@ fn execute_command(
     let initial_prompt = output_hub.current_prompt(session_id);
     let subscription = output_hub.subscribe(session_id);
     let mut collector = CommandCollector::new(&message.command, initial_prompt);
+    let mut interaction_count: usize = 0;
     let mut command_bytes = message.command.as_bytes().to_vec();
     command_bytes.push(b'\r');
     write_terminal_bytes(app, target, &command_bytes).map_err(|error| {
@@ -903,6 +933,45 @@ fn execute_command(
                         collector.pages_requested += 1;
                         transaction_log(target, session_id, "paging", transaction_started);
                     }
+                }
+                if let Some(interaction) = signal.interaction {
+                    interaction_count = interaction_count.saturating_add(1);
+                    transaction_log(
+                        target,
+                        session_id,
+                        "interaction_detected",
+                        transaction_started,
+                    );
+                    if interaction_count > MAX_INTERACTION_COUNT {
+                        return Err(CommandFailure::interaction_required(format!(
+                            "命令 `{}` 在终端 {session_id} 上需要的交互次数超过上限",
+                            message.command
+                        )));
+                    }
+                    let Some(response) = interaction_responses
+                        .iter()
+                        .find(|candidate| candidate.pattern.is_match(&interaction))
+                    else {
+                        return Err(CommandFailure::interaction_required(format!(
+                            "命令 `{}` 在终端 {session_id} 上需要交互响应：{interaction}",
+                            message.command
+                        )));
+                    };
+                    let mut response_bytes = response.response.as_bytes().to_vec();
+                    response_bytes.push(b'\r');
+                    write_terminal_bytes(app, target, &response_bytes).map_err(|error| {
+                        CommandFailure::io(format!(
+                            "发送交互响应到终端失败（{session_id}）：{error}"
+                        ))
+                    })?;
+                    collector.mark_interaction_handled();
+                    transaction_log(
+                        target,
+                        session_id,
+                        "interaction_responded",
+                        transaction_started,
+                    );
+                    continue;
                 }
                 if let Some(prompt) = signal.prompt {
                     output_hub.set_prompt(session_id, prompt.clone());
@@ -952,6 +1021,65 @@ fn parse_command_timeout(value: Option<f64>) -> Result<Duration, CommandFailure>
     Ok(Duration::from_secs_f64(seconds))
 }
 
+#[derive(Debug)]
+struct CompiledInteractionResponse {
+    pattern: Regex,
+    response: String,
+}
+
+fn compile_interaction_responses(
+    responses: &[(String, String)],
+) -> Result<Vec<CompiledInteractionResponse>, CommandFailure> {
+    if responses.len() > MAX_INTERACTION_RESPONSES {
+        return Err(CommandFailure::invalid_argument(format!(
+            "send() 最多支持 {} 个交互响应",
+            MAX_INTERACTION_RESPONSES
+        )));
+    }
+    responses
+        .iter()
+        .enumerate()
+        .map(|(index, (pattern, response))| {
+            if pattern.trim().is_empty() {
+                return Err(CommandFailure::invalid_argument(format!(
+                    "send() 第 {} 个交互 pattern 不能为空",
+                    index + 1
+                )));
+            }
+            if pattern.len() > MAX_INTERACTION_PATTERN_BYTES {
+                return Err(CommandFailure::invalid_argument(format!(
+                    "send() 第 {} 个交互 pattern 不能超过 {} KB",
+                    index + 1,
+                    MAX_INTERACTION_PATTERN_BYTES / 1024
+                )));
+            }
+            if response.len() > MAX_INTERACTION_RESPONSE_BYTES {
+                return Err(CommandFailure::invalid_argument(format!(
+                    "send() 第 {} 个交互 response 不能超过 {} KB",
+                    index + 1,
+                    MAX_INTERACTION_RESPONSE_BYTES / 1024
+                )));
+            }
+            if response.contains(['\r', '\n']) {
+                return Err(CommandFailure::invalid_argument(format!(
+                    "send() 第 {} 个交互 response 不能包含换行符",
+                    index + 1
+                )));
+            }
+            let pattern = Regex::new(pattern).map_err(|_| {
+                CommandFailure::invalid_argument(format!(
+                    "send() 第 {} 个交互 pattern 不是有效的正则表达式",
+                    index + 1
+                ))
+            })?;
+            Ok(CompiledInteractionResponse {
+                pattern,
+                response: response.clone(),
+            })
+        })
+        .collect()
+}
+
 fn acquire_command_lock<'a>(
     lock: &'a Mutex<()>,
     control: &AutomationRunControl,
@@ -990,6 +1118,7 @@ fn write_terminal_bytes(
 
 struct CollectorSignal {
     prompt: Option<String>,
+    interaction: Option<String>,
     more_markers: usize,
 }
 
@@ -1000,7 +1129,9 @@ struct CommandCollector {
     pages_requested: usize,
     more_scan_offset: usize,
     more_markers_seen: usize,
+    trailing_more_marker_seen: bool,
     saw_output: bool,
+    interaction_suppressed_until_next_chunk: bool,
 }
 
 impl CommandCollector {
@@ -1012,11 +1143,16 @@ impl CommandCollector {
             pages_requested: 0,
             more_scan_offset: 0,
             more_markers_seen: 0,
+            trailing_more_marker_seen: false,
             saw_output: false,
+            interaction_suppressed_until_next_chunk: false,
         }
     }
 
     fn push(&mut self, chunk: &[u8]) -> Result<CollectorSignal, CommandFailure> {
+        if !chunk.is_empty() {
+            self.interaction_suppressed_until_next_chunk = false;
+        }
         self.saw_output = self.saw_output || !chunk.is_empty();
         if self.raw.len().saturating_add(chunk.len()) > MAX_COLLECTED_OUTPUT_BYTES {
             return Err(CommandFailure::io(format!(
@@ -1029,33 +1165,56 @@ impl CommandCollector {
         self.scan_more_markers();
         let tail_start = self.raw.len().saturating_sub(8 * 1024);
         let tail = normalize_terminal_text(&self.raw[tail_start..]);
-        let prompt = if self.saw_output {
-            detect_prompt(&tail).filter(|prompt| self.completion_ready(&tail, prompt))
+        let interaction = if self.saw_output && !self.interaction_suppressed_until_next_chunk {
+            detect_interaction(&tail)
+        } else {
+            None
+        };
+        let prompt = if self.saw_output && interaction.is_none() {
+            detect_prompt(&tail).filter(|candidate| {
+                prompt_matches_context(candidate, self.initial_prompt.as_deref(), &self.command)
+            })
         } else {
             None
         };
         Ok(CollectorSignal {
             prompt,
+            interaction,
             more_markers: self.more_markers_seen,
         })
     }
 
+    fn mark_interaction_handled(&mut self) {
+        self.interaction_suppressed_until_next_chunk = true;
+    }
+
     fn scan_more_markers(&mut self) {
         let pending = &self.raw[self.more_scan_offset..];
-        let Some(end) = pending
+        let end = pending
             .iter()
             .enumerate()
             .filter(|(_, byte)| matches!(*byte, b'\r' | b'\n'))
             .map(|(index, _)| index + 1)
-            .next_back()
-        else {
-            return;
-        };
-        let complete_lines = normalize_terminal_text(&pending[..end]);
-        self.more_markers_seen = self
-            .more_markers_seen
-            .saturating_add(count_more_markers(&complete_lines));
-        self.more_scan_offset += end;
+            .next_back();
+        if let Some(end) = end {
+            let complete_lines = normalize_terminal_text(&pending[..end]);
+            let mut marker_count = count_more_markers(&complete_lines);
+            if self.trailing_more_marker_seen
+                && complete_lines.lines().next().is_some_and(is_more_marker)
+            {
+                marker_count = marker_count.saturating_sub(1);
+                self.trailing_more_marker_seen = false;
+            }
+            self.more_markers_seen = self.more_markers_seen.saturating_add(marker_count);
+            self.more_scan_offset += end;
+        }
+
+        let trailing = normalize_terminal_text(&self.raw[self.more_scan_offset..]);
+        let exact_trailing_marker = is_exact_more_marker(&trailing);
+        if exact_trailing_marker && !self.trailing_more_marker_seen {
+            self.more_markers_seen = self.more_markers_seen.saturating_add(1);
+        }
+        self.trailing_more_marker_seen = exact_trailing_marker;
     }
 
     fn normalized_output(&self, final_prompt: Option<&str>) -> String {
@@ -1065,22 +1224,6 @@ impl CommandCollector {
             self.initial_prompt.as_deref(),
             final_prompt,
         )
-    }
-
-    fn completion_ready(&self, text: &str, _prompt: &str) -> bool {
-        let has_echo = text
-            .lines()
-            .any(|line| is_command_echo(line, &self.command, self.initial_prompt.as_deref()));
-        if has_echo {
-            return true;
-        }
-        // A delayed prompt that was already in the terminal stream should not
-        // complete the first transaction by itself. If the device does not
-        // echo commands, require at least one non-prompt, non-pagination line.
-        text.lines().any(|line| {
-            let line = line.trim();
-            !line.is_empty() && !is_more_marker(line) && detect_prompt(line).is_none()
-        })
     }
 }
 
@@ -1171,6 +1314,72 @@ fn detect_prompt(text: &str) -> Option<String> {
     None
 }
 
+fn prompt_matches_context(candidate: &str, initial_prompt: Option<&str>, command: &str) -> bool {
+    if !is_huawei_prompt(candidate) {
+        return true;
+    }
+    let Some(initial_prompt) = initial_prompt.filter(|prompt| is_huawei_prompt(prompt)) else {
+        return true;
+    };
+    if candidate == initial_prompt {
+        return true;
+    }
+    let initial_inner = huawei_prompt_inner(initial_prompt);
+    let candidate_inner = huawei_prompt_inner(candidate);
+    let initial_root = initial_inner.split('-').next().unwrap_or(initial_inner);
+    if prompt_root_matches(candidate_inner, initial_root) {
+        return true;
+    }
+
+    // A sysname command is the one supported way to intentionally change the
+    // prompt root. Keep this narrow and data-driven; no Huawei view names are
+    // enumerated here.
+    let mut command_parts = command.split_whitespace();
+    if command_parts
+        .next()
+        .is_some_and(|part| part.eq_ignore_ascii_case("sysname"))
+        && let Some(new_name) = command_parts.next()
+    {
+        return prompt_root_matches(candidate_inner, new_name);
+    }
+    false
+}
+
+fn huawei_prompt_inner(prompt: &str) -> &str {
+    &prompt[1..prompt.len() - 1]
+}
+
+fn prompt_root_matches(candidate: &str, root: &str) -> bool {
+    candidate == root
+        || candidate
+            .strip_prefix(root)
+            .and_then(|suffix| suffix.chars().next())
+            .is_some_and(|separator| !separator.is_alphanumeric())
+}
+
+/// Detect an interactive question only when it is the current logical line.
+/// Keeping this check at the stream tail prevents ordinary output such as
+/// `Status: [UP]` from pausing a transaction, while still handling prompts
+/// that do not end with a line break.
+fn detect_interaction(text: &str) -> Option<String> {
+    let line = text
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    let lower = line.to_ascii_lowercase();
+    let has_choice = lower.contains("[y/n]") || lower.contains("[yes/no]") || lower.contains("y/n");
+    let question_ending = line.ends_with('?') || line.ends_with(':');
+    let named_question =
+        (lower.contains("continue") || lower.contains("are you sure") || lower.contains("confirm"))
+            && question_ending;
+    if (has_choice && (question_ending || lower.ends_with(']'))) || named_question {
+        Some(line.to_owned())
+    } else {
+        None
+    }
+}
+
 fn is_huawei_prompt(line: &str) -> bool {
     let (open, close) = if line.starts_with('<') && line.ends_with('>') {
         ('<', '>')
@@ -1182,7 +1391,7 @@ fn is_huawei_prompt(line: &str) -> bool {
     let inner = &line[open.len_utf8()..line.len() - close.len_utf8()];
     !inner.is_empty()
         && inner.chars().all(|character| {
-            character.is_alphanumeric() || matches!(character, '-' | '_' | '/' | '.' | ':')
+            !character.is_control() && !character.is_whitespace() && !matches!(character, '<' | '>')
         })
 }
 
@@ -1205,6 +1414,16 @@ fn is_more_marker(line: &str) -> bool {
             && (compact.starts_with('-') || compact.ends_with('-')))
 }
 
+fn is_exact_more_marker(line: &str) -> bool {
+    let compact = line
+        .trim()
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    matches!(compact.as_str(), "more" | "--more--" | "----more----")
+}
+
 fn normalize_command_output(
     raw: &[u8],
     command: &str,
@@ -1225,7 +1444,7 @@ fn normalize_command_output(
             lines.remove(0);
         }
     } else if lines.len() > 1
-        && detect_prompt(lines[0].trim()).is_some()
+        && prompt_matches_context(lines[0].trim(), initial_prompt, command)
         && is_command_echo(&lines[1], command, initial_prompt)
     {
         // Some serial/Telnet servers put the prompt and command echo on
@@ -1243,7 +1462,8 @@ fn normalize_command_output(
     }
     if lines.last().is_some_and(|line| {
         let candidate = line.trim();
-        final_prompt.is_some_and(|prompt| candidate == prompt) || detect_prompt(candidate).is_some()
+        final_prompt.is_some_and(|prompt| candidate == prompt)
+            || (final_prompt.is_none() && detect_prompt(candidate).is_some())
     }) {
         lines.pop();
     }
@@ -1521,6 +1741,19 @@ mod tests {
     }
 
     #[test]
+    fn prompt_completion_does_not_require_a_command_echo() {
+        let mut collector = CommandCollector::new("display health", Some("<FW1>".to_owned()));
+        let signal = collector
+            .push(b"Slot  Card  Status\r\n0     MPU   Normal\r\n<FW1>\r\n")
+            .unwrap();
+        assert_eq!(signal.prompt.as_deref(), Some("<FW1>"));
+        assert_eq!(
+            collector.normalized_output(signal.prompt.as_deref()),
+            "Slot  Card  Status\n0     MPU   Normal"
+        );
+    }
+
+    #[test]
     fn command_echo_normalization_handles_prompt_on_a_separate_line() {
         let raw = b"<FW1>\r\ndisplay health\r\nNormal\r\n<FW1>\r\n";
         assert_eq!(
@@ -1558,6 +1791,81 @@ mod tests {
     }
 
     #[test]
+    fn prompt_detection_is_tail_only_for_bracketed_status_text() {
+        let mut collector = CommandCollector::new("display health", Some("<FW1>".to_owned()));
+        assert!(
+            collector
+                .push(b"Status: [UP]\r\n")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        assert!(
+            collector
+                .push(b"Result: [OK]\r\nPeer: [Established]\r\n")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        assert!(collector.push(b"[UP]\r\n").unwrap().prompt.is_none());
+        let signal = collector
+            .push(b"Normal\r\n[FW1-arbitrary-future-view]\r\n")
+            .unwrap();
+        assert_eq!(
+            signal.prompt.as_deref(),
+            Some("[FW1-arbitrary-future-view]")
+        );
+    }
+
+    #[test]
+    fn normalization_keeps_standalone_status_lines_before_the_final_prompt() {
+        let raw = b"<FW1>display health\r\n[UP]\r\n[OK]\r\n[Established]\r\n<FW1>\r\n";
+        assert_eq!(
+            normalize_command_output(raw, "display health", Some("<FW1>"), Some("<FW1>")),
+            "[UP]\n[OK]\n[Established]"
+        );
+    }
+
+    #[test]
+    fn sysname_change_updates_prompt_context_without_view_enumeration() {
+        let mut collector = CommandCollector::new("sysname NEWNAME", Some("<FW1>".to_owned()));
+        let signal = collector.push(b"sysname NEWNAME\r\n[NEWNAME]\r\n").unwrap();
+        assert_eq!(signal.prompt.as_deref(), Some("[NEWNAME]"));
+        assert_eq!(collector.normalized_output(signal.prompt.as_deref()), "");
+    }
+
+    #[test]
+    fn interaction_prompt_is_detected_across_chunks_and_can_repeat() {
+        let mut collector = CommandCollector::new("reset", Some("<FW1>".to_owned()));
+        assert!(
+            collector
+                .push(b"Continue? [Y")
+                .unwrap()
+                .interaction
+                .is_none()
+        );
+        let signal = collector.push(b"/N]:").unwrap();
+        assert_eq!(signal.interaction.as_deref(), Some("Continue? [Y/N]:"));
+        collector.mark_interaction_handled();
+        assert!(collector.push(b"y\r\n").unwrap().interaction.is_none());
+        let signal = collector.push(b"Continue? [Y/N]:").unwrap();
+        assert_eq!(signal.interaction.as_deref(), Some("Continue? [Y/N]:"));
+    }
+
+    #[test]
+    fn more_and_interaction_can_be_seen_in_one_stream_update() {
+        let mut collector = CommandCollector::new("display current-configuration", None);
+        let signal = collector
+            .push(b"line one\r\n---- More ----\r\nContinue? [Y/N]:")
+            .unwrap();
+        assert_eq!(signal.more_markers, 1);
+        assert_eq!(signal.interaction.as_deref(), Some("Continue? [Y/N]:"));
+        collector.mark_interaction_handled();
+        let next = collector.push(b"y\r\n<FW1>\r\n").unwrap();
+        assert_eq!(next.prompt.as_deref(), Some("<FW1>"));
+    }
+
+    #[test]
     fn more_markers_are_detected_and_removed_from_output() {
         let raw = b"<FW1>display current-configuration\r\nline one\r\n\x1b[7m---- More ----\x1b[0m\r\nline two\r\n<FW1>\r\n";
         let normalized =
@@ -1580,6 +1888,27 @@ mod tests {
         large_chunk.extend_from_slice(b"\r\n---- More ----\r\n");
         let third = collector.push(&large_chunk).unwrap();
         assert_eq!(third.more_markers, 2);
+    }
+
+    #[test]
+    fn trailing_more_marker_is_detected_before_its_line_break() {
+        let mut collector = CommandCollector::new("display current-configuration", None);
+        let first = collector.push(b"line one\r\n---- More ----").unwrap();
+        assert_eq!(first.more_markers, 1);
+        let second = collector.push(b"\r\nline two\r\n<FW1>\r\n").unwrap();
+        assert_eq!(second.more_markers, 1);
+        assert_eq!(second.prompt.as_deref(), Some("<FW1>"));
+    }
+
+    #[test]
+    fn interaction_responses_compile_as_regex_and_reject_invalid_patterns() {
+        let responses =
+            compile_interaction_responses(&[(r"Continue.*\[Y/N\]".to_owned(), "y".to_owned())])
+                .unwrap();
+        assert!(responses[0].pattern.is_match("Continue? [Y/N]:"));
+        let error = compile_interaction_responses(&[("[".to_owned(), "y".to_owned())])
+            .expect_err("invalid interaction regex should be rejected");
+        assert_eq!(error.code, "invalid_argument");
     }
 
     #[test]
