@@ -46,6 +46,7 @@ import { TerminalCapabilityAdapter, type TerminalCapabilityWorkspace } from "../
 import type { ProjectContextCapability } from "../capabilities/project";
 import { AiAssistant, createAiProvider } from "../ai/runtime";
 import { AiAssistantPanel } from "../ai/runtime/AiAssistantPanel";
+import { ToolsView } from "../tools/ToolsView";
 import {
   ProjectSidebar,
   projectSessionsFromTabs,
@@ -83,7 +84,7 @@ const panelCopy: Record<ActivityId, { title: string; description: string }> = {
   },
   tools: {
     title: "工具",
-    description: "网络服务与文本工具将在后续增量加入。",
+    description: "生成、预览并下发设备启动配置。",
   },
 };
 
@@ -639,6 +640,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                   onUpdateContext={projectManager.updateContext}
                   projects={projectManager.projects}
                 />
+              ) : activity === "tools" ? (
+                <ToolsView activeTabId={activeTerminalId} terminal={terminalCapability} />
               ) : (
                 <EmptyPanel description={activePanel.description} />
               )}
@@ -916,11 +919,6 @@ function PanelHeader({ title, icon }: { title: string; icon?: ReactNode }) {
         {icon}
         <span>{title}</span>
       </div>
-      <button className="more-button" aria-label={`${title}更多操作`} type="button">
-        <span />
-        <span />
-        <span />
-      </button>
     </header>
   );
 }

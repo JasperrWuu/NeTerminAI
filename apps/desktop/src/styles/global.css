@@ -607,6 +607,12 @@ button:focus-visible,
 
 .is-resizing * { cursor: col-resize !important; }
 
+/* The right panel has no width transition; mirror that during a drag so the
+   left panel tracks the pointer 1:1 instead of easing behind it. */
+.is-resizing .sidebar-left {
+  transition: none;
+}
+
 .is-resizing-split-row,
 .is-resizing-split-row * {
   cursor: col-resize !important;

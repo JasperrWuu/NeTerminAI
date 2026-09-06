@@ -72,6 +72,264 @@
 .segmented-control button[data-active="true"] { color: var(--text-primary); }
 .compact-segmented-control button { min-width: 37px; padding: 0 7px; }
 
+/* Shared select primitive. Keep the panel anchored to the trigger's root so
+   every consumer gets identical edges without per-page offset fixes. */
+.select-root {
+  min-width: 0;
+  position: relative;
+  width: 100%;
+}
+
+.select-trigger {
+  align-items: center;
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-size: 13px;
+  gap: 8px;
+  height: 36px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+  text-align: left;
+  transition:
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    box-shadow var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+  width: 100%;
+}
+
+.select-trigger:hover,
+.select-root[data-open="true"] .select-trigger,
+.select-trigger:focus-visible {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.select-trigger-main {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+
+.select-leading {
+  align-items: center;
+  color: var(--accent-strong);
+  display: inline-flex;
+  flex: 0 0 18px;
+  justify-content: center;
+}
+
+.select-leading svg {
+  height: 16px;
+  width: 16px;
+}
+
+.select-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-chevron {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: inline-flex;
+  flex: 0 0 16px;
+  justify-content: center;
+  transition: transform var(--motion-fast) var(--ease-out), color var(--motion-fast) ease;
+}
+
+.select-chevron svg {
+  fill: none;
+  height: 16px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  width: 16px;
+}
+
+.select-root[data-open="true"] .select-chevron {
+  color: var(--accent-strong);
+  transform: rotate(180deg);
+}
+
+.select-menu {
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  inset-inline: 0;
+  margin-top: 6px;
+  padding: 6px;
+  position: absolute;
+  top: 100%;
+  z-index: 120;
+}
+
+.select-search {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  height: 32px;
+  outline: none;
+  padding: 0 9px;
+  width: 100%;
+}
+
+.select-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.select-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 258px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.select-search + .select-options { margin-top: 6px; }
+
+.select-option {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.select-option:hover,
+.select-option[data-active="true"] {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.select-option[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.select-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.select-option:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.select-option-leading {
+  align-items: center;
+  color: var(--accent-strong);
+  display: inline-flex;
+  flex: 0 0 18px;
+  justify-content: center;
+}
+
+.select-option-leading svg {
+  height: 16px;
+  width: 16px;
+}
+
+.select-option-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.select-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-option-description {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-option-check {
+  color: var(--accent-strong);
+  flex: 0 0 16px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: auto;
+  text-align: center;
+}
+
+.select-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 12px 9px;
+  text-align: center;
+}
+
+.settings-select {
+  flex: 0 1 220px;
+  min-width: 180px;
+}
+
+.settings-select .select-trigger {
+  font-size: 12px;
+  height: 34px;
+}
+
+.font-select {
+  width: 280px;
+}
+
+.font-select .select-trigger {
+  font-size: 14px;
+  height: 34px;
+}
+
+.project-device-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-device-select .select-trigger {
+  font-size: 12px;
+}
+
+.project-device-select .select-option {
+  font-size: 12px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .segmented-control-indicator { transition: none; }
+  .select-chevron { transition: none; }
 }

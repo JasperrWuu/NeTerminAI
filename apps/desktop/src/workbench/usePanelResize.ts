@@ -77,6 +77,9 @@ export function usePanelResize({
         cancelAnimationFrame(animationFrame);
         paintWidth();
       }
+      if (handle.hasPointerCapture(event.pointerId)) {
+        handle.releasePointerCapture(event.pointerId);
+      }
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);

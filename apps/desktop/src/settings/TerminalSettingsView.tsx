@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   AppearanceTheme,
   TerminalColorScheme,
@@ -10,7 +10,8 @@ import type {
 } from "./types";
 import { resolveTerminalTheme } from "../terminal/themes";
 import { SegmentedControl } from "../ui/SegmentedControl";
-import { CloseIcon } from "../workbench/icons";
+import { Select } from "../ui/Select";
+import { ChevronIcon, CloseIcon } from "../workbench/icons";
 import { quoteFontFamilyName, terminalFontStack } from "../terminal/fontStack";
 import { systemApi } from "../ipc/system";
 
@@ -60,6 +61,11 @@ export function TerminalSettingsView({
     settings.fontFamilyCjk,
     ...fontFamilies,
   ].filter(Boolean))), [fontFamilies, settings.fontFamilyCjk, settings.fontFamilyLatin]);
+  const fontOptions = useMemo(() => availableFonts.map((font) => ({
+    label: font,
+    style: { fontFamily: quoteFontFamilyName(font) },
+    value: font,
+  })), [availableFonts]);
 
   return (
     <section className="settings-view" aria-label="终端设置">
@@ -79,10 +85,28 @@ export function TerminalSettingsView({
           <div className="settings-sections">
             <SettingsGroup title="字体">
               <SettingRow label="英文字体" description="用于 ASCII 与 Latin 字符。">
-                <FontPicker value={settings.fontFamilyLatin} fonts={availableFonts} onChange={(fontFamilyLatin) => onChange({ fontFamilyLatin })} />
+                <Select
+                  ariaLabel="英文字体"
+                  className="font-select"
+                  emptyLabel="没有匹配的已安装字体"
+                  onChange={(fontFamilyLatin) => onChange({ fontFamilyLatin })}
+                  options={fontOptions}
+                  searchable
+                  searchPlaceholder="搜索已安装字体"
+                  value={settings.fontFamilyLatin}
+                />
               </SettingRow>
               <SettingRow label="中文字体" description="用于 CJK 字符的 fallback。">
-                <FontPicker value={settings.fontFamilyCjk} fonts={availableFonts} onChange={(fontFamilyCjk) => onChange({ fontFamilyCjk })} />
+                <Select
+                  ariaLabel="中文字体"
+                  className="font-select"
+                  emptyLabel="没有匹配的已安装字体"
+                  onChange={(fontFamilyCjk) => onChange({ fontFamilyCjk })}
+                  options={fontOptions}
+                  searchable
+                  searchPlaceholder="搜索已安装字体"
+                  value={settings.fontFamilyCjk}
+                />
               </SettingRow>
               <SettingRow label="字号" description={`${settings.fontSize}px`}>
                 <input aria-label="字号" type="range" min={11} max={22} step={1} value={settings.fontSize}
@@ -164,86 +188,6 @@ export function TerminalSettingsView({
         </div>
       </div>
     </section>
-  );
-}
-
-function FontPicker({
-  fonts,
-  onChange,
-  value,
-}: {
-  fonts: string[];
-  onChange: (value: string) => void;
-  value: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const pickerRef = useRef<HTMLDivElement>(null);
-  const filteredFonts = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    return normalizedQuery
-      ? fonts.filter((font) => font.toLocaleLowerCase().includes(normalizedQuery))
-      : fonts;
-  }, [fonts, query]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [open]);
-
-  const selectFont = (font: string) => {
-    onChange(font);
-    setOpen(false);
-    setQuery("");
-  };
-
-  return (
-    <div className="font-picker" ref={pickerRef}>
-      <button
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className="font-picker-trigger"
-        onClick={() => setOpen((current) => !current)}
-        type="button"
-      >
-        <span style={{ fontFamily: quoteFontFamilyName(value) }}>{value}</span>
-        <svg aria-hidden="true" viewBox="0 0 16 16"><path d="m4.5 6 3.5 3.5L11.5 6" /></svg>
-      </button>
-      {open && (
-        <div className="font-picker-menu">
-          <input
-            aria-label="搜索字体"
-            autoFocus
-            className="font-picker-search"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="搜索已安装字体"
-            spellCheck={false}
-            value={query}
-          />
-          <div className="font-picker-options" role="listbox" aria-label="已安装字体">
-            {filteredFonts.length > 0 ? filteredFonts.map((font) => (
-              <button
-                aria-selected={font === value}
-                className="font-picker-option"
-                data-active={font === value}
-                key={font}
-                onClick={() => selectFont(font)}
-                role="option"
-                style={{ fontFamily: quoteFontFamilyName(font) }}
-                type="button"
-              >
-                <span>{font}</span>
-                {font === value && <span aria-hidden="true">✓</span>}
-              </button>
-            )) : <div className="font-picker-empty">没有匹配的已安装字体</div>}
-          </div>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -351,7 +295,7 @@ function HighlightSetsEditor({
                     onClick={() => toggleSet(set.id)}
                     type="button"
                   >
-                    <svg aria-hidden="true" viewBox="0 0 16 16"><path d="m5.5 6.5 2.5 2.5 2.5-2.5" /></svg>
+                    <ChevronIcon />
                     <span className="highlight-set-file" aria-hidden="true">
                       <svg viewBox="0 0 18 18"><path d="M4.5 2.75h5.2l3.8 3.8v8.7H4.5z" /><path d="M9.5 2.75v4h4" /></svg>
                     </span>

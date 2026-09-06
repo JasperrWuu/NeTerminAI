@@ -1,0 +1,119 @@
+# NetOpsTools · 设备启动配置
+# 设备类型：AR
+# 管理接口：MEth0/0/0
+# 管理口 IP：90.32.106.121
+# VPN 实例：未启用
+# 已选功能：管理口路由、AAA、LLDP、Telnet、SSH、WEB、NETCONF、Info-Center、Firewall Log、SNMP、FTP、安全策略
+
+# ===== 管理口配置 =====
+return
+system-view
+interface MEth0/0/0
+undo ip binding vpn-instance _management_vpn_
+ip address 90.32.106.121 255.255.255.0
+quit
+
+# ===== 管理口路由 =====
+ip route-static 90.0.0.0 8 90.32.106.1
+
+# ===== AAA =====
+return
+system-view
+aaa
+local-user admin password irreversible-cipher Fixture@123
+local-user admin password-force-change disable
+local-user admin privilege level 3
+y
+local-user admin service-type telnet terminal ssh ftp http
+y
+local-user admin ftp-directory flash: read execute write
+quit
+user-interface maximum-vty 21
+user-interface vty 0 20
+authentication-mode aaa
+user privilege level 3
+protocol inbound all
+idle-timeout 0 0
+
+# ===== LLDP =====
+return
+system-view
+lldp enable
+
+# ===== Telnet =====
+return
+system-view
+telnet server-source all-interface
+y
+telnet ipv6 server-source all-interface
+y
+telnet server ip-block disable
+telnet server enable
+telnet ipv6 server enable
+
+# ===== SSH =====
+return
+system-view
+stelnet server enable
+ssh user admin
+ssh user admin authentication-type password
+ssh user admin service-type all
+ssh server-source all-interface
+y
+ssh server ip-block disable
+
+# ===== WEB =====
+return
+system-view
+web-manager timeout 1440
+web-manager enable port 8443
+undo web-manager captcha enable
+y
+web-manager security server-certificate server_vpnf.crt
+
+# ===== NETCONF =====
+return
+system-view
+netconf
+protocol inbound ssh port 830
+
+# ===== Info-Center =====
+return
+system-view
+info-center loghost source MEth0/0/0
+info-center loghost 192.168.1.3
+
+# ===== Firewall Log =====
+return
+system-view
+firewall log source 90.32.106.121 1617
+firewall log host 192.168.1.3 514
+firewall log session multi-host-mode concurrent
+firewall log session log-type syslog
+firewall log session new-session enable
+firewall log service log-type syslog
+
+# ===== SNMP =====
+return
+system-view
+snmp-agent
+snmp-agent community read cipher Fixture@123
+snmp-agent community write cipher Fixture@123
+snmp-agent sys-info version all
+snmp-agent target-host trap address udp-domain 192.168.1.3 udp-port 162 params securityname cipher Fixture@123 v2c
+snmp-agent trap enable
+snmp-agent trap source MEth0/0/0
+snmp-agent protocol source-interface MEth0/0/0
+
+# ===== FTP =====
+return
+system-view
+ftp server enable
+
+# ===== 安全策略 =====
+return
+system-view
+security-policy
+default action permit
+y
+return

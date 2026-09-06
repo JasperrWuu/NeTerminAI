@@ -41,7 +41,17 @@ export function WorkspaceIcon(props: IconProps) {
 export function ToolsIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
-      <path d="M14.7 5.2a4.4 4.4 0 0 0-5.2 5.6L4.8 15.5a2 2 0 1 0 2.8 2.8l4.7-4.7a4.4 4.4 0 0 0 5.6-5.2l-2.7 2.7-2.4-.6-.7-2.5 2.6-2.8Z" />
+      <rect x="3" y="7" width="18" height="13" rx="3" />
+      <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7M3 12h18M8 11v3m8-3v3" />
+    </IconFrame>
+  );
+}
+
+export function ConfigurationIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <rect x="4" y="3" width="16" height="18" rx="3" />
+      <path d="M8 8h8M8 12h8M8 16h8M10 6.5v3m4 1v3m-4 1v3" />
     </IconFrame>
   );
 }
@@ -136,6 +146,14 @@ export function CloseIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
       <path d="m7 7 10 10M17 7 7 17" />
+    </IconFrame>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="M5 7h14M10 4h4l1 3H9l1-3ZM7 7l.8 13h8.4L17 7M10 10v6M14 10v6" />
     </IconFrame>
   );
 }

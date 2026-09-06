@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { SavedConnectionSession } from "../connections/types";
-import { CloseIcon, ConnectionProtocolIcon, EditIcon, PlusIcon } from "../workbench/icons";
+import { Select } from "../ui/Select";
+import { CloseIcon, ConnectionIcon, ConnectionProtocolIcon, EditIcon, PlusIcon } from "../workbench/icons";
 import type { Project, ProjectContext, ProjectContextPatch } from "./types";
 
 interface ProjectSidebarProps {
@@ -199,10 +200,21 @@ function ProjectDetails({
           {linkedConnections.length === 0 && <p className="project-detail-empty">尚未添加设备</p>}
         </div>
         <div className="project-device-add">
-          <select aria-label="选择设备" onChange={(event) => onChangeDeviceToAdd(event.target.value)} value={deviceToAdd}>
-            <option value="">选择已保存设备</option>
-            {availableConnections.map((connection) => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
-          </select>
+          <Select
+            ariaLabel="选择已保存设备"
+            className="project-device-select"
+            emptyLabel="暂无可添加设备"
+            onChange={onChangeDeviceToAdd}
+            options={availableConnections.map((connection) => ({
+              description: projectConnectionDescription(connection),
+              icon: <ConnectionProtocolIcon kind={connection.kind} />,
+              label: connection.name,
+              value: connection.id,
+            }))}
+            placeholder="选择已保存设备"
+            placeholderIcon={<ConnectionIcon />}
+            value={deviceToAdd}
+          />
           <button aria-label="添加设备" disabled={!deviceToAdd} onClick={onAddDevice} title="添加设备" type="button"><PlusIcon /></button>
         </div>
       </div>
@@ -274,6 +286,11 @@ function lines(value: string) {
 
 function connectionKind(session: SavedConnectionSession): "ssh" | "telnet" | "serial" | "rdp" {
   return session.kind;
+}
+
+function projectConnectionDescription(session: SavedConnectionSession) {
+  if (session.kind === "serial") return `${session.portName} · ${session.baudRate}`;
+  return `${session.host}:${session.port}`;
 }
 
 function formatDate(value: number) {

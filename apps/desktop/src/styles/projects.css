@@ -51,8 +51,7 @@
 }
 .project-create-form input,
 .project-context-editor input,
-.project-context-editor textarea,
-.project-device-add select {
+.project-context-editor textarea {
   background: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -64,8 +63,7 @@
 }
 .project-create-form input:focus,
 .project-context-editor input:focus,
-.project-context-editor textarea:focus,
-.project-device-add select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.project-context-editor textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .project-create-form > div,
 .project-context-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .project-form-primary,
@@ -125,7 +123,6 @@
 .project-device-icon svg { height: 15px; width: 15px; }
 .project-detail-empty { color: var(--text-tertiary); font-size: 11px; margin: 0; }
 .project-device-add { display: flex; gap: 5px; }
-.project-device-add select { flex: 1; font-size: 11px; min-width: 0; }
 .project-device-add > button { background: var(--accent-soft); color: var(--accent-strong); flex: 0 0 30px; }
 .project-device-add > button:disabled { cursor: default; opacity: .45; }
 
