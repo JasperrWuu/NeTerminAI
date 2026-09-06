@@ -377,13 +377,36 @@ function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionVi
                 <span className="automation-run-state">{runStatusLabel(run.status)}</span>
                 {run.message && <span className="automation-run-message" title={run.message}>{run.message}</span>}
               </div>
-              {run.stdout && <pre className="automation-run-output">{run.stdout}</pre>}
-              {run.stderr && <pre className="automation-run-output automation-run-stderr">{run.stderr}</pre>}
+              {run.stdout && <RunOutputBlock>{run.stdout}</RunOutputBlock>}
+              {run.stderr && <RunOutputBlock className="automation-run-stderr">{run.stderr}</RunOutputBlock>}
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function RunOutputBlock({ children, className = "" }: { children: string; className?: string }) {
+  const outputRef = useRef<HTMLPreElement>(null);
+  const stickToBottomRef = useRef(true);
+
+  useEffect(() => {
+    const output = outputRef.current;
+    if (output && stickToBottomRef.current) output.scrollTop = output.scrollHeight;
+  }, [children]);
+
+  return (
+    <pre
+      className={`automation-run-output${className ? ` ${className}` : ""}`}
+      onScroll={(event) => {
+        const output = event.currentTarget;
+        stickToBottomRef.current = output.scrollHeight - output.scrollTop - output.clientHeight < 16;
+      }}
+      ref={outputRef}
+    >
+      {children}
+    </pre>
   );
 }
 

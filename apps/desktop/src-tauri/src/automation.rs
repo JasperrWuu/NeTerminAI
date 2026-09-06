@@ -106,6 +106,7 @@ struct AutomationOutputSession {
     command_lock: Arc<Mutex<()>>,
     prompt: Option<String>,
     cursor: u64,
+    closed: bool,
 }
 
 pub(crate) struct AutomationOutputSubscription {
@@ -129,8 +130,11 @@ impl AutomationOutputHub {
                     command_lock: Arc::new(Mutex::new(())),
                     prompt: None,
                     cursor: 0,
+                    closed: false,
                 });
-        session.subscribers.insert(subscriber_id, sender);
+        if !session.closed {
+            session.subscribers.insert(subscriber_id, sender);
+        }
         AutomationOutputSubscription {
             receiver,
             hub: self.clone(),
@@ -151,7 +155,11 @@ impl AutomationOutputHub {
                         command_lock: Arc::new(Mutex::new(())),
                         prompt: None,
                         cursor: 0,
+                        closed: false,
                     });
+            if session.closed {
+                return;
+            }
             session.cursor = session.cursor.saturating_add(1);
             (
                 session
@@ -190,6 +198,7 @@ impl AutomationOutputHub {
                 command_lock: Arc::new(Mutex::new(())),
                 prompt: None,
                 cursor: 0,
+                closed: false,
             })
             .command_lock
             .clone()
@@ -211,8 +220,25 @@ impl AutomationOutputHub {
                     command_lock: Arc::new(Mutex::new(())),
                     prompt: None,
                     cursor: 0,
+                    closed: false,
                 });
         session.prompt = Some(prompt);
+    }
+
+    pub(crate) fn close_session(&self, session_id: &str) {
+        let mut sessions = lock_unpoisoned(&self.inner.sessions);
+        let session =
+            sessions
+                .entry(session_id.to_owned())
+                .or_insert_with(|| AutomationOutputSession {
+                    subscribers: HashMap::new(),
+                    command_lock: Arc::new(Mutex::new(())),
+                    prompt: None,
+                    cursor: 0,
+                    closed: false,
+                });
+        session.closed = true;
+        session.subscribers.clear();
     }
 
     fn remove_subscriber(&self, session_id: &str, subscriber_id: u64) {
@@ -241,6 +267,15 @@ impl Drop for AutomationOutputSubscription {
 
 pub(crate) fn publish_output(app: &AppHandle, session_id: &str, data: &[u8]) {
     app.state::<AutomationOutputHub>().publish(session_id, data);
+}
+
+/// Notify automation collectors that a terminal output stream has ended.
+///
+/// The output pump owns this signal because it is the last consumer in the
+/// session's stream. Clearing subscribers here wakes any command transaction
+/// that is waiting for a prompt instead of leaving it blocked until timeout.
+pub(crate) fn close_output_session(app: &AppHandle, session_id: &str) {
+    app.state::<AutomationOutputHub>().close_session(session_id);
 }
 
 struct AutomationRunRecord {
@@ -788,6 +823,13 @@ impl CommandFailure {
         }
     }
 
+    fn busy(message: impl Into<String>) -> Self {
+        Self {
+            code: "session_busy",
+            message: message.into(),
+        }
+    }
+
     fn io(message: impl Into<String>) -> Self {
         Self {
             code: "io_error",
@@ -810,19 +852,15 @@ fn execute_command(
         .ok_or_else(|| CommandFailure::session_not_found("目标终端已关闭或尚未建立连接"))?;
     let timeout = parse_command_timeout(message.timeout)?;
     let deadline = Instant::now() + timeout;
+    let transaction_started = Instant::now();
+    transaction_log(target, session_id, "started", transaction_started);
     if control.cancelled.load(Ordering::Acquire) {
         return Err(CommandFailure::cancelled("自动化运行已停止"));
     }
 
     let output_hub = app.state::<AutomationOutputHub>().clone();
     let command_lock = output_hub.command_lock(session_id);
-    let _lock = acquire_command_lock(
-        &command_lock,
-        control,
-        deadline,
-        session_id,
-        &message.command,
-    )?;
+    let _lock = acquire_command_lock(&command_lock, control, session_id, &message.command)?;
     if control.cancelled.load(Ordering::Acquire) {
         return Err(CommandFailure::cancelled("自动化运行已停止"));
     }
@@ -838,10 +876,12 @@ fn execute_command(
 
     loop {
         if control.cancelled.load(Ordering::Acquire) {
+            transaction_log(target, session_id, "cancelled", transaction_started);
             return Err(CommandFailure::cancelled("自动化运行已停止"));
         }
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
+            transaction_log(target, session_id, "timeout", transaction_started);
             return Err(CommandFailure::timeout(format!(
                 "命令 `{}` 在终端 {session_id} 上等待超过 {} 秒",
                 message.command,
@@ -861,15 +901,23 @@ fn execute_command(
                             CommandFailure::io(format!("发送分页确认到终端失败：{error}"))
                         })?;
                         collector.pages_requested += 1;
+                        transaction_log(target, session_id, "paging", transaction_started);
                     }
                 }
                 if let Some(prompt) = signal.prompt {
                     output_hub.set_prompt(session_id, prompt.clone());
+                    transaction_log(target, session_id, "completed", transaction_started);
                     return Ok(collector.normalized_output(Some(&prompt)));
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => {
+                transaction_log(
+                    target,
+                    session_id,
+                    "output_disconnected",
+                    transaction_started,
+                );
                 return Err(CommandFailure::io("终端输出通道已关闭"));
             }
         }
@@ -907,24 +955,18 @@ fn parse_command_timeout(value: Option<f64>) -> Result<Duration, CommandFailure>
 fn acquire_command_lock<'a>(
     lock: &'a Mutex<()>,
     control: &AutomationRunControl,
-    deadline: Instant,
     session_id: &str,
     command: &str,
 ) -> Result<std::sync::MutexGuard<'a, ()>, CommandFailure> {
-    loop {
-        if control.cancelled.load(Ordering::Acquire) {
-            return Err(CommandFailure::cancelled("自动化运行已停止"));
-        }
-        if Instant::now() >= deadline {
-            return Err(CommandFailure::timeout(format!(
-                "终端 {session_id} 正在执行其他命令，等待 `{command}` 超时"
-            )));
-        }
-        match lock.try_lock() {
-            Ok(guard) => return Ok(guard),
-            Err(TryLockError::WouldBlock) => thread::sleep(COMMAND_POLL),
-            Err(TryLockError::Poisoned(poisoned)) => return Ok(poisoned.into_inner()),
-        }
+    if control.cancelled.load(Ordering::Acquire) {
+        return Err(CommandFailure::cancelled("自动化运行已停止"));
+    }
+    match lock.try_lock() {
+        Ok(guard) => Ok(guard),
+        Err(TryLockError::WouldBlock) => Err(CommandFailure::busy(format!(
+            "终端 {session_id} 正在执行其他命令，无法同时执行 `{command}`"
+        ))),
+        Err(TryLockError::Poisoned(poisoned)) => Ok(poisoned.into_inner()),
     }
 }
 
@@ -956,6 +998,8 @@ struct CommandCollector {
     command: String,
     initial_prompt: Option<String>,
     pages_requested: usize,
+    more_scan_offset: usize,
+    more_markers_seen: usize,
     saw_output: bool,
 }
 
@@ -966,6 +1010,8 @@ impl CommandCollector {
             command: command.to_owned(),
             initial_prompt,
             pages_requested: 0,
+            more_scan_offset: 0,
+            more_markers_seen: 0,
             saw_output: false,
         }
     }
@@ -980,9 +1026,9 @@ impl CommandCollector {
             )));
         }
         self.raw.extend_from_slice(chunk);
+        self.scan_more_markers();
         let tail_start = self.raw.len().saturating_sub(8 * 1024);
         let tail = normalize_terminal_text(&self.raw[tail_start..]);
-        let more_markers = count_more_markers(&tail);
         let prompt = if self.saw_output {
             detect_prompt(&tail).filter(|prompt| self.completion_ready(&tail, prompt))
         } else {
@@ -990,8 +1036,26 @@ impl CommandCollector {
         };
         Ok(CollectorSignal {
             prompt,
-            more_markers,
+            more_markers: self.more_markers_seen,
         })
+    }
+
+    fn scan_more_markers(&mut self) {
+        let pending = &self.raw[self.more_scan_offset..];
+        let Some(end) = pending
+            .iter()
+            .enumerate()
+            .filter(|(_, byte)| matches!(*byte, b'\r' | b'\n'))
+            .map(|(index, _)| index + 1)
+            .next_back()
+        else {
+            return;
+        };
+        let complete_lines = normalize_terminal_text(&pending[..end]);
+        self.more_markers_seen = self
+            .more_markers_seen
+            .saturating_add(count_more_markers(&complete_lines));
+        self.more_scan_offset += end;
     }
 
     fn normalized_output(&self, final_prompt: Option<&str>) -> String {
@@ -1060,7 +1124,15 @@ fn normalize_terminal_text(bytes: &[u8]) -> String {
             continue;
         }
         match byte {
-            b'\r' => index += 1,
+            b'\r' => {
+                index += 1;
+                // CRLF is handled by the following LF. A bare CR is common
+                // on serial/Telnet devices and still represents a line break
+                // for command-output normalization.
+                if bytes.get(index) != Some(&b'\n') && !output.ends_with('\n') {
+                    output.push('\n');
+                }
+            }
             b'\n' | b'\t' => {
                 output.push(byte as char);
                 index += 1;
@@ -1146,6 +1218,22 @@ fn normalize_command_output(
     }
     if lines
         .first()
+        .is_some_and(|line| initial_prompt.is_some_and(|prompt| line.trim() == prompt))
+    {
+        lines.remove(0);
+        while lines.first().is_some_and(|line| line.trim().is_empty()) {
+            lines.remove(0);
+        }
+    } else if lines.len() > 1
+        && detect_prompt(lines[0].trim()).is_some()
+        && is_command_echo(&lines[1], command, initial_prompt)
+    {
+        // Some serial/Telnet servers put the prompt and command echo on
+        // separate lines. Treat that leading prompt as terminal framing too.
+        lines.remove(0);
+    }
+    if lines
+        .first()
         .is_some_and(|line| is_command_echo(line, command, initial_prompt))
     {
         lines.remove(0);
@@ -1199,6 +1287,24 @@ fn emit_output_worker(
             data: String::from_utf8_lossy(data).into_owned(),
         },
     );
+}
+
+fn transaction_log(
+    target: &AutomationTargetRequest,
+    session_id: &str,
+    stage: &str,
+    started_at: Instant,
+) {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[neterminai][automation] session={} type={} stage={} duration_ms={} command_transaction",
+        session_id,
+        target.connection_type,
+        stage,
+        started_at.elapsed().as_millis()
+    );
+    #[cfg(not(debug_assertions))]
+    let _ = (target, session_id, stage, started_at);
 }
 
 fn write_script_file(run_id: &str, code: &str) -> Result<String, String> {
@@ -1365,6 +1471,65 @@ mod tests {
     }
 
     #[test]
+    fn prompt_normalization_handles_ansi_and_line_endings() {
+        let raw =
+            b"\x1b[32m<FW1>\x1b[0mdisplay health\r\n\x1b[36mNormal\x1b[0m\r\x1b[?25h<FW1>\x1b[0m\r";
+        assert_eq!(
+            normalize_command_output(raw, "display health", Some("<FW1>"), Some("<FW1>")),
+            "Normal"
+        );
+    }
+
+    #[test]
+    fn prompt_detector_ignores_prompt_like_output_lines() {
+        let text = "display output\n[not a prompt, still data]\n[FW1]";
+        assert_eq!(detect_prompt(text), Some("[FW1]".to_owned()));
+        assert_eq!(
+            normalize_command_output(
+                b"<FW1>display output\r\n[not a prompt, still data]\r\n<FW1>\r\n",
+                "display output",
+                Some("<FW1>"),
+                Some("<FW1>"),
+            ),
+            "[not a prompt, still data]"
+        );
+    }
+
+    #[test]
+    fn prompt_detector_handles_chunks_split_inside_prompt_and_echo() {
+        let mut collector = CommandCollector::new("display health", Some("<FW1>".to_owned()));
+        assert!(
+            collector
+                .push(b"<FW1>display hea")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        assert!(
+            collector
+                .push(b"lth\r\nNormal\r\n<FW")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        let signal = collector.push(b"1>\r\n").unwrap();
+        assert_eq!(signal.prompt.as_deref(), Some("<FW1>"));
+        assert_eq!(
+            collector.normalized_output(signal.prompt.as_deref()),
+            "Normal"
+        );
+    }
+
+    #[test]
+    fn command_echo_normalization_handles_prompt_on_a_separate_line() {
+        let raw = b"<FW1>\r\ndisplay health\r\nNormal\r\n<FW1>\r\n";
+        assert_eq!(
+            normalize_command_output(raw, "display health", Some("<FW1>"), Some("<FW1>")),
+            "Normal"
+        );
+    }
+
+    #[test]
     fn prompt_detector_accepts_view_prompt_changes() {
         assert_eq!(detect_prompt("[FW1]\n"), Some("[FW1]".to_owned()));
         assert_eq!(
@@ -1372,15 +1537,63 @@ mod tests {
             Some("[FW1-GigabitEthernet0/0/1]".to_owned())
         );
         assert_eq!(detect_prompt("FW1 output\n"), None);
+        assert_eq!(
+            normalize_command_output(
+                b"<FW1>system-view\nEnter system view\n[FW1]\n",
+                "system-view",
+                Some("<FW1>"),
+                Some("[FW1]"),
+            ),
+            "Enter system view"
+        );
+        assert_eq!(
+            normalize_command_output(
+                b"[FW1]interface GE0/0/1\r\n[FW1-GigabitEthernet0/0/1]\r\n",
+                "interface GE0/0/1",
+                Some("[FW1]"),
+                Some("[FW1-GigabitEthernet0/0/1]"),
+            ),
+            ""
+        );
     }
 
     #[test]
     fn more_markers_are_detected_and_removed_from_output() {
-        let raw = b"<FW1>display current-configuration\r\nline one\r\n---- More ----\r\nline two\r\n<FW1>\r\n";
+        let raw = b"<FW1>display current-configuration\r\nline one\r\n\x1b[7m---- More ----\x1b[0m\r\nline two\r\n<FW1>\r\n";
         let normalized =
             normalize_command_output(raw, "display current-configuration", None, Some("<FW1>"));
         assert_eq!(normalized, "line one\nline two");
         assert_eq!(count_more_markers(&normalize_terminal_text(raw)), 1);
+    }
+
+    #[test]
+    fn more_markers_are_counted_across_chunks_without_tail_double_counting() {
+        let mut collector = CommandCollector::new("display current-configuration", None);
+        let first = collector
+            .push(b"<FW1>display current-configuration\r\nline one\r\n\x1b[7m---- More")
+            .unwrap();
+        assert_eq!(first.more_markers, 0);
+        let second = collector.push(b" ----\x1b[0m\r\nline two\r\n").unwrap();
+        assert_eq!(second.more_markers, 1);
+
+        let mut large_chunk = vec![b'x'; 9 * 1024];
+        large_chunk.extend_from_slice(b"\r\n---- More ----\r\n");
+        let third = collector.push(&large_chunk).unwrap();
+        assert_eq!(third.more_markers, 2);
+    }
+
+    #[test]
+    fn cli_error_text_is_returned_as_output_when_prompt_returns() {
+        let raw = b"<FW1>this-command-does-not-exist\r\nError: Unrecognized command\r\n<FW1>\r\n";
+        assert_eq!(
+            normalize_command_output(
+                raw,
+                "this-command-does-not-exist",
+                Some("<FW1>"),
+                Some("<FW1>"),
+            ),
+            "Error: Unrecognized command"
+        );
     }
 
     #[test]
@@ -1397,6 +1610,17 @@ mod tests {
     }
 
     #[test]
+    fn closing_output_hub_unblocks_waiting_subscriber() {
+        let hub = AutomationOutputHub::default();
+        let subscription = hub.subscribe("session-a");
+        hub.close_session("session-a");
+        assert!(matches!(
+            subscription.recv_timeout(Duration::from_millis(20)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+    }
+
+    #[test]
     fn command_timeout_is_bounded_and_defaults_to_thirty_seconds() {
         assert_eq!(
             parse_command_timeout(None).unwrap(),
@@ -1405,5 +1629,26 @@ mod tests {
         assert!(parse_command_timeout(Some(0.0)).is_err());
         assert!(parse_command_timeout(Some(f64::NAN)).is_err());
         assert!(parse_command_timeout(Some(MAX_COMMAND_TIMEOUT.as_secs_f64() + 1.0)).is_err());
+    }
+
+    #[test]
+    fn command_collector_rejects_unbounded_output() {
+        let mut collector = CommandCollector::new("display huge", None);
+        let chunk = vec![b'x'; MAX_COLLECTED_OUTPUT_BYTES];
+        collector.push(&chunk).unwrap();
+        assert!(collector.push(b"x").is_err());
+    }
+
+    #[test]
+    fn command_lock_reports_busy_without_leaking_the_lock() {
+        let lock = Mutex::new(());
+        let _guard = lock.lock().unwrap();
+        let control = AutomationRunControl {
+            cancelled: AtomicBool::new(false),
+            child_pids: Mutex::new(HashSet::new()),
+        };
+        let error = acquire_command_lock(&lock, &control, "session-1", "display health")
+            .expect_err("a held session lock should be rejected");
+        assert_eq!(error.code, "session_busy");
     }
 }

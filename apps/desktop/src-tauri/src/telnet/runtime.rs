@@ -1088,6 +1088,7 @@ fn run_output_pump(
     cleanup_sender: Sender<CleanupRequest>,
 ) {
     if !start_gate.wait(&control.cancellation) {
+        crate::automation::close_output_session(&app, &session_id);
         return;
     }
     while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
@@ -1112,13 +1113,14 @@ fn run_output_pump(
             );
             control.request_close_with(DisconnectReason::ReadFailed);
             let _ = cleanup_sender.send(CleanupRequest::Session {
-                session_id,
+                session_id: session_id.clone(),
                 instance: Arc::clone(&control.instance),
                 deadline: Instant::now() + SESSION_CLOSE_TIMEOUT,
             });
             break;
         }
     }
+    crate::automation::close_output_session(&app, &session_id);
 }
 
 fn shutdown_resources(resources: TelnetResources) {
