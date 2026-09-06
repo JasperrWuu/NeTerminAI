@@ -1,8 +1,8 @@
 export const AUTOMATION_DRAFT_KEY = "neterminai.automation.v1";
 const AUTOMATION_SCHEMA_VERSION = 1;
 const DEFAULT_CODE = `for _ in range(3):
-    send("display health")
-    time.sleep(1)
+    output = send("display health")
+    print(output)
 `;
 
 export type AutomationTarget =

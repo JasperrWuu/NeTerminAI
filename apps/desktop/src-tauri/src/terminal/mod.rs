@@ -1148,6 +1148,7 @@ fn run_terminal_output_pump(
         if !control.writable() {
             break;
         }
+        crate::automation::publish_output(&app, &session_id, &batch);
         if app
             .emit(
                 output_event,

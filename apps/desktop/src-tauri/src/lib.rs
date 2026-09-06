@@ -21,6 +21,7 @@ pub fn run() {
         .manage(serial::SerialManager::default())
         .manage(rdp::RdpManager::default())
         .manage(ai_process::AiProcessManager::default())
+        .manage(automation::AutomationOutputHub::default())
         .manage(automation::AutomationManager::default())
         .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![

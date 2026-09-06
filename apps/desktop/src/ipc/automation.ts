@@ -4,6 +4,7 @@ import { normalizeIpcError } from "./errors.ts";
 import type { TerminalConnectionType } from "./types.ts";
 
 export type AutomationSessionRunStatus = "pending" | "running" | "success" | "error" | "cancelled";
+export type AutomationOutputStream = "stdout" | "stderr";
 
 export interface AutomationTargetRequest {
   tabId: string;
@@ -25,6 +26,15 @@ export interface AutomationStatusEvent {
   sessionId: string | null;
   status: AutomationSessionRunStatus;
   message?: string;
+}
+
+export interface AutomationOutputEvent {
+  runId: string;
+  scriptId: string;
+  tabId: string;
+  sessionId: string | null;
+  stream: AutomationOutputStream;
+  data: string;
 }
 
 type Unlisten = () => void;
@@ -50,6 +60,15 @@ export const automationApi = {
       throw normalizeIpcError(error);
     });
   },
+
+  subscribeOutput(onEvent: (event: AutomationOutputEvent) => void): Promise<Unlisten> {
+    return listen<unknown>("automation:output", ({ payload }) => {
+      const event = decodeAutomationOutputEvent(payload);
+      if (event) onEvent(event);
+    }).catch((error: unknown) => {
+      throw normalizeIpcError(error);
+    });
+  },
 };
 
 export function decodeAutomationStatusEvent(value: unknown): AutomationStatusEvent | null {
@@ -65,6 +84,23 @@ export function decodeAutomationStatusEvent(value: unknown): AutomationStatusEve
     sessionId: typeof value.sessionId === "string" ? value.sessionId : null,
     status: value.status,
     ...(typeof value.message === "string" ? { message: value.message } : {}),
+  };
+}
+
+export function decodeAutomationOutputEvent(value: unknown): AutomationOutputEvent | null {
+  if (!isRecord(value)
+    || typeof value.runId !== "string"
+    || typeof value.scriptId !== "string"
+    || typeof value.tabId !== "string"
+    || typeof value.data !== "string"
+    || !isAutomationOutputStream(value.stream)) return null;
+  return {
+    runId: value.runId,
+    scriptId: value.scriptId,
+    tabId: value.tabId,
+    sessionId: typeof value.sessionId === "string" ? value.sessionId : null,
+    stream: value.stream,
+    data: value.data,
   };
 }
 
@@ -87,6 +123,10 @@ function isAutomationStatus(value: unknown): value is AutomationSessionRunStatus
     || value === "success"
     || value === "error"
     || value === "cancelled";
+}
+
+function isAutomationOutputStream(value: unknown): value is AutomationOutputStream {
+  return value === "stdout" || value === "stderr";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

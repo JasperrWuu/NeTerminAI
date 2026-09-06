@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { automationApi, type AutomationSessionRunStatus, type AutomationStatusEvent, type AutomationTargetRequest } from "../ipc/automation";
+import {
+  automationApi,
+  type AutomationOutputEvent,
+  type AutomationSessionRunStatus,
+  type AutomationStatusEvent,
+  type AutomationTargetRequest,
+} from "../ipc/automation";
 import type { TerminalCapability, TerminalSessionDescriptor } from "../capabilities/terminal";
 import { MultiSelect, type MultiSelectOption } from "../ui/MultiSelect";
 import { Select, type SelectOption } from "../ui/Select";
@@ -19,8 +25,11 @@ interface AutomationPanelProps {
 
 interface SessionRunView {
   tabId: string;
+  sessionId: string | null;
   status: AutomationSessionRunStatus;
   message?: string;
+  stdout: string;
+  stderr: string;
 }
 
 interface ScriptExecutionView {
@@ -33,6 +42,8 @@ const TARGET_MODE_OPTIONS: readonly SelectOption<AutomationTarget["mode"]>[] = [
   { value: "active", label: "当前活动终端" },
   { value: "sessions", label: "选择多个终端" },
 ];
+
+const MAX_RUN_OUTPUT_CHARS = 200_000;
 
 export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps) {
   const { scripts, setScripts } = useAutomationDrafts();
@@ -67,19 +78,29 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
   useEffect(() => {
     mountedRef.current = true;
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    let statusUnlisten: (() => void) | undefined;
+    let outputUnlisten: (() => void) | undefined;
     void automationApi.subscribeStatus((event) => {
       if (!disposed) setExecutions((current) => reduceStatusEvent(current, event));
     }).then((cleanup) => {
       if (disposed) cleanup();
-      else unlisten = cleanup;
+      else statusUnlisten = cleanup;
     }).catch(() => {
       // Browser previews do not expose Tauri events; the start action reports that state.
+    });
+    void automationApi.subscribeOutput((event) => {
+      if (!disposed) setExecutions((current) => reduceOutputEvent(current, event));
+    }).then((cleanup) => {
+      if (disposed) cleanup();
+      else outputUnlisten = cleanup;
+    }).catch(() => {
+      // Browser previews do not expose Tauri events.
     });
     return () => {
       disposed = true;
       mountedRef.current = false;
-      unlisten?.();
+      statusUnlisten?.();
+      outputUnlisten?.();
       Object.values(executionRef.current).forEach((execution) => {
         if (execution.status === "running") void automationApi.stop(execution.runId).catch(() => undefined);
       });
@@ -143,7 +164,10 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
         status: "running",
         runs: targetRequests.map((target) => ({
           tabId: target.tabId,
+          sessionId: target.sessionId,
           status: target.sessionId ? "pending" : "error",
+          stdout: "",
+          stderr: "",
           ...(target.sessionId ? {} : { message: "目标终端已关闭或尚未建立连接" }),
         })),
       },
@@ -333,7 +357,7 @@ function AutomationScriptBlock({
 }
 
 function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionView; sessions: readonly TerminalSessionDescriptor[] }) {
-  const completed = execution.runs.filter((run) => run.status === "success").length;
+  const completed = execution.runs.filter((run) => run.status === "success" || run.status === "error" || run.status === "cancelled").length;
   return (
     <div className="automation-execution" aria-live="polite">
       <div className="automation-execution-heading">
@@ -344,13 +368,17 @@ function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionVi
         {execution.runs.map((run) => {
           const session = sessions.find((candidate) => candidate.tabId === run.tabId);
           return (
-            <div className="automation-run-row" key={run.tabId}>
-              <span className={`automation-status-icon automation-status-${run.status}`}>
-                {run.status === "success" ? <CheckIcon /> : run.status === "running" ? <i /> : run.status === "error" ? "!" : run.status === "cancelled" ? "–" : "·"}
-              </span>
-              <span className="automation-run-name">{session?.title ?? "已关闭终端"}</span>
-              <span className="automation-run-state">{runStatusLabel(run.status)}</span>
-              {run.message && <span className="automation-run-message" title={run.message}>{run.message}</span>}
+            <div key={run.tabId}>
+              <div className="automation-run-row">
+                <span className={`automation-status-icon automation-status-${run.status}`}>
+                  {run.status === "success" ? <CheckIcon /> : run.status === "running" ? <i /> : run.status === "error" ? "!" : run.status === "cancelled" ? "–" : "·"}
+                </span>
+                <span className="automation-run-name">{session?.title ?? "已关闭终端"}</span>
+                <span className="automation-run-state">{runStatusLabel(run.status)}</span>
+                {run.message && <span className="automation-run-message" title={run.message}>{run.message}</span>}
+              </div>
+              {run.stdout && <pre className="automation-run-output">{run.stdout}</pre>}
+              {run.stderr && <pre className="automation-run-output automation-run-stderr">{run.stderr}</pre>}
             </div>
           );
         })}
@@ -517,11 +545,27 @@ function connectionSummary(session: TerminalSessionDescriptor) {
 function reduceStatusEvent(current: Record<string, ScriptExecutionView>, event: AutomationStatusEvent) {
   const execution = current[event.scriptId];
   if (!execution || execution.runId !== event.runId) return current;
-  const runs = execution.runs.map((run) => run.tabId === event.tabId
+  const runs = execution.runs.map((run) => run.tabId === event.tabId && run.sessionId === event.sessionId
     ? { ...run, status: event.status, ...(event.message ? { message: event.message } : {}) }
     : run);
   const status = aggregateStatus(runs);
   return { ...current, [event.scriptId]: { ...execution, runs, status } };
+}
+
+function reduceOutputEvent(current: Record<string, ScriptExecutionView>, event: AutomationOutputEvent) {
+  const execution = current[event.scriptId];
+  if (!execution || execution.runId !== event.runId) return current;
+  const runs = execution.runs.map((run) => {
+    if (run.tabId !== event.tabId
+      || run.sessionId !== event.sessionId
+      || run.status === "success"
+      || run.status === "error"
+      || run.status === "cancelled") return run;
+    const key = event.stream === "stderr" ? "stderr" : "stdout";
+    const nextOutput = `${run[key]}${event.data}`;
+    return { ...run, [key]: nextOutput.length > MAX_RUN_OUTPUT_CHARS ? nextOutput.slice(-MAX_RUN_OUTPUT_CHARS) : nextOutput };
+  });
+  return { ...current, [event.scriptId]: { ...execution, runs } };
 }
 
 function aggregateStatus(runs: readonly SessionRunView[]): ScriptExecutionView["status"] {

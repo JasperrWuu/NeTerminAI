@@ -11,7 +11,7 @@ test("automation drafts default to an active terminal and usable Python", () => 
   assert.equal(script.name, "脚本 2");
   assert.deepEqual(script.target, { mode: "active" });
   assert.match(script.code, /send\(/u);
-  assert.match(script.code, /time\.sleep/u);
+  assert.match(script.code, /print\(output\)/u);
 });
 
 test("automation target drafts keep logical tab identities and remove duplicates", () => {

@@ -1094,6 +1094,7 @@ fn run_output_pump(
         if !control.writable() {
             break;
         }
+        crate::automation::publish_output(&app, &session_id, &batch);
         if app
             .emit(
                 OUTPUT_EVENT,

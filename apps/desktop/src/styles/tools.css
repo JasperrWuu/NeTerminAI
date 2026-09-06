@@ -282,6 +282,8 @@
 .automation-run-name { color: var(--text-primary); flex: 0 1 auto; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .automation-run-state { color: var(--text-tertiary); flex: 0 0 auto; }
 .automation-run-message { color: var(--danger); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-run-output { margin: 2px 0 7px 22px; max-height: 180px; overflow: auto; padding: 7px 9px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-canvas); color: var(--text-secondary); font: 11px/1.45 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.automation-run-stderr { color: var(--danger); }
 @keyframes automation-spin { to { transform: rotate(360deg); } }
 @media (max-width: 420px) {
   .automation-heading { display: grid; }
