@@ -297,6 +297,35 @@
   text-align: center;
 }
 
+.multi-select-trigger .select-chevron svg {
+  height: 16px;
+  width: 16px;
+}
+
+.multi-select-root .select-chevron { transform: rotate(90deg); }
+.multi-select-root[data-open="true"] .select-chevron { transform: rotate(270deg); }
+
+.multi-select-option[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.multi-select-check {
+  align-items: center;
+  color: var(--accent-strong);
+  display: inline-flex;
+  flex: 0 0 16px;
+  height: 16px;
+  justify-content: center;
+  margin-left: auto;
+  width: 16px;
+}
+
+.multi-select-check svg {
+  height: 15px;
+  width: 15px;
+}
+
 .settings-select {
   flex: 0 1 220px;
   min-width: 180px;

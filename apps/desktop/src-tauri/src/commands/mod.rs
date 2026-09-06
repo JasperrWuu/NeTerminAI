@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod automation;
 pub mod fonts;
 pub mod rdp;
 pub mod serial;

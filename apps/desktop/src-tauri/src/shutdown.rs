@@ -10,8 +10,8 @@ use std::{
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    ai_process::AiProcessManager, rdp::RdpManager, serial::SerialManager, telnet::TelnetManager,
-    terminal::TerminalManager,
+    ai_process::AiProcessManager, automation::AutomationManager, rdp::RdpManager,
+    serial::SerialManager, telnet::TelnetManager, terminal::TerminalManager,
 };
 
 const GLOBAL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -53,7 +53,9 @@ impl ShutdownCoordinator {
             .spawn(move || {
                 let deadline = Instant::now() + GLOBAL_SHUTDOWN_TIMEOUT;
                 let ai_processes = app.state::<AiProcessManager>();
+                let automation = app.state::<AutomationManager>();
                 ai_processes.cancel_all();
+                automation.shutdown(deadline);
                 shutdown_rdp_on_main_thread(&app, deadline);
                 app.state::<TerminalManager>().shutdown(deadline);
                 app.state::<TelnetManager>().shutdown(deadline);

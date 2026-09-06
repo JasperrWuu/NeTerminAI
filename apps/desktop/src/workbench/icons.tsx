@@ -56,6 +56,15 @@ export function ConfigurationIcon(props: IconProps) {
   );
 }
 
+export function AutomationIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="m5 7 4 5-4 5M11 17h8" />
+      <path d="M17 4v3m-1.5-1.5h3M19 17v3m-1.5-1.5h3" />
+    </IconFrame>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
@@ -130,6 +139,30 @@ export function PlusIcon(props: IconProps) {
   return (
     <IconFrame {...props}>
       <path d="M12 5v14M5 12h14" />
+    </IconFrame>
+  );
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="m8 5 9 7-9 7V5Z" fill="currentColor" stroke="none" />
+    </IconFrame>
+  );
+}
+
+export function StopIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none" />
+    </IconFrame>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <IconFrame {...props}>
+      <path d="m5 12 4 4 10-10" />
     </IconFrame>
   );
 }

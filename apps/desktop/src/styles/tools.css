@@ -178,3 +178,115 @@
   .cfg-device-fields { padding: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .cfg-spinner { animation: none; } }
+
+/* Terminal automation keeps the editor and target controls compact so the
+   tool remains useful beside a live terminal. */
+.automation-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 14px 20px;
+  scrollbar-gutter: stable;
+}
+.automation-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.automation-heading h2 { margin: 3px 0 0; color: var(--text-primary); font-size: 16px; font-weight: 650; letter-spacing: -.025em; line-height: 1.4; }
+.automation-heading p { margin: 4px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.automation-kicker { color: var(--text-tertiary); font-size: 10px; font-weight: 650; letter-spacing: .12em; }
+.automation-add-button {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-strong);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 11px;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 9px;
+}
+.automation-add-button:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.automation-add-button:active { transform: scale(.98); }
+.automation-add-button > span:last-child { font-size: 16px; line-height: 1; }
+.automation-notice { margin: 0; color: var(--danger); font-size: 11px; line-height: 1.45; }
+.automation-script-list { display: grid; gap: 8px; min-width: 0; }
+.automation-script { overflow: hidden; border: 1px solid var(--material-edge); border-radius: var(--radius-md); background: var(--bg-elevated); }
+.automation-script-header { align-items: center; display: flex; gap: 4px; min-height: 46px; padding: 4px 6px; }
+.automation-disclosure, .automation-run-button, .automation-delete-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 30px;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+}
+.automation-disclosure:hover, .automation-run-button:hover, .automation-delete-button:hover { background: var(--bg-active); color: var(--text-primary); }
+.automation-disclosure svg { height: 14px; transition: transform var(--motion-fast) var(--ease-out); width: 14px; }
+.automation-script[data-collapsed="false"] .automation-disclosure svg { transform: rotate(90deg); }
+.automation-run-button { color: var(--accent-strong); }
+.automation-run-button.is-running { color: var(--danger); }
+.automation-run-button svg, .automation-delete-button svg { height: 15px; width: 15px; }
+.automation-delete-button { color: var(--text-tertiary); }
+.automation-delete-button:hover { color: var(--danger); }
+.automation-script-title { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.automation-script-name { background: transparent; border: 0; border-radius: 4px; color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; min-width: 0; outline: none; padding: 3px 4px; width: 100%; }
+.automation-script-name:hover { background: var(--bg-hover); }
+.automation-script-name:focus { background: var(--bg-hover); box-shadow: var(--control-focus); }
+.automation-script-title > span { color: var(--text-tertiary); font-size: 10px; overflow: hidden; padding: 0 4px; text-overflow: ellipsis; white-space: nowrap; }
+.automation-script-body { display: grid; gap: 10px; padding: 0 10px 10px; }
+.automation-editor { overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-canvas); }
+.automation-editor-toolbar { align-items: center; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); display: flex; justify-content: space-between; min-height: 30px; padding: 0 9px; }
+.automation-editor-toolbar span { color: var(--text-primary); font-size: 11px; font-weight: 600; }
+.automation-editor-toolbar small { color: var(--text-tertiary); font-size: 10px; }
+.automation-editor-body { display: grid; grid-template-columns: 34px minmax(0, 1fr); max-height: 370px; min-height: 190px; overflow: hidden; }
+.automation-line-numbers { color: var(--text-tertiary); font: 12px/19px "Cascadia Mono", Consolas, monospace; overflow: hidden; padding: 12px 8px 12px 0; text-align: right; user-select: none; }
+.automation-line-numbers span { display: block; height: 19px; }
+.automation-code-layer { min-width: 0; overflow: hidden; position: relative; }
+.automation-highlight, .automation-code-input { inset: 0; margin: 0; padding: 12px 10px; position: absolute; white-space: pre; font: 12px/19px "Cascadia Mono", Consolas, monospace; tab-size: 4; }
+.automation-highlight { color: var(--text-primary); min-width: max-content; pointer-events: none; }
+.automation-code-input { background: linear-gradient(to bottom, transparent 0, transparent calc(12px + var(--automation-current-line-start)), var(--accent-soft) calc(12px + var(--automation-current-line-start)), var(--accent-soft) calc(12px + var(--automation-current-line-end)), transparent calc(12px + var(--automation-current-line-end))); border: 0; color: transparent; caret-color: var(--text-primary); outline: none; overflow: auto; resize: none; }
+.automation-code-input::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+.python-token-keyword { color: var(--accent-strong); }
+.python-token-string { color: var(--success); }
+.python-token-number { color: #d7a7ff; }
+.python-token-comment { color: var(--text-tertiary); }
+.automation-target { display: grid; gap: 7px; }
+.automation-subheading { color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.automation-mode-select .select-trigger, .automation-session-select .select-trigger { min-height: 34px; height: auto; font-size: 12px; }
+.automation-active-target { display: grid; gap: 2px; min-height: 34px; padding: 7px 9px; border-radius: var(--radius-sm); background: var(--bg-hover); }
+.automation-active-target strong { color: var(--text-primary); font-size: 12px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-active-target span { color: var(--text-tertiary); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-execution { display: grid; gap: 6px; padding-top: 2px; }
+.automation-execution-heading { align-items: baseline; color: var(--text-secondary); display: flex; font-size: 11px; justify-content: space-between; }
+.automation-execution-heading small { color: var(--text-tertiary); font-size: 10px; }
+.automation-run-list { display: grid; gap: 3px; }
+.automation-run-row { align-items: center; display: flex; gap: 6px; min-width: 0; min-height: 24px; color: var(--text-secondary); font-size: 11px; }
+.automation-status-icon { align-items: center; display: inline-flex; flex: 0 0 16px; height: 16px; justify-content: center; }
+.automation-status-icon svg { height: 13px; width: 13px; }
+.automation-status-running { color: var(--accent-strong); }
+.automation-status-success { color: var(--success); }
+.automation-status-error { color: var(--danger); font-weight: 700; }
+.automation-status-cancelled { color: var(--text-tertiary); }
+.automation-status-running i { border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; display: block; height: 11px; width: 11px; animation: automation-spin 720ms linear infinite; }
+.automation-run-name { color: var(--text-primary); flex: 0 1 auto; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automation-run-state { color: var(--text-tertiary); flex: 0 0 auto; }
+.automation-run-message { color: var(--danger); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes automation-spin { to { transform: rotate(360deg); } }
+@media (max-width: 420px) {
+  .automation-heading { display: grid; }
+  .automation-add-button { justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .automation-disclosure svg, .automation-status-running i { animation: none; transition: none; }
+}
