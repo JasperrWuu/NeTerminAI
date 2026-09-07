@@ -51,6 +51,8 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
   const { scripts, setScripts } = useAutomationDrafts();
   const [executions, setExecutions] = useState<Record<string, ScriptExecutionView>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [pendingDeletion, setPendingDeletion] = useState<AutomationScriptDraft | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [, setTerminalRevision] = useState(0);
   const executionRef = useRef(executions);
   executionRef.current = executions;
@@ -117,11 +119,16 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
     setScripts((current) => [...current, createAutomationScript(current.length + 1)]);
   };
 
-  const removeScript = (script: AutomationScriptDraft) => {
+  const removeScript = async (script: AutomationScriptDraft) => {
+    if (deleting) return;
+    setDeleting(true);
     const execution = executions[script.id];
-    if (execution?.status === "running") void automationApi.stop(execution.runId).catch(() => undefined);
-    if (script.code.trim() || script.target.mode === "sessions" && script.target.tabIds.length > 0) {
-      if (!window.confirm(`删除「${script.name}」？`)) return;
+    try {
+      if (execution?.status === "running") await automationApi.stop(execution.runId);
+    } catch (error) {
+      setNotice(errorMessage(error));
+      setDeleting(false);
+      return;
     }
     setScripts((current) => {
       const next = current.filter((item) => item.id !== script.id);
@@ -132,6 +139,8 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
       delete next[script.id];
       return next;
     });
+    setPendingDeletion(null);
+    setDeleting(false);
   };
 
   const runScript = async (script: AutomationScriptDraft) => {
@@ -235,6 +244,17 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
       </header>
 
       {notice && <p className="automation-notice" role="status">{notice}</p>}
+      {pendingDeletion && (
+        <div className="automation-delete-confirm" role="alert" onKeyDown={(event) => {
+          if (event.key === "Escape" && !deleting) setPendingDeletion(null);
+        }}>
+          <div><strong>删除「{pendingDeletion.name}」？</strong><small>脚本无法恢复。正在运行的任务会先停止。</small></div>
+          <div className="automation-confirm-actions">
+            <button autoFocus className="secondary-button" disabled={deleting} onClick={() => setPendingDeletion(null)} type="button">取消</button>
+            <button className="secondary-button automation-delete-action" disabled={deleting} onClick={() => void removeScript(pendingDeletion)} type="button">{deleting ? "正在删除…" : "删除脚本"}</button>
+          </div>
+        </div>
+      )}
       <div className="automation-script-list">
         {scripts.map((script) => {
           const execution = executions[script.id];
@@ -245,7 +265,7 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
               execution={execution}
               key={script.id}
               onChange={(update) => updateScript(script.id, update)}
-              onRemove={() => removeScript(script)}
+              onRemove={() => setPendingDeletion(script)}
               onRun={() => void runScript(script)}
               onStop={() => void stopScript(script.id)}
               script={script}
@@ -323,6 +343,16 @@ function AutomationScriptBlock({
       {!script.collapsed && (
         <div className="automation-script-body" id={`automation-script-${script.id}`}>
           <PythonEditor code={script.code} onChange={(code) => onChange((current) => ({ ...current, code }))} onRun={onRun} />
+          <details className="automation-send-help">
+            <summary>send() 参数与用法</summary>
+            <code>send(command, timeout=None, responses=None) → str</code>
+            <dl>
+              <dt>command</dt><dd>命令文本，自动回车；返回回显，不含最终提示符。</dd>
+              <dt>timeout</dt><dd>整条命令的等待秒数，默认 30 秒；分页不会重置计时。</dd>
+              <dt>responses</dt><dd>正则表达式与回答的配对列表；仅按明确规则回答确认，同一规则可匹配多次。More 自动按空格。</dd>
+            </dl>
+            <pre>{'output = send("display health", timeout=60)\nprint(output)\n\n# 仅在确定允许回答 y 时使用\noutput = send(command, responses=[(r"(?i).*\\[y\\s*/\\s*n\\]", "y")])'}</pre>
+          </details>
           <div className="automation-target">
             <div className="automation-subheading">目标终端</div>
             <Select

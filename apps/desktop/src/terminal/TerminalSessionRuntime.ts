@@ -355,7 +355,7 @@ export class TerminalSessionRuntime {
       event.preventDefault();
       event.stopPropagation();
       void navigator.clipboard.readText().then((text) => {
-        if (text) this.terminal.paste(text);
+        if (text && !this.disposed) this.terminal.paste(text);
       }).catch(() => undefined);
     }
     return false;

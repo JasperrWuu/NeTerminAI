@@ -670,7 +670,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
             data-collapsed={!preferences.leftSidebarOpen}
           >
             <PanelHeader title={settingsOpen ? "设置" : activePanel.title} />
-            <div className="activity-panel-content" key={settingsOpen ? "settings" : activity}>
+            <div className="activity-panel-content" hidden={!settingsOpen && activity === "tools"} key={settingsOpen ? "settings" : activity}>
               {settingsOpen ? (
                 <SettingsSidebar section={settingsSection} onSelect={setSettingsSection} />
               ) : activity === "connections" ? (
@@ -709,10 +709,15 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                   projects={projectManager.projects}
                 />
               ) : activity === "tools" ? (
-                <ToolsView activeTabId={activeTerminalId} terminal={terminalCapability} />
+                null
               ) : (
                 <EmptyPanel description={activePanel.description} />
               )}
+            </div>
+            {/* Tool execution belongs to the workbench, not the selected sidebar.
+                Keep this host outside the activity-keyed navigation subtree. */}
+            <div className="activity-panel-content" hidden={settingsOpen || activity !== "tools"}>
+              <ToolsView activeTabId={activeTerminalId} terminal={terminalCapability} />
             </div>
           </aside>
           <div

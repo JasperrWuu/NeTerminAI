@@ -7,7 +7,9 @@ import type {
   WorkspacePreferences,
 } from "./types";
 
-export const CURRENT_SETTINGS_SCHEMA_VERSION = 4;
+import { createDefaultHighlightSets } from "./defaultHighlightSets.ts";
+
+export const CURRENT_SETTINGS_SCHEMA_VERSION = 5;
 export const SETTINGS_STORAGE_KEY = "neterminai.application.settings.v2";
 export const LEGACY_SETTINGS_STORAGE_KEY = "neterminai.application.settings.v1";
 export const LEGACY_WORKBENCH_STORAGE_KEY = "neterminai.workbench.preferences.v2";
@@ -38,13 +40,8 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
       cursorBlink: true,
       scrollback: 10_000,
       colorScheme: "adaptive",
-      activeHighlightSetId: "default-highlight-set",
-      highlightSets: [{
-        id: "default-highlight-set",
-        name: "默认突显集",
-        enabled: true,
-        rules: [],
-      }],
+      activeHighlightSetId: "builtin-dark",
+      highlightSets: createDefaultHighlightSets(),
     },
     keybindings: {
       synchronizeVisibleTerminals: {
@@ -117,7 +114,21 @@ export function migrateSettings(
   const terminal = asRecord(root?.terminal);
   const keybindings = asRecord(root?.keybindings);
   const ai = asRecord(root?.ai);
-  const highlightSets = normalizeHighlightSets(terminal, defaults.terminal.highlightSets);
+  let highlightSets = normalizeHighlightSets(terminal, defaults.terminal.highlightSets);
+  if (typeof root?.schemaVersion === "number" && root.schemaVersion < 5) {
+    const pristine = highlightSets.length === 1 && highlightSets[0].id === "default-highlight-set"
+      && highlightSets[0].name === "默认突显集" && highlightSets[0].rules.length === 0;
+    if (pristine) {
+      const enabled = highlightSets[0].enabled;
+      highlightSets = createDefaultHighlightSets().map((set) => ({
+        ...set, enabled: enabled && set.id === (appearance?.theme === "light" ? "builtin-light" : "builtin-dark"),
+      }));
+    } else {
+      highlightSets = [...highlightSets, ...createDefaultHighlightSets()
+        .filter((preset) => !highlightSets.some((set) => set.id === preset.id))
+        .map((set) => ({ ...set, enabled: false }))];
+    }
+  }
   const highlightSelection = normalizeTerminalHighlightSelection(
     highlightSets,
     stringValue(terminal?.activeHighlightSetId),

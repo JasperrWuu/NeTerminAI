@@ -293,3 +293,15 @@
 @media (prefers-reduced-motion: reduce) {
   .automation-disclosure svg, .automation-status-running i { animation: none; transition: none; }
 }
+.automation-delete-confirm { display: grid; gap: 10px; padding: 12px 0; }
+.automation-delete-confirm strong { font-size: 13px; font-weight: 600; }
+.automation-delete-confirm small { display: block; margin-top: 4px; color: var(--text-secondary); }
+.automation-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.automation-delete-action { color: var(--danger); }
+.automation-send-help { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.automation-send-help summary { cursor: pointer; padding: 6px 0; }
+.automation-send-help summary:hover { color: var(--text-primary); }
+.automation-send-help code, .automation-send-help pre { font-family: monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.automation-send-help dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 10px 0; }
+.automation-send-help dt { color: var(--text-primary); }
+.automation-send-help dd { margin: 0; }

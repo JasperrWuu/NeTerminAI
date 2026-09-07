@@ -1,11 +1,13 @@
 export type TerminalClipboardAction = "copy" | "paste";
 
-type ClipboardKeyEvent = Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">;
+type ClipboardKeyEvent = Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey" | "type">;
 
 export function resolveTerminalClipboardAction(
   event: ClipboardKeyEvent,
   hasSelection: boolean,
 ): TerminalClipboardAction | null {
+  // xterm invokes its custom handler on keydown AND keyup.
+  if (event.type !== "keydown") return null;
   const key = event.key.toLowerCase();
   const primaryModifier = event.ctrlKey || event.metaKey;
 
@@ -21,4 +23,3 @@ export function resolveTerminalClipboardAction(
   }
   return null;
 }
-

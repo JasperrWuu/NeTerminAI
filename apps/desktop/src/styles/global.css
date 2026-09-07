@@ -392,6 +392,8 @@ button:focus-visible,
     transform 160ms var(--ease-out);
 }
 
+.activity-panel-content[hidden] { display: none; }
+
 @starting-style {
   .activity-panel-content {
     opacity: 0;
