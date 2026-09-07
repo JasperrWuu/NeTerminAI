@@ -58,6 +58,13 @@ fn streaming(pages: usize, serial: bool, burst: bool, telnet: bool, near_cap: bo
             &[73, 4096, 2, 11, 8192][..]
         };
         for page in 1..=pages {
+            // Real configuration-shaped data, still a constructed fixture:
+            // separators may arrive alone before the next pager chunk.
+            producer_hub.publish("stream-test", b"#\r\n");
+            if serial {
+                ack_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            }
+            expected.push_str("#\n");
             let mut text = format!("Page {page} 设备状态 [UP]\r\nInterface   Address   Status\r\n");
             if near_cap {
                 text.push_str(&"long business output [UP]\r\n".repeat(3100));
@@ -243,4 +250,61 @@ fn continuous_serial_output_does_not_reset_absolute_timeout() {
         fresh.recv_with_cursor(Duration::from_secs(1)).unwrap().1,
         b"manual command output"
     );
+}
+
+#[test]
+fn two_certificate_questions_consume_each_occurrence_once() {
+    let mut collector = CommandCollector::new("pki import-certificate", Some("[FW1]".into()));
+    let responses =
+        compile_interaction_responses(&[(r"(?i).*\[y\s*/\s*n\]".into(), "y".into())]).unwrap();
+    let mut answers = Vec::new();
+    for chunk in [
+        b"Import certificate? [Y".as_slice(),
+        b"/N]",
+        b":",
+        b"\x1b[0m",
+        b"y\r\nOverwrite existing certificate? [Y /",
+        b" N]",
+        b":",
+        b"y\r\nImport succeeded\r\n[FW1]",
+    ] {
+        let signal = collector.push(chunk).unwrap();
+        if let Some(question) = signal.interaction {
+            let response = responses
+                .iter()
+                .find(|rule| rule.pattern.is_match(&question))
+                .unwrap();
+            answers.push(format!("{}\r", response.response));
+            collector.mark_interaction_handled();
+        }
+    }
+    assert_eq!(answers, ["y\r", "y\r"]);
+    assert!(
+        collector
+            .normalized_output(Some("[FW1]"))
+            .contains("Import succeeded")
+    );
+}
+
+#[test]
+fn configuration_separators_are_not_shell_prompts() {
+    for initial in [None, Some("<FW1>".into()), Some("HRP_M[FW1]".into())] {
+        let mut collector = CommandCollector::new("display current-configuration", initial);
+        assert!(
+            collector
+                .push(b"configuration\r\n#\r\n")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        assert_eq!(collector.push(b"---- More ----").unwrap().more_markers, 1);
+        assert!(
+            collector
+                .push(b"\r\nnext page\r\n#\r\n")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        assert_eq!(collector.push(b"---- More ----").unwrap().more_markers, 2);
+    }
 }

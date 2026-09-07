@@ -1061,7 +1061,7 @@ struct CommandCollector {
     more_markers_seen: usize,
     more_detector: MoreDetector,
     saw_output: bool,
-    interaction_suppressed_until_next_chunk: bool,
+    interaction_start: usize,
 }
 
 impl CommandCollector {
@@ -1074,14 +1074,11 @@ impl CommandCollector {
             more_markers_seen: 0,
             more_detector: MoreDetector::default(),
             saw_output: false,
-            interaction_suppressed_until_next_chunk: false,
+            interaction_start: 0,
         }
     }
 
     fn push(&mut self, chunk: &[u8]) -> Result<CollectorSignal, CommandFailure> {
-        if !chunk.is_empty() {
-            self.interaction_suppressed_until_next_chunk = false;
-        }
         self.saw_output = self.saw_output || !chunk.is_empty();
         if self.raw.len().saturating_add(chunk.len()) > MAX_COLLECTED_OUTPUT_BYTES {
             return Err(CommandFailure::output_overflow(format!(
@@ -1096,8 +1093,12 @@ impl CommandCollector {
             .saturating_add(self.more_detector.feed(chunk));
         let tail_start = self.raw.len().saturating_sub(8 * 1024);
         let tail = normalize_terminal_text(&self.raw[tail_start..]);
-        let interaction = if self.saw_output && !self.interaction_suppressed_until_next_chunk {
-            detect_interaction(&tail)
+        let interaction = if self.saw_output {
+            // Only a new occurrence may request another response. A trailing
+            // colon/ANSI reset in the next chunk is not a second question.
+            detect_interaction(&normalize_terminal_text(
+                &self.raw[self.interaction_start.max(tail_start)..],
+            ))
         } else {
             None
         };
@@ -1116,7 +1117,7 @@ impl CommandCollector {
     }
 
     fn mark_interaction_handled(&mut self) {
-        self.interaction_suppressed_until_next_chunk = true;
+        self.interaction_start = self.raw.len();
     }
 
     fn normalized_output(&self, final_prompt: Option<&str>) -> String {
@@ -1347,7 +1348,12 @@ fn detect_final_prompt(text: &str) -> Option<String> {
 
 fn prompt_matches_context(candidate: &str, initial_prompt: Option<&str>, command: &str) -> bool {
     if !is_huawei_prompt(candidate) {
-        return true;
+        // Huawei configuration separators are standalone '#', not shell
+        // prompts. A page ending at a separator must not finalize collection.
+        if initial_prompt.is_some_and(is_huawei_prompt) {
+            return false;
+        }
+        return !matches!(candidate, "#" | "$" | "%") || initial_prompt == Some(candidate);
     }
     let Some(initial_prompt) = initial_prompt.filter(|prompt| is_huawei_prompt(prompt)) else {
         // A first transaction may start before the terminal has exposed its
@@ -1438,12 +1444,15 @@ fn detect_interaction(text: &str) -> Option<String> {
         .map(str::trim)
         .find(|line| !line.is_empty())?;
     let lower = line.to_ascii_lowercase();
-    let has_choice = lower.contains("[y/n]") || lower.contains("[yes/no]") || lower.contains("y/n");
+    let compact: String = lower.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let has_choice = compact.contains("y/n") || compact.contains("yes/no");
     let question_ending = line.ends_with('?') || line.ends_with(':');
     let named_question =
         (lower.contains("continue") || lower.contains("are you sure") || lower.contains("confirm"))
             && question_ending;
-    if (has_choice && (question_ending || lower.ends_with(']'))) || named_question {
+    if (has_choice && (question_ending || lower.ends_with(']') || lower.ends_with(')')))
+        || named_question
+    {
         Some(line.to_owned())
     } else {
         None

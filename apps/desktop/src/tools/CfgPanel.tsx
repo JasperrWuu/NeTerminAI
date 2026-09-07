@@ -91,7 +91,7 @@ export function CfgPanel({ activeTabId, terminal }: CfgPanelProps) {
     let cancelled = false;
     void systemApi.getLocalIpv4()
       .then((address) => {
-        if (!cancelled && address) setDraft((current) => current.localIpv4 ? current : { ...current, localIpv4: address });
+        if (!cancelled) setDraft((current) => ({ ...current, localIpv4: address ?? "" }));
       })
       .catch(() => { /* Keep the restored address if native enumeration is unavailable. */ });
     return () => { cancelled = true; };
@@ -101,7 +101,7 @@ export function CfgPanel({ activeTabId, terminal }: CfgPanelProps) {
   const configValues: ConfigValues = draft;
   const previewIsCurrent = previewValues === configValues;
   const localIpv4Options = useMemo(
-    () => localIpv4 ? [{ value: localIpv4, label: localIpv4, description: "PPP 适配器 usg" }] : [],
+    () => localIpv4 ? [{ value: localIpv4, label: localIpv4, description: "与 Ctrl+I 相同的 usg* 网卡" }] : [],
     [localIpv4],
   );
 
