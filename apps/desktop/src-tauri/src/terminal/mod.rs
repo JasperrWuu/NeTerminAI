@@ -1142,14 +1142,14 @@ fn run_terminal_output_pump(
     output_event: &'static str,
 ) {
     if !start_gate.wait(&control.cancellation) {
-        crate::automation::close_output_session(&app, &session_id);
+        crate::output_stream::close_output_session(&app, &session_id);
         return;
     }
     while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
         if !control.writable() {
             break;
         }
-        crate::automation::publish_output(&app, &session_id, &batch);
+        crate::output_stream::publish_output(&app, &session_id, &batch);
         if app
             .emit(
                 output_event,
@@ -1174,7 +1174,7 @@ fn run_terminal_output_pump(
             break;
         }
     }
-    crate::automation::close_output_session(&app, &session_id);
+    crate::output_stream::close_output_session(&app, &session_id);
 }
 
 fn shutdown_terminal_resources(mut resources: TerminalResources) {

@@ -965,14 +965,14 @@ fn run_output_pump(
     cleanup_sender: Sender<CleanupRequest>,
 ) {
     if !start_gate.wait(&control.cancellation) {
-        crate::automation::close_output_session(&app, &session_id);
+        crate::output_stream::close_output_session(&app, &session_id);
         return;
     }
     while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
         if !control.writable() {
             break;
         }
-        crate::automation::publish_output(&app, &session_id, &batch);
+        crate::output_stream::publish_output(&app, &session_id, &batch);
         if app
             .emit(
                 OUTPUT_EVENT,
@@ -997,7 +997,7 @@ fn run_output_pump(
             break;
         }
     }
-    crate::automation::close_output_session(&app, &session_id);
+    crate::output_stream::close_output_session(&app, &session_id);
 }
 
 fn map_data_bits(value: u8) -> Result<DataBits, String> {

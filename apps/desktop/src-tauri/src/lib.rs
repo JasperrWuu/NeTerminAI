@@ -7,6 +7,7 @@ pub(crate) mod connection_state;
 pub(crate) mod io_pump;
 #[allow(dead_code)]
 pub(crate) mod lifecycle;
+pub(crate) mod output_stream;
 mod rdp;
 mod serial;
 mod shutdown;
@@ -21,7 +22,7 @@ pub fn run() {
         .manage(serial::SerialManager::default())
         .manage(rdp::RdpManager::default())
         .manage(ai_process::AiProcessManager::default())
-        .manage(automation::AutomationOutputHub::default())
+        .manage(output_stream::TerminalOutputHub::default())
         .manage(automation::AutomationManager::default())
         .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![

@@ -7,7 +7,7 @@ use std::{
     sync::{
         Arc, Mutex, PoisonError, TryLockError,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, Sender},
+        mpsc,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -20,7 +20,10 @@ use tauri::{AppHandle, Emitter, Manager};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use crate::{serial::SerialManager, telnet::TelnetManager, terminal::TerminalManager};
+use crate::{
+    output_stream::TerminalOutputHub, serial::SerialManager, telnet::TelnetManager,
+    terminal::TerminalManager,
+};
 
 const STATUS_EVENT: &str = "automation:status";
 const OUTPUT_EVENT: &str = "automation:output";
@@ -104,197 +107,6 @@ pub(crate) struct AutomationManager {
 
 struct AutomationManagerInner {
     runs: Mutex<HashMap<String, Arc<AutomationRunRecord>>>,
-}
-
-/// Raw terminal output fan-out for automation collectors. The renderer keeps
-/// its existing Tauri event stream; this hub is an additional backend
-/// consumer keyed by the concrete session identity.
-#[derive(Clone, Default)]
-pub(crate) struct AutomationOutputHub {
-    inner: Arc<AutomationOutputHubInner>,
-}
-
-#[derive(Default)]
-struct AutomationOutputHubInner {
-    sessions: Mutex<HashMap<String, AutomationOutputSession>>,
-    next_subscriber: std::sync::atomic::AtomicU64,
-}
-
-struct AutomationOutputSession {
-    subscribers: HashMap<u64, Sender<(u64, Vec<u8>)>>,
-    command_lock: Arc<Mutex<()>>,
-    prompt: Option<String>,
-    cursor: u64,
-    closed: bool,
-}
-
-pub(crate) struct AutomationOutputSubscription {
-    receiver: Receiver<(u64, Vec<u8>)>,
-    hub: AutomationOutputHub,
-    session_id: String,
-    subscriber_id: u64,
-    start_cursor: u64,
-}
-
-impl AutomationOutputHub {
-    pub(crate) fn subscribe(&self, session_id: &str) -> AutomationOutputSubscription {
-        let (sender, receiver) = mpsc::channel();
-        let subscriber_id = self.inner.next_subscriber.fetch_add(1, Ordering::Relaxed);
-        let mut sessions = lock_unpoisoned(&self.inner.sessions);
-        let session =
-            sessions
-                .entry(session_id.to_owned())
-                .or_insert_with(|| AutomationOutputSession {
-                    subscribers: HashMap::new(),
-                    command_lock: Arc::new(Mutex::new(())),
-                    prompt: None,
-                    cursor: 0,
-                    closed: false,
-                });
-        if !session.closed {
-            session.subscribers.insert(subscriber_id, sender);
-        }
-        AutomationOutputSubscription {
-            receiver,
-            hub: self.clone(),
-            session_id: session_id.to_owned(),
-            subscriber_id,
-            start_cursor: session.cursor,
-        }
-    }
-
-    pub(crate) fn publish(&self, session_id: &str, data: &[u8]) {
-        let (subscribers, cursor) = {
-            let mut sessions = lock_unpoisoned(&self.inner.sessions);
-            let session =
-                sessions
-                    .entry(session_id.to_owned())
-                    .or_insert_with(|| AutomationOutputSession {
-                        subscribers: HashMap::new(),
-                        command_lock: Arc::new(Mutex::new(())),
-                        prompt: None,
-                        cursor: 0,
-                        closed: false,
-                    });
-            if session.closed {
-                return;
-            }
-            session.cursor = session.cursor.saturating_add(1);
-            (
-                session
-                    .subscribers
-                    .iter()
-                    .map(|(id, sender)| (*id, sender.clone()))
-                    .collect::<Vec<_>>(),
-                session.cursor,
-            )
-        };
-        if subscribers.is_empty() {
-            return;
-        }
-        let mut disconnected = Vec::new();
-        for (subscriber_id, sender) in subscribers {
-            if sender.send((cursor, data.to_vec())).is_err() {
-                disconnected.push(subscriber_id);
-            }
-        }
-        if !disconnected.is_empty() {
-            let mut sessions = lock_unpoisoned(&self.inner.sessions);
-            if let Some(session) = sessions.get_mut(session_id) {
-                for subscriber_id in disconnected {
-                    session.subscribers.remove(&subscriber_id);
-                }
-            }
-        }
-    }
-
-    fn command_lock(&self, session_id: &str) -> Arc<Mutex<()>> {
-        let mut sessions = lock_unpoisoned(&self.inner.sessions);
-        sessions
-            .entry(session_id.to_owned())
-            .or_insert_with(|| AutomationOutputSession {
-                subscribers: HashMap::new(),
-                command_lock: Arc::new(Mutex::new(())),
-                prompt: None,
-                cursor: 0,
-                closed: false,
-            })
-            .command_lock
-            .clone()
-    }
-
-    fn current_prompt(&self, session_id: &str) -> Option<String> {
-        lock_unpoisoned(&self.inner.sessions)
-            .get(session_id)
-            .and_then(|session| session.prompt.clone())
-    }
-
-    fn set_prompt(&self, session_id: &str, prompt: String) {
-        let mut sessions = lock_unpoisoned(&self.inner.sessions);
-        let session =
-            sessions
-                .entry(session_id.to_owned())
-                .or_insert_with(|| AutomationOutputSession {
-                    subscribers: HashMap::new(),
-                    command_lock: Arc::new(Mutex::new(())),
-                    prompt: None,
-                    cursor: 0,
-                    closed: false,
-                });
-        session.prompt = Some(prompt);
-    }
-
-    pub(crate) fn close_session(&self, session_id: &str) {
-        let mut sessions = lock_unpoisoned(&self.inner.sessions);
-        let session =
-            sessions
-                .entry(session_id.to_owned())
-                .or_insert_with(|| AutomationOutputSession {
-                    subscribers: HashMap::new(),
-                    command_lock: Arc::new(Mutex::new(())),
-                    prompt: None,
-                    cursor: 0,
-                    closed: false,
-                });
-        session.closed = true;
-        session.subscribers.clear();
-    }
-
-    fn remove_subscriber(&self, session_id: &str, subscriber_id: u64) {
-        let mut sessions = lock_unpoisoned(&self.inner.sessions);
-        if let Some(session) = sessions.get_mut(session_id) {
-            session.subscribers.remove(&subscriber_id);
-        }
-    }
-}
-
-impl AutomationOutputSubscription {
-    fn recv_timeout(&self, timeout: Duration) -> Result<Vec<u8>, mpsc::RecvTimeoutError> {
-        self.receiver.recv_timeout(timeout).map(|(cursor, data)| {
-            debug_assert!(cursor > self.start_cursor);
-            data
-        })
-    }
-}
-
-impl Drop for AutomationOutputSubscription {
-    fn drop(&mut self) {
-        self.hub
-            .remove_subscriber(&self.session_id, self.subscriber_id);
-    }
-}
-
-pub(crate) fn publish_output(app: &AppHandle, session_id: &str, data: &[u8]) {
-    app.state::<AutomationOutputHub>().publish(session_id, data);
-}
-
-/// Notify automation collectors that a terminal output stream has ended.
-///
-/// The output pump owns this signal because it is the last consumer in the
-/// session's stream. Clearing subscribers here wakes any command transaction
-/// that is waiting for a prompt instead of leaving it blocked until timeout.
-pub(crate) fn close_output_session(app: &AppHandle, session_id: &str) {
-    app.state::<AutomationOutputHub>().close_session(session_id);
 }
 
 struct AutomationRunRecord {
@@ -887,7 +699,7 @@ fn execute_command(
         return Err(CommandFailure::cancelled("自动化运行已停止"));
     }
 
-    let output_hub = app.state::<AutomationOutputHub>().clone();
+    let output_hub = app.state::<TerminalOutputHub>().clone();
     let command_lock = output_hub.command_lock(session_id);
     let _lock = acquire_command_lock(&command_lock, control, session_id, &message.command)?;
     if control.cancelled.load(Ordering::Acquire) {
@@ -1927,7 +1739,7 @@ mod tests {
 
     #[test]
     fn output_hub_isolates_subscribers_by_session() {
-        let hub = AutomationOutputHub::default();
+        let hub = TerminalOutputHub::default();
         let first = hub.subscribe("session-a");
         let second = hub.subscribe("session-b");
         hub.publish("session-a", b"a");
@@ -1940,7 +1752,7 @@ mod tests {
 
     #[test]
     fn closing_output_hub_unblocks_waiting_subscriber() {
-        let hub = AutomationOutputHub::default();
+        let hub = TerminalOutputHub::default();
         let subscription = hub.subscribe("session-a");
         hub.close_session("session-a");
         assert!(matches!(
