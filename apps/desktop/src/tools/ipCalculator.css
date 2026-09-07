@@ -1,0 +1,18 @@
+.ip-calculator { container-type: inline-size; display: flex; flex: 1; flex-direction: column; gap: 20px; padding: 16px 14px 24px; min-width: 0; min-height: 0; overflow-y: auto; }
+.ip-calculator > * { flex-shrink: 0; }
+.ip-calculator h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.ip-calculator header p, .ip-helper { margin: 6px 0 0; font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+.ip-calculator > .segmented-control { align-self: flex-start; }
+.ip-input-grid, .ip-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin: 0; }
+.ip-field { display: grid; gap: 7px; min-width: 0; align-content: start; }
+.ip-field > span, .ip-result dt { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.ip-field > .settings-text-input { width: 100%; min-width: 0; box-sizing: border-box; font-family: var(--font-family-mono); font-size: 13px; }
+.ip-field input[aria-invalid="true"] { border-color: var(--danger); }
+.ip-result { min-width: 0; }
+.ip-result[data-wide="true"] { grid-column: 1 / -1; }
+.ip-result dd { display: flex; align-items: start; justify-content: space-between; gap: 6px; margin: 4px 0 0; }
+.ip-result dd > span { min-width: 0; overflow-wrap: anywhere; font: 400 13px/1.8 var(--font-family-mono); font-variant-ligatures: none; }
+.ip-number-section { display: grid; gap: 14px; }
+.ip-number-section h3 { margin: 0; font-size: 13px; font-weight: 600; }
+@media (hover: hover) { .ip-result .copy-result-button { opacity: 0; } .ip-result:hover .copy-result-button, .ip-result:focus-within .copy-result-button, .ip-result .copy-result-button[data-copied="true"] { opacity: 1; } }
+@container (max-width: 420px) { .ip-input-grid, .ip-result-grid { grid-template-columns: minmax(0, 1fr); } }

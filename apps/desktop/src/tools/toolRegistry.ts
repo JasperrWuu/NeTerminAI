@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { TerminalCapability } from "../capabilities/terminal";
-import { AutomationIcon, ConfigurationIcon, FolderIcon } from "../workbench/icons";
+import { AutomationIcon, ConfigurationIcon, FolderIcon, ConnectionIcon } from "../workbench/icons";
+import { IpCalculatorPanel } from "./IpCalculatorPanel";
 import { DiagnosticPanel } from "./DiagnosticPanel";
 import { AutomationPanel } from "./AutomationPanel";
 import { CfgPanel } from "./CfgPanel";
@@ -34,4 +35,5 @@ export const toolRegistry: readonly ToolDefinition[] = [
     component: AutomationPanel,
   },
   { id: "diagnostic", name: "诊断信息检查", description: "按命令检索、阅读与复制华为诊断 TXT", icon: FolderIcon, component: DiagnosticPanel },
+  { id: "ip-calculator", name: "IP 地址计算器", description: "IPv4 / IPv6 子网与整数转换", icon: ConnectionIcon, component: IpCalculatorPanel },
 ];
