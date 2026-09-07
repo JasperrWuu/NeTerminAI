@@ -1,5 +1,6 @@
 :root {
   --font-family-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-mono: "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
   font-family: var(--font-family-ui);
   font-synthesis: none;
   font-optical-sizing: auto;
