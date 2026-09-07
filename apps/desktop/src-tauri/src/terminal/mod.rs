@@ -99,6 +99,7 @@ struct OpenResources {
 }
 
 enum TerminalWriterMessage {
+    ControlSpace(crate::io_pump::ControlWriteTrace),
     Bytes(Vec<u8>),
     Shutdown,
 }
@@ -691,6 +692,23 @@ impl TerminalManager {
     }
 
     pub(crate) fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
+        self.write_input(session_id, data, None)
+    }
+
+    pub(crate) fn write_control_space(
+        &self,
+        session_id: &str,
+        trace: crate::io_pump::ControlWriteTrace,
+    ) -> Result<(), String> {
+        self.write_input(session_id, b" ", Some(trace))
+    }
+
+    fn write_input(
+        &self,
+        session_id: &str,
+        data: &[u8],
+        trace: Option<crate::io_pump::ControlWriteTrace>,
+    ) -> Result<(), String> {
         if data.len() > MAX_IO_CHUNK_BYTES {
             return Err(format!(
                 "终端单次输入超过 {} KB，请分段粘贴",
@@ -703,7 +721,10 @@ impl TerminalManager {
             .filter(|_| runtime.control.writable())
             .map(|resources| resources.writer.clone())
             .ok_or_else(|| "终端输入通道已关闭".to_owned())?;
-        match writer.try_send(TerminalWriterMessage::Bytes(data.to_vec())) {
+        match writer.try_send(match trace {
+            Some(trace) => TerminalWriterMessage::ControlSpace(trace),
+            None => TerminalWriterMessage::Bytes(data.to_vec()),
+        }) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err("终端输入队列繁忙，请稍后重试".to_owned()),
             Err(TrySendError::Disconnected(_)) => Err("终端输入通道已关闭".to_owned()),
@@ -1017,6 +1038,49 @@ fn cleanup_one(
     }
 }
 
+// Exercises the actual PTY/SSH writer and bounded input queue without starting
+// a shell or requiring a device. Only the OS Write endpoint is replaced.
+#[cfg(test)]
+pub(crate) fn test_control_writer(
+    writer: Box<dyn Write + Send>,
+) -> (
+    impl Fn(crate::io_pump::ControlWriteTrace) + Send,
+    thread::JoinHandle<()>,
+) {
+    let (sender, receiver) = mpsc::sync_channel(crate::io_pump::INPUT_QUEUE_CAPACITY);
+    let (cleanup, _cleanup_receiver) = mpsc::channel();
+    let control = Arc::new(SessionControl::new("stream-test", "ssh"));
+    assert!(control.publish_running());
+    let gate = Arc::new(StartGate::new());
+    gate.release();
+    let worker = thread::spawn(move || {
+        run_terminal_writer(
+            writer,
+            receiver,
+            CancellationToken::new(),
+            control,
+            gate,
+            "stream-test".to_owned(),
+            cleanup,
+        )
+    });
+    (
+        move |trace| {
+            trace.log("stream-test", "space_requested");
+            let events = trace.events.clone();
+            let occurrence = trace.occurrence;
+            // Nonblocking admission is identical to Manager::write_control_space.
+            sender
+                .try_send(TerminalWriterMessage::ControlSpace(trace))
+                .unwrap();
+            if let Some(events) = events {
+                events.send(("space_enqueued", occurrence)).unwrap();
+            }
+        },
+        worker,
+    )
+}
+
 fn run_terminal_writer(
     mut writer: Box<dyn Write + Send>,
     receiver: Receiver<TerminalWriterMessage>,
@@ -1038,12 +1102,24 @@ fn run_terminal_writer(
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+        let (message, trace) = match message {
+            TerminalWriterMessage::ControlSpace(trace) => {
+                trace.log(&session_id, "space_dequeued");
+                (TerminalWriterMessage::Bytes(vec![0x20]), Some(trace))
+            }
+            message => (message, None),
+        };
         match message {
+            TerminalWriterMessage::ControlSpace(_) => unreachable!("control input converted above"),
             TerminalWriterMessage::Bytes(bytes) => {
                 if worker_cancellation.is_cancelled() || !control.writable() {
                     break;
                 }
-                if let Err(error) = writer.write_all(&bytes).and_then(|_| writer.flush()) {
+                let result = match &trace {
+                    Some(trace) => trace.write(&session_id, &mut *writer),
+                    None => writer.write_all(&bytes).and_then(|_| writer.flush()),
+                };
+                if let Err(error) = result {
                     control.mark_failed_with(
                         DisconnectReason::WriteFailed,
                         ConnectionErrorKind::Transport,

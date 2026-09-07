@@ -174,6 +174,13 @@ impl TerminalOutputHub {
 }
 
 impl TerminalOutputSubscription {
+    #[cfg(any(debug_assertions, test))]
+    pub(crate) fn published_cursor(&self) -> u64 {
+        lock_unpoisoned(&self.hub.inner.sessions)
+            .get(&self.session_id)
+            .map_or(self.start_cursor, |session| session.cursor)
+    }
+
     pub(crate) fn recv_with_cursor(
         &self,
         timeout: std::time::Duration,

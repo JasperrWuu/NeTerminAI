@@ -7,6 +7,7 @@ import { resolveTerminalClipboardAction } from "./clipboard";
 import { TerminalHighlightStream } from "./highlighting";
 import { resolveTerminalTheme } from "./themes";
 import { terminalFontStack } from "./fontStack";
+import { reportTerminalRendering } from "./renderDiagnostics";
 import { TerminalInputPump } from "./TerminalInputPump";
 import {
   TerminalRuntimeController,
@@ -120,6 +121,11 @@ export class TerminalSessionRuntime {
     this.registerInputTarget(view);
     this.applySettings(view.settings, view.theme);
     this.controller.start();
+    if (import.meta.env.DEV && import.meta.env.VITE_TERMINAL_RENDER_DIAGNOSTICS === "1") {
+      void document.fonts.ready.then(() => {
+        if (!this.disposed && this.view) reportTerminalRendering(this.terminal, this.view.container);
+      });
+    }
   }
 
   get sessionId() {

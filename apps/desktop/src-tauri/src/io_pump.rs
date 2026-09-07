@@ -6,6 +6,81 @@ use std::{
 
 use crate::lifecycle::CancellationToken;
 
+/// Correlates an internal input with its actual writer operation. Contains no
+/// command or credential data and does not depend on the producing feature.
+#[derive(Debug)]
+pub(crate) struct ControlWriteTrace {
+    #[cfg(test)]
+    pub events: Option<std::sync::mpsc::Sender<(&'static str, usize)>>,
+    pub transaction: u64,
+    pub occurrence: usize,
+    pub limit: usize,
+    pub cursor: u64,
+    pub started: std::time::Instant,
+}
+
+impl ControlWriteTrace {
+    pub(crate) fn log(&self, session: &str, stage: &'static str) {
+        #[cfg(test)]
+        if let Some(events) = &self.events {
+            let _ = events.send((stage, self.occurrence));
+        }
+        #[cfg(debug_assertions)]
+        if std::env::var_os("NETERMINAI_PAGINATION_TRACE").is_some() {
+            eprintln!(
+                "[neterminai][control] transaction={} session={} occurrence={} budget={}/{} cursor={} stage={} elapsed_us={} payload=20",
+                self.transaction,
+                session,
+                self.occurrence,
+                self.occurrence,
+                self.limit,
+                self.cursor,
+                stage,
+                self.started.elapsed().as_micros()
+            );
+        }
+        #[cfg(not(debug_assertions))]
+        let _ = (
+            self.transaction,
+            self.occurrence,
+            self.limit,
+            self.cursor,
+            self.started,
+            session,
+            stage,
+        );
+    }
+
+    pub(crate) fn write(
+        &self,
+        session: &str,
+        writer: &mut (impl std::io::Write + ?Sized),
+    ) -> std::io::Result<()> {
+        self.log(session, "transport_write_attempt");
+        let result = writer.write_all(b" ");
+        self.log(
+            session,
+            if result.is_ok() {
+                "transport_write_ok"
+            } else {
+                "transport_write_error"
+            },
+        );
+        result?;
+        self.log(session, "flush_attempt");
+        let result = writer.flush();
+        self.log(
+            session,
+            if result.is_ok() {
+                "flush_ok"
+            } else {
+                "flush_error"
+            },
+        );
+        result
+    }
+}
+
 pub(crate) const MAX_IO_CHUNK_BYTES: usize = 16 * 1024;
 pub(crate) const OUTPUT_QUEUE_CAPACITY: usize = 64;
 pub(crate) const OUTPUT_BATCH_BYTES: usize = 64 * 1024;
@@ -178,6 +253,31 @@ impl OutputReceiver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_space_reports_actual_flush_failure() {
+        struct FailingFlush(Vec<u8>);
+        impl std::io::Write for FailingFlush {
+            fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+                self.0.extend_from_slice(data);
+                Ok(data.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("test flush failure"))
+            }
+        }
+        let mut writer = FailingFlush(Vec::new());
+        let trace = ControlWriteTrace {
+            events: None,
+            transaction: 1,
+            occurrence: 5,
+            limit: 512,
+            cursor: 5,
+            started: std::time::Instant::now(),
+        };
+        assert!(trace.write("test-session", &mut writer).is_err());
+        assert_eq!(writer.0, [0x20]);
+    }
 
     #[test]
     fn output_queue_preserves_fifo_and_exact_bytes_when_coalescing() {

@@ -760,18 +760,28 @@ fn execute_command(
             transaction_log(target, session_id, "cancelled", transaction_started);
             return Err(CommandFailure::cancelled("自动化运行已停止"));
         }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
+        let Some(remaining) = command_poll_budget(deadline, Instant::now()) else {
             transaction_log(target, session_id, "timeout", transaction_started);
             return Err(CommandFailure::timeout(format!(
                 "命令 `{}` 在终端 {session_id} 上等待超过 {} 秒",
                 message.command,
                 timeout.as_secs_f64(),
             )));
-        }
+        };
         match subscription.recv_with_cursor(remaining.min(COMMAND_POLL)) {
             Ok((cursor, chunk)) => {
                 pagination_trace(transaction_id, session_id, "rx", cursor, chunk.len());
+                #[cfg(debug_assertions)]
+                if std::env::var_os("NETERMINAI_PAGINATION_TRACE").is_some() {
+                    let published = subscription.published_cursor();
+                    eprintln!(
+                        "[neterminai][pagination] transaction={transaction_id} session={session_id} stage=consumer_progress published={published} consumed={cursor} lag={} budget={}/{} elapsed_us={}",
+                        published.saturating_sub(cursor),
+                        collector.pages_requested,
+                        MAX_PAGINATION_COUNT,
+                        transaction_started.elapsed().as_micros()
+                    );
+                }
                 if cursor != output_cursor.saturating_add(1) {
                     return Err(CommandFailure::io(
                         "终端输出序号不连续，已停止采集以避免返回不完整结果",
@@ -806,7 +816,29 @@ fn execute_command(
                         if control.cancelled.load(Ordering::Acquire) {
                             return Err(CommandFailure::cancelled("自动化运行已停止"));
                         }
-                        write_terminal_bytes(app, target, b" ").map_err(|error| {
+                        let trace = crate::io_pump::ControlWriteTrace {
+                            #[cfg(test)]
+                            events: None,
+                            transaction: transaction_id,
+                            occurrence,
+                            limit: MAX_PAGINATION_COUNT,
+                            cursor,
+                            started: transaction_started,
+                        };
+                        trace.log(session_id, "space_requested");
+                        let result = match target.connection_type.as_str() {
+                            "local" | "ssh" => app
+                                .state::<TerminalManager>()
+                                .write_control_space(session_id, trace),
+                            "telnet" => app
+                                .state::<TelnetManager>()
+                                .write_control_space(session_id, trace),
+                            "serial" => app
+                                .state::<SerialManager>()
+                                .write_control_space(session_id, trace),
+                            _ => Err("该终端类型不支持分页输入".to_owned()),
+                        };
+                        result.map_err(|error| {
                             CommandFailure::io(format!("发送分页确认到终端失败：{error}"))
                         })?;
                         collector.pages_requested += 1;
@@ -879,6 +911,13 @@ fn execute_command(
             }
         }
     }
+}
+
+// The immutable command deadline is not refreshed by output or pagination.
+fn command_poll_budget(deadline: Instant, now: Instant) -> Option<Duration> {
+    deadline
+        .checked_duration_since(now)
+        .filter(|remaining| !remaining.is_zero())
 }
 
 fn validate_command(command: &str) -> Result<(), CommandFailure> {
@@ -1009,6 +1048,10 @@ struct CollectorSignal {
     interaction: Option<String>,
     more_markers: usize,
 }
+
+#[cfg(test)]
+#[path = "automation_stream_tests.rs"]
+mod stream_tests;
 
 struct CommandCollector {
     raw: Vec<u8>,
@@ -1161,28 +1204,29 @@ impl MoreDetector {
 
     fn push_visible(&mut self, character: char) {
         self.window.push(character);
-        let excess = self.window.chars().count().saturating_sub(128);
+        // feed_byte admits ASCII only. Bound the byte window without counting
+        // Unicode characters or rebuilding strings for every incoming byte.
+        let excess = self.window.len().saturating_sub(128);
         if excess > 0 {
-            let cutoff = self
-                .window
-                .char_indices()
-                .nth(excess)
-                .map_or(self.window.len(), |(index, _)| index);
-            self.window.drain(..cutoff);
+            self.window.drain(..excess);
         }
-
-        let compact = self
-            .window
-            .chars()
-            .filter(|character| !character.is_whitespace())
-            .collect::<String>()
-            .to_ascii_lowercase();
         if !character.is_whitespace() {
             self.marker_armed = false;
         }
-        let dashed_marker = ["----more----", "--more--"].into_iter().any(|marker| {
-            compact.ends_with(marker) && !compact[..compact.len() - marker.len()].ends_with('-')
-        });
+        let dashed_marker = [b"----more----".as_slice(), b"--more--"]
+            .into_iter()
+            .any(|marker| {
+                let mut visible = self
+                    .window
+                    .bytes()
+                    .rev()
+                    .filter(|byte| !byte.is_ascii_whitespace());
+                marker.iter().rev().all(|expected| {
+                    visible
+                        .next()
+                        .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+                }) && visible.next() != Some(b'-')
+            });
         let plain_marker = self
             .window
             .rsplit('\n')
@@ -2063,14 +2107,47 @@ mod tests {
 
     #[test]
     fn pagination_detector_covers_common_page_lengths() {
-        for expected in [1, 2, 10, 50] {
+        for expected in [1, 2, 4, 5, 6, 10, 50] {
             let mut collector = CommandCollector::new("display current-configuration", None);
+            let mut transport = Vec::new();
             for index in 0..expected {
                 let signal = collector.push(b"---- More ----\r").unwrap();
                 assert_eq!(signal.more_markers, index + 1);
+                crate::io_pump::ControlWriteTrace {
+                    events: None,
+                    transaction: 1,
+                    occurrence: index + 1,
+                    limit: MAX_PAGINATION_COUNT,
+                    cursor: index as u64 + 1,
+                    started: Instant::now(),
+                }
+                .write("test-session", &mut transport)
+                .unwrap();
             }
             assert_eq!(collector.more_markers_seen, expected);
+            assert_eq!(transport, vec![0x20; expected]);
         }
+    }
+
+    #[test]
+    fn long_output_keeps_pagination_detector_window_bounded() {
+        let mut collector = CommandCollector::new("display current-configuration", None);
+        let business = "设备状态 [UP] 保留业务文本\r\n".repeat(1000);
+        for page in 1..=50 {
+            for chunk in business.as_bytes().chunks(127) {
+                collector.push(chunk).unwrap();
+                assert!(collector.more_detector.window.len() <= 128);
+            }
+            for chunk in b"\x1b[7m---- More ----\x1b[0m\r".chunks(1) {
+                collector.push(chunk).unwrap();
+            }
+            assert_eq!(collector.more_markers_seen, page);
+        }
+        let signal = collector.push(b"\r\n<FW1>").unwrap();
+        assert_eq!(signal.prompt.as_deref(), Some("<FW1>"));
+        let output = collector.normalized_output(Some("<FW1>"));
+        assert_eq!(output.matches("设备状态 [UP] 保留业务文本").count(), 50_000);
+        assert!(!output.contains("More"));
     }
 
     #[test]

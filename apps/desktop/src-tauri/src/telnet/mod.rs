@@ -24,6 +24,8 @@ const EXIT_EVENT: &str = "telnet:exit";
 
 mod runtime;
 pub use runtime::TelnetManager;
+#[cfg(test)]
+pub(crate) use runtime::test_control_writer;
 
 #[derive(Default)]
 enum ParseState {

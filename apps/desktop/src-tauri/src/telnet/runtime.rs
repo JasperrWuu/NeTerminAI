@@ -90,6 +90,7 @@ struct TerminalGeometry {
 }
 
 enum WriterMessage {
+    ControlSpace(crate::io_pump::ControlWriteTrace),
     Bytes(Vec<u8>),
     Shutdown,
 }
@@ -542,6 +543,14 @@ impl TelnetManager {
         Ok(())
     }
 
+    pub(crate) fn write_control_space(
+        &self,
+        session_id: &str,
+        trace: crate::io_pump::ControlWriteTrace,
+    ) -> Result<(), String> {
+        self.send(session_id, WriterMessage::ControlSpace(trace))
+    }
+
     pub(crate) fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
         let escaped = escape_iac(data);
         if escaped.len() > MAX_IO_CHUNK_BYTES {
@@ -853,6 +862,64 @@ fn cleanup_one(
     }
 }
 
+#[cfg(test)]
+pub(crate) fn test_control_writer(
+    mut endpoint: Box<dyn Write + Send>,
+) -> (
+    impl Fn(crate::io_pump::ControlWriteTrace) + Send,
+    thread::JoinHandle<()>,
+) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let (sender, receiver) = mpsc::sync_channel(crate::io_pump::INPUT_QUEUE_CAPACITY);
+    let (control_sender, control_receiver) = mpsc::channel();
+    let (cleanup, _cleanup_receiver) = mpsc::channel();
+    let control = Arc::new(SessionControl::new("stream-test"));
+    assert!(control.publish_running());
+    let gate = Arc::new(StartGate::new());
+    gate.release();
+    let worker = thread::spawn(move || {
+        let tcp_writer = thread::spawn(move || {
+            run_writer(
+                stream,
+                receiver,
+                control_receiver,
+                CancellationToken::new(),
+                control,
+                gate,
+                "stream-test".to_owned(),
+                cleanup,
+            )
+        });
+        let mut byte = [0];
+        loop {
+            let size = peer.read(&mut byte).unwrap();
+            if size == 0 {
+                break;
+            }
+            endpoint.write_all(&byte).unwrap();
+            endpoint.flush().unwrap();
+        }
+        tcp_writer.join().unwrap();
+        drop(control_sender);
+    });
+    (
+        move |trace| {
+            trace.log("stream-test", "space_requested");
+            let events = trace.events.clone();
+            let occurrence = trace.occurrence;
+            sender.try_send(WriterMessage::ControlSpace(trace)).unwrap();
+            if let Some(events) = events {
+                events.send(("space_enqueued", occurrence)).unwrap();
+            }
+        },
+        worker,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_writer(
     mut stream: TcpStream,
@@ -882,12 +949,24 @@ fn run_writer(
                 }
             }
         };
+        let (message, trace) = match message {
+            WriterMessage::ControlSpace(trace) => {
+                trace.log(&session_id, "space_dequeued");
+                (WriterMessage::Bytes(vec![0x20]), Some(trace))
+            }
+            message => (message, None),
+        };
         match message {
+            WriterMessage::ControlSpace(_) => unreachable!("control input converted above"),
             WriterMessage::Bytes(bytes) => {
                 if worker_cancel.is_cancelled() || !control.writable() {
                     break;
                 }
-                if let Err(error) = stream.write_all(&bytes).and_then(|_| stream.flush()) {
+                let result = match &trace {
+                    Some(trace) => trace.write(&session_id, &mut stream),
+                    None => stream.write_all(&bytes).and_then(|_| stream.flush()),
+                };
+                if let Err(error) = result {
                     control.mark_failed_with(
                         DisconnectReason::WriteFailed,
                         ConnectionErrorKind::Transport,
@@ -1274,6 +1353,70 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paging_control_queue_writes_exact_spaces_to_tcp_peer() {
+        use std::net::TcpListener;
+        for pages in [4, 5, 6, 10, 50] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let (mut peer, _) = listener.accept().unwrap();
+            peer.set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let (sender, receiver) = mpsc::sync_channel(crate::io_pump::INPUT_QUEUE_CAPACITY);
+            let (_control_sender, control_receiver) = mpsc::channel();
+            let (cleanup, _cleanup_receiver) = mpsc::channel();
+            let (events, event_rx) = mpsc::channel();
+            let control = Arc::new(SessionControl::new("tcp-paging-test"));
+            assert!(control.publish_running());
+            let gate = Arc::new(StartGate::new());
+            gate.release();
+            let worker = thread::spawn(move || {
+                run_writer(
+                    stream,
+                    receiver,
+                    control_receiver,
+                    CancellationToken::new(),
+                    control,
+                    gate,
+                    "tcp-paging-test".to_owned(),
+                    cleanup,
+                )
+            });
+            for occurrence in 1..=pages {
+                sender
+                    .try_send(WriterMessage::ControlSpace(
+                        crate::io_pump::ControlWriteTrace {
+                            events: Some(events.clone()),
+                            transaction: 1,
+                            occurrence,
+                            limit: 512,
+                            cursor: occurrence as u64,
+                            started: Instant::now(),
+                        },
+                    ))
+                    .unwrap();
+            }
+            drop(sender);
+            worker.join().unwrap();
+            let mut bytes = Vec::new();
+            peer.read_to_end(&mut bytes).unwrap();
+            assert_eq!(bytes, vec![0x20; pages]);
+            drop(events);
+            let recorded: Vec<_> = event_rx.into_iter().collect();
+            for stage in [
+                "space_dequeued",
+                "transport_write_attempt",
+                "transport_write_ok",
+                "flush_ok",
+            ] {
+                assert_eq!(
+                    recorded.iter().filter(|(name, _)| *name == stage).count(),
+                    pages
+                );
+            }
+        }
+    }
 
     #[test]
     fn invalid_endpoint_is_reported_as_configuration_failure() {

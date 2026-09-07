@@ -72,6 +72,7 @@ struct SerialResources {
 }
 
 enum WriterMessage {
+    ControlSpace(crate::io_pump::ControlWriteTrace),
     Bytes(Vec<u8>),
     Shutdown,
 }
@@ -539,6 +540,23 @@ impl SerialManager {
     }
 
     pub(crate) fn write(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
+        self.write_input(session_id, data, None)
+    }
+
+    pub(crate) fn write_control_space(
+        &self,
+        session_id: &str,
+        trace: crate::io_pump::ControlWriteTrace,
+    ) -> Result<(), String> {
+        self.write_input(session_id, b" ", Some(trace))
+    }
+
+    fn write_input(
+        &self,
+        session_id: &str,
+        data: &[u8],
+        trace: Option<crate::io_pump::ControlWriteTrace>,
+    ) -> Result<(), String> {
         if data.len() > MAX_IO_CHUNK_BYTES {
             return Err(format!(
                 "串口单次输入超过 {} KB，请分段粘贴",
@@ -551,7 +569,10 @@ impl SerialManager {
             .filter(|_| runtime.control.writable())
             .map(|resources| resources.writer.clone())
             .ok_or_else(|| "串口连接已关闭".to_owned())?;
-        match writer.try_send(WriterMessage::Bytes(data.to_vec())) {
+        match writer.try_send(match trace {
+            Some(trace) => WriterMessage::ControlSpace(trace),
+            None => WriterMessage::Bytes(data.to_vec()),
+        }) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => Err("串口输入队列繁忙，请稍后重试".to_owned()),
             Err(TrySendError::Disconnected(_)) => Err("串口连接已关闭".to_owned()),
@@ -826,8 +847,46 @@ fn cleanup_one(
     }
 }
 
+#[cfg(test)]
+pub(crate) fn test_control_writer(
+    writer: Box<dyn Write + Send>,
+) -> (
+    impl Fn(crate::io_pump::ControlWriteTrace) + Send,
+    thread::JoinHandle<()>,
+) {
+    let (sender, receiver) = mpsc::sync_channel(crate::io_pump::INPUT_QUEUE_CAPACITY);
+    let (cleanup, _cleanup_receiver) = mpsc::channel();
+    let control = Arc::new(SessionControl::new("stream-test"));
+    assert!(control.publish_running());
+    let gate = Arc::new(StartGate::new());
+    gate.release();
+    let worker = thread::spawn(move || {
+        run_writer(
+            writer,
+            receiver,
+            CancellationToken::new(),
+            control,
+            gate,
+            "stream-test".to_owned(),
+            cleanup,
+        )
+    });
+    (
+        move |trace| {
+            trace.log("stream-test", "space_requested");
+            let events = trace.events.clone();
+            let occurrence = trace.occurrence;
+            sender.try_send(WriterMessage::ControlSpace(trace)).unwrap();
+            if let Some(events) = events {
+                events.send(("space_enqueued", occurrence)).unwrap();
+            }
+        },
+        worker,
+    )
+}
+
 fn run_writer(
-    mut port: Box<dyn SerialPort>,
+    mut port: impl Write,
     receiver: Receiver<WriterMessage>,
     worker_cancel: CancellationToken,
     control: Arc<SessionControl>,
@@ -847,12 +906,24 @@ fn run_writer(
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+        let (message, trace) = match message {
+            WriterMessage::ControlSpace(trace) => {
+                trace.log(&session_id, "space_dequeued");
+                (WriterMessage::Bytes(vec![0x20]), Some(trace))
+            }
+            message => (message, None),
+        };
         match message {
+            WriterMessage::ControlSpace(_) => unreachable!("control input converted above"),
             WriterMessage::Bytes(bytes) => {
                 if worker_cancel.is_cancelled() || !control.writable() {
                     break;
                 }
-                if let Err(error) = port.write_all(&bytes).and_then(|_| port.flush()) {
+                let result = match &trace {
+                    Some(trace) => trace.write(&session_id, &mut port),
+                    None => port.write_all(&bytes).and_then(|_| port.flush()),
+                };
+                if let Err(error) = result {
                     control.mark_failed_with(
                         DisconnectReason::WriteFailed,
                         ConnectionErrorKind::Transport,

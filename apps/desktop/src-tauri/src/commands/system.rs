@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, net::Ipv4Addr, process::Command};
+use std::{cmp::Ordering, net::Ipv4Addr};
 
 use super::run_blocking;
 
@@ -12,87 +12,103 @@ const PPP_ADAPTER_PREFIX: &str = "usg";
 #[tauri::command]
 pub async fn get_local_ipv4() -> Result<Option<String>, String> {
     run_blocking("读取本机 IPv4", || {
-        Ok(select_usg_ipv4().map(|address| address.to_string()))
+        select_usg_ipv4().map(|address| address.map(|value| value.to_string()))
     })
     .await
 }
 
-fn select_usg_ipv4() -> Option<Ipv4Addr> {
+fn select_usg_ipv4() -> Result<Option<Ipv4Addr>, String> {
     #[cfg(windows)]
     {
-        query_ipconfig_adapter_ipv4(PPP_ADAPTER_PREFIX)
+        native_adapters().map(select_adapter_ipv4)
     }
-
     #[cfg(not(windows))]
     {
-        None
+        Ok(None)
     }
+}
+
+fn select_adapter_ipv4(mut adapters: Vec<(String, Vec<Ipv4Addr>)>) -> Option<Ipv4Addr> {
+    adapters.retain(|(name, _)| {
+        name.trim()
+            .to_ascii_lowercase()
+            .starts_with(PPP_ADAPTER_PREFIX)
+    });
+    adapters.sort_by(|a, b| compare_usg_alias(&a.0, &b.0));
+    adapters
+        .into_iter()
+        .find_map(|(_, addresses)| addresses.into_iter().find(|ip| is_usable_ipv4(*ip)))
 }
 
 #[cfg(windows)]
-fn query_ipconfig_adapter_ipv4(interface_alias: &str) -> Option<Ipv4Addr> {
-    let mut command = Command::new("ipconfig.exe");
-    command.arg("/all");
-    // `ipconfig.exe` is a console-subsystem process.  A GUI build must not
-    // briefly create a console window merely to read the adapter inventory.
-    use std::os::windows::process::CommandExt;
-    command.creation_flags(0x0800_0000);
-    let output = command.output().ok()?;
-    parse_ipconfig_adapter_ipv4(&output.stdout, interface_alias)
-}
-
-fn parse_ipconfig_adapter_ipv4(output: &[u8], interface_alias: &str) -> Option<Ipv4Addr> {
-    let target_prefix = interface_alias.trim().to_ascii_lowercase();
-    let mut current: Option<(String, Vec<Ipv4Addr>)> = None;
-    let mut candidates = Vec::<(String, Vec<Ipv4Addr>)>::new();
-    for line in String::from_utf8_lossy(output).lines() {
-        let trimmed = line.trim();
-        let lower = trimmed.to_ascii_lowercase();
-        if is_adapter_heading(&lower) {
-            if let Some((alias, addresses)) = current.take()
-                && alias.starts_with(&target_prefix)
-            {
-                candidates.push((alias, addresses));
-            }
-            current = lower
-                .strip_suffix(':')
-                .and_then(|heading| heading.split_whitespace().last())
-                .map(|alias| (alias.to_owned(), Vec::new()));
-            continue;
-        }
-        let Some((alias, addresses)) = current.as_mut() else {
-            continue;
+fn native_adapters() -> Result<Vec<(String, Vec<Ipv4Addr>)>, String> {
+    use windows::Win32::{
+        Foundation::{ERROR_BUFFER_OVERFLOW, ERROR_NO_DATA, NO_ERROR},
+        NetworkManagement::{
+            IpHelper::{
+                GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
+                GetAdaptersAddresses, IP_ADAPTER_ADDRESSES_LH,
+            },
+            Ndis::IfOperStatusUp,
+        },
+        Networking::WinSock::{AF_INET, SOCKADDR_IN},
+    };
+    let mut size = 15_000u32;
+    for _ in 0..3 {
+        // Typed allocation preserves the alignment required by the linked Win32 structures.
+        let count = (size as usize).div_ceil(std::mem::size_of::<IP_ADAPTER_ADDRESSES_LH>());
+        let mut storage = vec![IP_ADAPTER_ADDRESSES_LH::default(); count];
+        let head = storage.as_mut_ptr();
+        let status = unsafe {
+            GetAdaptersAddresses(
+                AF_INET.0 as u32,
+                GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                None,
+                Some(head),
+                &mut size,
+            )
         };
-        if !alias.starts_with(&target_prefix) {
+        if status == ERROR_BUFFER_OVERFLOW.0 {
             continue;
         }
-        if !lower.contains("ipv4") {
-            continue;
+        if status == ERROR_NO_DATA.0 {
+            return Ok(Vec::new());
         }
-        for token in
-            trimmed.split(|character: char| !character.is_ascii_digit() && character != '.')
-        {
-            let Ok(address) = token.parse::<Ipv4Addr>() else {
+        if status != NO_ERROR.0 {
+            return Err(format!("读取网络接口失败（Windows {status}）"));
+        }
+        let mut adapters = Vec::new();
+        let mut next = head;
+        while !next.is_null() {
+            // All linked pointers belong to storage, which remains alive during traversal.
+            let adapter = unsafe { &*next };
+            next = adapter.Next;
+            if adapter.OperStatus != IfOperStatusUp || adapter.FriendlyName.is_null() {
                 continue;
-            };
-            if is_usable_ipv4(address) {
-                addresses.push(address);
             }
+            let name =
+                unsafe { adapter.FriendlyName.to_string() }.map_err(|_| "网卡名称编码无效")?;
+            let mut addresses = Vec::new();
+            let mut unicast = adapter.FirstUnicastAddress;
+            while !unicast.is_null() {
+                let item = unsafe { &*unicast };
+                unicast = item.Next;
+                if item.Address.lpSockaddr.is_null()
+                    || item.Address.iSockaddrLength < std::mem::size_of::<SOCKADDR_IN>() as i32
+                {
+                    continue;
+                }
+                let socket = unsafe { &*item.Address.lpSockaddr.cast::<SOCKADDR_IN>() };
+                if socket.sin_family == AF_INET {
+                    let octets = unsafe { socket.sin_addr.S_un.S_addr }.to_ne_bytes();
+                    addresses.push(Ipv4Addr::from(octets));
+                }
+            }
+            adapters.push((name, addresses));
         }
+        return Ok(adapters);
     }
-    if let Some((alias, addresses)) = current
-        && alias.starts_with(&target_prefix)
-    {
-        candidates.push((alias, addresses));
-    }
-    candidates.sort_by(|left, right| compare_usg_alias(&left.0, &right.0));
-    candidates
-        .into_iter()
-        .find_map(|(_, addresses)| addresses.into_iter().next())
-}
-
-fn is_adapter_heading(line: &str) -> bool {
-    line.ends_with(':') && !line.contains('.') && !line.contains("ipv4") && !line.contains("ipv6")
+    Err("网络接口正在变化，请重试".to_owned())
 }
 
 fn compare_usg_alias(left: &str, right: &str) -> Ordering {
@@ -131,55 +147,74 @@ fn is_usable_ipv4(address: Ipv4Addr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_usable_ipv4, parse_ipconfig_adapter_ipv4};
-
+    use super::*;
     #[test]
     fn rejects_non_routable_ipv4_addresses() {
-        assert!(!is_usable_ipv4("0.0.0.0".parse().unwrap()));
-        assert!(!is_usable_ipv4("127.0.0.1".parse().unwrap()));
-        assert!(!is_usable_ipv4("169.254.12.8".parse().unwrap()));
-        assert!(!is_usable_ipv4("224.0.0.1".parse().unwrap()));
-        assert!(!is_usable_ipv4("255.255.255.255".parse().unwrap()));
+        for address in [
+            "0.0.0.0",
+            "127.0.0.1",
+            "169.254.12.8",
+            "224.0.0.1",
+            "255.255.255.255",
+        ] {
+            assert!(!is_usable_ipv4(address.parse().unwrap()));
+        }
     }
 
     #[test]
     fn accepts_private_and_public_unicast_ipv4_addresses() {
-        assert!(is_usable_ipv4("192.168.1.100".parse().unwrap()));
-        assert!(is_usable_ipv4("10.0.0.8".parse().unwrap()));
-        assert!(is_usable_ipv4("203.0.113.10".parse().unwrap()));
+        for address in ["192.168.1.100", "10.0.0.8", "203.0.113.10"] {
+            assert!(is_usable_ipv4(address.parse().unwrap()));
+        }
     }
 
     #[test]
-    fn parses_the_ipv4_from_the_usg_adapter_block() {
+    fn native_selection_preserves_usg_rules() {
+        for name in ["usg0", "usg1", "usg2", "usg10", " USG0 "] {
+            assert_eq!(
+                select_adapter_ipv4(vec![(name.into(), vec![Ipv4Addr::new(10, 1, 1, 1)])]),
+                Some(Ipv4Addr::new(10, 1, 1, 1))
+            );
+        }
         assert_eq!(
-            parse_ipconfig_adapter_ipv4(
-                b"Ethernet adapter Ethernet:\r\n    IPv4 Address. . . . . . : 192.168.1.20\r\n\r\nPPP adapter usg:\r\n    IPv4 Address. . . . . . : 169.254.1.2\r\n    IPv4 Address. . . . . . : 100.64.20.7 (Preferred)\r\n\r\n",
-                "usg",
-            ),
-            Some("100.64.20.7".parse().unwrap()),
+            select_adapter_ipv4(vec![
+                ("usg10".into(), vec![Ipv4Addr::new(10, 0, 0, 10)]),
+                ("usg2".into(), vec![Ipv4Addr::new(10, 0, 0, 2)]),
+                ("usg0".into(), vec![]),
+                (
+                    "usg1".into(),
+                    vec![Ipv4Addr::LOCALHOST, Ipv4Addr::UNSPECIFIED]
+                ),
+                ("Ethernet".into(), vec![Ipv4Addr::new(10, 0, 0, 1)]),
+            ]),
+            Some(Ipv4Addr::new(10, 0, 0, 2))
         );
+        for address in [
+            "127.0.0.9",
+            "0.0.0.0",
+            "169.254.2.3",
+            "224.0.0.1",
+            "255.255.255.255",
+        ] {
+            assert!(!is_usable_ipv4(address.parse().unwrap()));
+        }
     }
 
+    #[cfg(windows)]
     #[test]
-    fn parses_the_localized_usg_adapter_heading() {
-        assert_eq!(
-            parse_ipconfig_adapter_ipv4(
-                "PPP 适配器 usg:\r\n    IPv4 地址 . . . . . . . . . . : 100.64.20.8(首选)\r\n"
-                    .as_bytes(),
-                "usg",
-            ),
-            Some("100.64.20.8".parse().unwrap()),
-        );
-    }
-
-    #[test]
-    fn matches_all_usg_adapters_and_uses_natural_numeric_order() {
-        assert_eq!(
-            parse_ipconfig_adapter_ipv4(
-                b"PPP adapter usg10:\r\n    IPv4 Address. . . : 100.64.10.10\r\n\r\nPPP adapter USG2:\r\n    IPv4 Address. . . : 100.64.2.2\r\n\r\nPPP adapter usg1:\r\n    IPv4 Address. . . : 100.64.1.1\r\n",
-                "usg",
-            ),
-            Some("100.64.1.1".parse().unwrap()),
+    #[ignore = "local profiling; prints timing only, never adapter data"]
+    fn profile_native_query() {
+        let mut samples = Vec::new();
+        for _ in 0..20 {
+            let start = std::time::Instant::now();
+            native_adapters().unwrap();
+            samples.push(start.elapsed());
+        }
+        samples.sort();
+        eprintln!(
+            "native NIC query: samples=20 median={:?} worst={:?}",
+            (samples[9] + samples[10]) / 2,
+            samples[19]
         );
     }
 }
