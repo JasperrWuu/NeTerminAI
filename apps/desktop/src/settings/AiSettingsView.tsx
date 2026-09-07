@@ -20,8 +20,11 @@ export function AiSettingsView({ settings, onChange, onReset }: AiSettingsViewPr
           <label className="settings-field"><span>温度</span><input max="2" min="0" step="0.1" type="number" value={settings.temperature} onChange={(event) => onChange({ temperature: Number(event.target.value) })} /></label>
         </> : <>
           <div className="settings-row"><span><strong>CLI 预设</strong><small>Claude / OpenCode / PowerShell / 自定义</small></span><Select<AiSettings["providerPreset"]> ariaLabel="CLI 预设" className="settings-select" onChange={(providerPreset) => onChange({ providerPreset })} options={[{ label: "Claude CLI", value: "claude" }, { label: "OpenCode CLI", value: "opencode" }, { label: "PowerShell 脚本", value: "powershell" }, { label: "自定义 CLI", value: "custom" }]} value={settings.providerPreset} /></div>
-          <label className="settings-field"><span>可执行文件</span><input value={settings.executable} onChange={(event) => onChange({ executable: event.target.value })} placeholder="claude / opencode / powershell.exe" /></label>
-          {settings.providerPreset === "powershell" && <label className="settings-field"><span>脚本路径</span><input value={settings.scriptPath} onChange={(event) => onChange({ scriptPath: event.target.value })} placeholder="C:\\Scripts\\assistant.ps1" /></label>}
+          <label className="settings-field"><span>{settings.providerPreset === "powershell" ? "PowerShell 可执行文件" : "可执行文件"}</span><input value={settings.executable} onChange={(event) => onChange({ executable: event.target.value })} placeholder={settings.providerPreset === "powershell" ? "pwsh.exe" : "claude / opencode"} /></label>
+          {settings.providerPreset === "powershell" && <>
+            <label className="settings-field"><span>脚本路径</span><input value={settings.scriptPath} onChange={(event) => onChange({ scriptPath: event.target.value })} placeholder="C:\\Scripts\\assistant.ps1" /></label>
+            <div className="settings-row"><span><strong>以管理员身份运行</strong><small>通过 UAC 启动 pwsh.exe，再执行该 .ps1 脚本</small></span><button aria-checked={settings.runAsAdministrator} aria-label="以管理员身份运行 PowerShell" className="switch" data-active={settings.runAsAdministrator} onClick={() => onChange({ runAsAdministrator: !settings.runAsAdministrator })} role="switch" type="button"><span /></button></div>
+          </>}
           <label className="settings-field"><span>参数（每行一个）</span><textarea rows={3} value={settings.arguments.join("\n")} onChange={(event) => onChange({ arguments: event.target.value.split(/\r?\n/u).map((value) => value.trim()).filter(Boolean) })} /></label>
           <label className="settings-field"><span>工作目录</span><input value={settings.cwd} onChange={(event) => onChange({ cwd: event.target.value })} /></label>
         </>}

@@ -32,7 +32,7 @@ AI 侧栏的上下文范围属于当前 Assistant 运行时状态，不写入全
 
 ## AI Runtime
 
-AI 助手每次发送问题都会重新采集当前选择的会话，保留有界的对话历史，并将每个 Session 独立标记为 `SESSION CONTEXT / TERMINAL OUTPUT`。`ApiAiProvider` 使用 OpenAI-compatible HTTP API，支持流式 SSE、取消和超时；`ProcessAiProvider` 通过独立的 Rust `AiProcessRunner` 调用用户明确配置的 CLI 或 PowerShell 脚本，stdin 传入结构化请求，stdout 与 stderr 分离。AI 进程不复用终端 PTY、xterm 或 Session worker，因此供应商故障、停止生成和进程错误都不会影响终端连接。
+AI 助手每次发送问题都会重新采集当前选择的会话，保留有界的对话历史，并将每个 Session 独立标记为 `SESSION CONTEXT / TERMINAL OUTPUT`。`ApiAiProvider` 使用 OpenAI-compatible HTTP API，支持流式 SSE、取消和超时；`ProcessAiProvider` 通过独立的 Rust `AiProcessRunner` 调用用户明确配置的 CLI 或 PowerShell 脚本，stdin 传入结构化请求，stdout 与 stderr 分离。Python 自动化 worker 与本地 AI 进程的文本输出均按 UTF-8 解码，PowerShell 预设使用 `pwsh.exe -File <script.ps1>`，并可经 UAC 以管理员身份启动。AI 进程不复用终端 PTY、xterm 或 Session worker，因此供应商故障、停止生成和进程错误都不会影响终端连接。
 
 API Key 只存在于当前运行内存，绝不写入 localStorage、ApplicationSettings 或日志。命令提案始终先显示在 AI 侧栏，只有用户点击“运行”后才会经由 `TerminalActionExecutor → TerminalSessionRegistry → InputPump` 发送；AI 不能自行改变目标会话、可执行文件或脚本路径。Claude CLI、OpenCode CLI、PowerShell 和自定义 CLI 使用同一进程边界，具体命令参数与本机环境需在手工验收时确认。
 
@@ -65,7 +65,7 @@ SSH 使用 Windows 系统 OpenSSH，并沿用本地 PTY 的输入、输出、尺
 
 ## 快捷键与同步输入
 
-快捷键保存为“工作台命令 → 组合键”的用户设置，由工作台捕获并分派，终端组件不直接理解具体组合键。默认同步快捷键使用 `Ctrl+L` / `Ctrl+Shift+L`，`Ctrl+I` 会把默认网络路径选中的本机 IPv4 输入到活动终端；用户仍可自定义，设置页会提示潜在覆盖。字符终端向输入路由器注册各自的写入与聚焦能力；同步输入开启后，路由器只向递归布局中每个分区当前可见的本地终端、SSH、Telnet 或串口标签广播数据，设置页和隐藏标签不参与。关闭同步时，路由器将输入焦点交还当前活动分区的终端。
+快捷键保存为“工作台命令 → 组合键”的用户设置，由工作台捕获并分派，终端组件不直接理解具体组合键。默认同步快捷键使用 `Ctrl+L` / `Ctrl+Shift+L`，`Ctrl+I` 会把 `PPP adapter usg` 选中的 IPv4 输入到活动终端；用户仍可自定义，设置页会提示潜在覆盖。字符终端向输入路由器注册各自的写入与聚焦能力；同步输入开启后，路由器只向递归布局中每个分区当前可见的本地终端、SSH、Telnet 或串口标签广播数据，设置页和隐藏标签不参与。关闭同步时，路由器将输入焦点交还当前活动分区的终端。
 
 瓷砖排列快捷键默认为 `Ctrl + Equal`，只重新排列当前已打开的会话；`Ctrl+-` 将布局合并回单一分区。
 

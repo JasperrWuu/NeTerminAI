@@ -50,6 +50,43 @@ test("process provider keeps process runner separate and maps stdin/stdout", asy
   assert.match(calls[0].stdin, /FW1/);
 });
 
+test("PowerShell preset runs the configured ps1 with pwsh and administrator mode", async () => {
+  const calls = [];
+  const runner = {
+    async run(request) {
+      calls.push(request);
+      return { stdout: '{"diagnosis":"ok","evidence":[],"suggestedChecks":[],"proposals":[]}', stderr: "", exitCode: 0, cancelled: false, timedOut: false };
+    },
+    async cancel() {},
+  };
+  const provider = new ProcessAiProvider({
+    mode: "process",
+    preset: "powershell",
+    baseUrl: "",
+    model: "",
+    temperature: 0.2,
+    executable: "",
+    scriptPath: "C:\\Work\\assistant.ps1",
+    arguments: [],
+    cwd: "",
+    runAsAdministrator: true,
+    timeoutMs: 10_000,
+  }, runner);
+
+  await provider.analyze({ context: assembly(), question: "status" });
+  assert.equal(calls[0].executable, "pwsh.exe");
+  assert.deepEqual(calls[0].args, [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    "C:\\Work\\assistant.ps1",
+  ]);
+  assert.equal(calls[0].runAsAdministrator, true);
+});
+
 test("assistant captures latest selected contexts on every send", async () => {
   let output = "first";
   const providerContext = {

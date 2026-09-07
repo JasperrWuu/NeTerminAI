@@ -101,7 +101,7 @@ export function CfgPanel({ activeTabId, terminal }: CfgPanelProps) {
   const configValues: ConfigValues = draft;
   const previewIsCurrent = previewValues === configValues;
   const localIpv4Options = useMemo(
-    () => localIpv4 ? [{ value: localIpv4, label: localIpv4, description: "默认路由网卡" }] : [],
+    () => localIpv4 ? [{ value: localIpv4, label: localIpv4, description: "PPP 适配器 usg" }] : [],
     [localIpv4],
   );
 

@@ -30,6 +30,8 @@ interface SessionRunView {
   message?: string;
   stdout: string;
   stderr: string;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
 }
 
 interface ScriptExecutionView {
@@ -168,6 +170,8 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
           status: target.sessionId ? "pending" : "error",
           stdout: "",
           stderr: "",
+          stdoutTruncated: false,
+          stderrTruncated: false,
           ...(target.sessionId ? {} : { message: "目标终端已关闭或尚未建立连接" }),
         })),
       },
@@ -377,8 +381,12 @@ function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionVi
                 <span className="automation-run-state">{runStatusLabel(run.status)}</span>
                 {run.message && <span className="automation-run-message" title={run.message}>{run.message}</span>}
               </div>
-              {run.stdout && <RunOutputBlock>{run.stdout}</RunOutputBlock>}
-              {run.stderr && <RunOutputBlock className="automation-run-stderr">{run.stderr}</RunOutputBlock>}
+              {run.stdout && (
+                <RunOutputBlock truncated={run.stdoutTruncated}>{run.stdout}</RunOutputBlock>
+              )}
+              {run.stderr && (
+                <RunOutputBlock className="automation-run-stderr" truncated={run.stderrTruncated}>{run.stderr}</RunOutputBlock>
+              )}
             </div>
           );
         })}
@@ -387,7 +395,7 @@ function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionVi
   );
 }
 
-function RunOutputBlock({ children, className = "" }: { children: string; className?: string }) {
+function RunOutputBlock({ children, className = "", truncated = false }: { children: string; className?: string; truncated?: boolean }) {
   const outputRef = useRef<HTMLPreElement>(null);
   const stickToBottomRef = useRef(true);
 
@@ -405,6 +413,7 @@ function RunOutputBlock({ children, className = "" }: { children: string; classN
       }}
       ref={outputRef}
     >
+      {truncated && <span className="automation-output-truncated">输出过长，已截断，仅显示末尾内容。{"\n"}</span>}
       {children}
     </pre>
   );
@@ -581,12 +590,16 @@ function reduceOutputEvent(current: Record<string, ScriptExecutionView>, event: 
   const runs = execution.runs.map((run) => {
     if (run.tabId !== event.tabId
       || run.sessionId !== event.sessionId
-      || run.status === "success"
-      || run.status === "error"
-      || run.status === "cancelled") return run;
+    ) return run;
     const key = event.stream === "stderr" ? "stderr" : "stdout";
     const nextOutput = `${run[key]}${event.data}`;
-    return { ...run, [key]: nextOutput.length > MAX_RUN_OUTPUT_CHARS ? nextOutput.slice(-MAX_RUN_OUTPUT_CHARS) : nextOutput };
+    const truncated = nextOutput.length > MAX_RUN_OUTPUT_CHARS;
+    const truncatedKey = key === "stderr" ? "stderrTruncated" : "stdoutTruncated";
+    return {
+      ...run,
+      [key]: truncated ? nextOutput.slice(-MAX_RUN_OUTPUT_CHARS) : nextOutput,
+      [truncatedKey]: run[truncatedKey] || truncated,
+    };
   });
   return { ...current, [event.scriptId]: { ...execution, runs } };
 }

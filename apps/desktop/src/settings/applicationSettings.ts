@@ -7,7 +7,7 @@ import type {
   WorkspacePreferences,
 } from "./types";
 
-export const CURRENT_SETTINGS_SCHEMA_VERSION = 3;
+export const CURRENT_SETTINGS_SCHEMA_VERSION = 4;
 export const SETTINGS_STORAGE_KEY = "neterminai.application.settings.v2";
 export const LEGACY_SETTINGS_STORAGE_KEY = "neterminai.application.settings.v1";
 export const LEGACY_WORKBENCH_STORAGE_KEY = "neterminai.workbench.preferences.v2";
@@ -19,6 +19,7 @@ const KEYBINDING_IDS: readonly KeybindingCommandId[] = [
   "focusNextSession",
   "balanceWorkspace",
   "collapseWorkspace",
+  "toggleImmersiveMode",
 ];
 
 export const defaultApplicationSettings = createDefaultApplicationSettings();
@@ -76,6 +77,11 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
         binding: "Ctrl+-",
         enabled: true,
       },
+      toggleImmersiveMode: {
+        id: "toggleImmersiveMode",
+        binding: "F11",
+        enabled: true,
+      },
     },
     ai: {
       enabled: true,
@@ -88,6 +94,7 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
       scriptPath: "",
       arguments: [],
       cwd: "",
+      runAsAdministrator: true,
       timeoutMs: 60_000,
     },
     workspacePreferences: {
@@ -184,6 +191,9 @@ function normalizeAiSettings(value: Record<string, unknown> | null, defaults: Ap
     scriptPath: typeof value?.scriptPath === "string" ? value.scriptPath : defaults.scriptPath,
     arguments: args,
     cwd: typeof value?.cwd === "string" ? value.cwd : defaults.cwd,
+    runAsAdministrator: typeof value?.runAsAdministrator === "boolean"
+      ? value.runAsAdministrator
+      : defaults.runAsAdministrator,
     timeoutMs: finiteNumberInRange(value?.timeoutMs, 1_000, 600_000) ?? defaults.timeoutMs,
   };
 }

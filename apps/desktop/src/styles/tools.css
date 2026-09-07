@@ -155,7 +155,7 @@
 .cfg-notice-success { color: var(--success); }
 .cfg-operation-group { flex-shrink: 0; padding: 12px 14px; background: var(--bg-panel-solid); border-top: 1px solid var(--material-edge); }
 .cfg-operation-group > .cfg-notice { margin-bottom: 10px; }
-.cfg-target-section .select-menu { top: auto; bottom: calc(100% + 6px); margin-top: 0; }
+.cfg-target-section .select-menu:not(.select-menu-portal) { top: auto; bottom: calc(100% + 6px); margin-top: 0; }
 .cfg-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .cfg-actions .primary-button, .cfg-actions .secondary-button { min-width: 0; min-height: 34px; height: auto; padding: 7px 6px; justify-content: center; font-size: 12px; }
 .cfg-button-content { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
@@ -216,7 +216,7 @@
 .automation-add-button > span:last-child { font-size: 16px; line-height: 1; }
 .automation-notice { margin: 0; color: var(--danger); font-size: 11px; line-height: 1.45; }
 .automation-script-list { display: grid; gap: 8px; min-width: 0; }
-.automation-script { overflow: hidden; border: 1px solid var(--material-edge); border-radius: var(--radius-md); background: var(--bg-elevated); }
+.automation-script { overflow: visible; border: 1px solid var(--material-edge); border-radius: var(--radius-md); background: var(--bg-elevated); }
 .automation-script-header { align-items: center; display: flex; gap: 4px; min-height: 46px; padding: 4px 6px; }
 .automation-disclosure, .automation-run-button, .automation-delete-button {
   align-items: center;
@@ -249,7 +249,7 @@
 .automation-editor-toolbar { align-items: center; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); display: flex; justify-content: space-between; min-height: 30px; padding: 0 9px; }
 .automation-editor-toolbar span { color: var(--text-primary); font-size: 11px; font-weight: 600; }
 .automation-editor-toolbar small { color: var(--text-tertiary); font-size: 10px; }
-.automation-editor-body { display: grid; grid-template-columns: 34px minmax(0, 1fr); max-height: 370px; min-height: 190px; overflow: hidden; }
+.automation-editor-body { display: grid; grid-template-columns: 34px minmax(0, 1fr); max-height: 420px; min-height: 300px; overflow: hidden; }
 .automation-line-numbers { color: var(--text-tertiary); font: 12px/19px "Cascadia Mono", Consolas, monospace; overflow: hidden; padding: 12px 8px 12px 0; text-align: right; user-select: none; }
 .automation-line-numbers span { display: block; height: 19px; }
 .automation-code-layer { min-width: 0; overflow: hidden; position: relative; }
@@ -282,7 +282,8 @@
 .automation-run-name { color: var(--text-primary); flex: 0 1 auto; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .automation-run-state { color: var(--text-tertiary); flex: 0 0 auto; }
 .automation-run-message { color: var(--danger); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.automation-run-output { margin: 2px 0 7px 22px; max-height: 180px; overflow: auto; padding: 7px 9px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-canvas); color: var(--text-secondary); font: 11px/1.45 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.automation-run-output { margin: 2px 0 7px 22px; max-height: 300px; overflow: auto; padding: 7px 9px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-canvas); color: var(--text-secondary); font: 11px/1.45 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.automation-output-truncated { color: var(--warning); display: block; margin-bottom: 4px; }
 .automation-run-stderr { color: var(--danger); }
 @keyframes automation-spin { to { transform: rotate(360deg); } }
 @media (max-width: 420px) {

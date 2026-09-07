@@ -21,7 +21,7 @@ export const keybindingCommands: KeybindingCommand[] = [
   {
     id: "insertLocalIpv4",
     label: "输入本机 IPv4",
-    description: "将当前默认网络路径使用的本机 IPv4 输入到活动终端，不自动回车。",
+    description: "将 PPP 适配器 usg 的 IPv4 输入到活动终端，不自动回车。",
   },
   {
     id: "focusNextSession",
@@ -37,6 +37,11 @@ export const keybindingCommands: KeybindingCommand[] = [
     id: "collapseWorkspace",
     label: "合并所有分区",
     description: "将所有会话收回到一个分区，保留会话标签。",
+  },
+  {
+    id: "toggleImmersiveMode",
+    label: "沉浸模式",
+    description: "隐藏或恢复左右侧栏，扩大终端工作区域。",
   },
 ];
 

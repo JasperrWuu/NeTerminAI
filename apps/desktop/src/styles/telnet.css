@@ -1019,7 +1019,10 @@
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   position: relative;
+  width: 100%;
 }
 
 :root[data-theme="light"] .rdp-native-viewport { background: #e9e5dc; }

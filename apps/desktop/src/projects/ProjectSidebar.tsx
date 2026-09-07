@@ -10,6 +10,8 @@ interface ProjectSidebarProps {
   connections: readonly SavedConnectionSession[];
   onCreateProject: (name: string) => void;
   onActivateProject: (projectId: string) => void;
+  onOpenDevice: (connectionId: string) => void;
+  onOpenAllDevices: (projectId: string) => void;
   onAddDevice: (projectId: string, connectionId: string) => void;
   onRemoveDevice: (projectId: string, connectionId: string) => void;
   onUpdateContext: (projectId: string, patch: ProjectContextPatch) => void;
@@ -21,6 +23,8 @@ export function ProjectSidebar({
   connections,
   onCreateProject,
   onActivateProject,
+  onOpenDevice,
+  onOpenAllDevices,
   onAddDevice,
   onRemoveDevice,
   onUpdateContext,
@@ -119,6 +123,8 @@ export function ProjectSidebar({
             setDeviceToAdd("");
           }}
           onChangeDeviceToAdd={setDeviceToAdd}
+          onOpenDevice={onOpenDevice}
+          onOpenAllDevices={() => onOpenAllDevices(activeProject.id)}
           onRemoveDevice={(connectionId) => onRemoveDevice(activeProject.id, connectionId)}
           onCancelContextEdit={() => setEditingContext(false)}
           onStartEditContext={() => setEditingContext(true)}
@@ -161,6 +167,8 @@ function ProjectDetails({
   editingContext,
   onAddDevice,
   onChangeDeviceToAdd,
+  onOpenDevice,
+  onOpenAllDevices,
   onRemoveDevice,
   onCancelContextEdit,
   onStartEditContext,
@@ -172,6 +180,8 @@ function ProjectDetails({
   editingContext: boolean;
   onAddDevice: () => void;
   onChangeDeviceToAdd: (value: string) => void;
+  onOpenDevice: (connectionId: string) => void;
+  onOpenAllDevices: () => void;
   onRemoveDevice: (connectionId: string) => void;
   onCancelContextEdit: () => void;
   onStartEditContext: () => void;
@@ -188,12 +198,24 @@ function ProjectDetails({
   return (
     <section className="project-details" aria-label={`${project.name} 项目详情`}>
       <div className="project-detail-section">
-        <div className="project-detail-heading"><span>设备</span><span>{project.devices.length}</span></div>
+        <div className="project-detail-heading">
+          <span>设备</span>
+          <span className="project-detail-heading-actions">
+            <span>{project.devices.length}</span>
+            {project.devices.length > 0 && (
+              <button className="project-open-all-button" onClick={onOpenAllDevices} title="打开全部设备" type="button">
+                <span>打开全部</span>
+              </button>
+            )}
+          </span>
+        </div>
         <div className="project-device-list">
           {linkedConnections.map(({ ref, session }) => (
             <div className="project-device-row" key={ref.connectionId}>
-              <span className="project-device-icon">{session ? <ConnectionProtocolIcon kind={connectionKind(session)} /> : "?"}</span>
-              <span>{ref.alias || session?.name || "已移除的连接"}</span>
+              <button className="project-device-main" disabled={!session} onClick={() => session && onOpenDevice(ref.connectionId)} type="button">
+                <span className="project-device-icon">{session ? <ConnectionProtocolIcon kind={connectionKind(session)} /> : "?"}</span>
+                <span>{ref.alias || session?.name || "已移除的连接"}</span>
+              </button>
               <button aria-label={`移除 ${ref.alias || session?.name || "设备"}`} onClick={() => onRemoveDevice(ref.connectionId)} type="button"><CloseIcon /></button>
             </div>
           ))}

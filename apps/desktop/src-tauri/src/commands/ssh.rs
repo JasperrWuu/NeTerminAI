@@ -4,6 +4,14 @@ use super::run_blocking;
 use crate::terminal::TerminalManager;
 
 #[tauri::command]
+pub async fn prepare_ssh(app: AppHandle, host: String, port: u16) -> Result<(), String> {
+    run_blocking("SSH 主机密钥准备", move || {
+        app.state::<TerminalManager>().prepare_ssh(&host, port)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn create_ssh(
     app: AppHandle,
     session_id: String,

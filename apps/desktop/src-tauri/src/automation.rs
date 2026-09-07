@@ -52,6 +52,15 @@ import traceback
 SEND_PREFIX = "__NETERMINAI_AUTOMATION_SEND__"
 ACK_PREFIX = "__NETERMINAI_AUTOMATION_ACK__"
 
+def force_utf8(stream):
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", errors="replace")
+
+force_utf8(sys.stdout)
+force_utf8(sys.stderr)
+force_utf8(sys.stdin)
+
 def send(command, timeout=None, responses=None):
     if not isinstance(command, str):
         command = str(command)
@@ -598,6 +607,8 @@ fn spawn_python(script_path: &str) -> Result<Child, String> {
 fn configure_python_command(command: &mut Command, script_path: &str) {
     command
         .args(["-u", "-c", PYTHON_BOOTSTRAP, script_path])
+        .env("PYTHONIOENCODING", "utf-8:replace")
+        .env("PYTHONUTF8", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -611,6 +622,8 @@ fn configure_python_command(command: &mut Command, script_path: &str) {
 fn configure_python_launcher(command: &mut Command, script_path: &str) {
     command
         .args(["-3", "-u", "-c", PYTHON_BOOTSTRAP, script_path])
+        .env("PYTHONIOENCODING", "utf-8:replace")
+        .env("PYTHONUTF8", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -983,7 +996,7 @@ impl CommandCollector {
             None
         };
         let prompt = if self.saw_output && interaction.is_none() {
-            detect_prompt(&tail).filter(|candidate| {
+            detect_final_prompt(&tail).filter(|candidate| {
                 prompt_matches_context(candidate, self.initial_prompt.as_deref(), &self.command)
             })
         } else {
@@ -1126,12 +1139,53 @@ fn detect_prompt(text: &str) -> Option<String> {
     None
 }
 
+/// A prompt is only a completion marker when the stream has already supplied
+/// some command activity before it.  In particular, a PTY can echo the
+/// current prompt as a separate chunk before the command echo arrives.  That
+/// chunk must not complete the transaction by itself.  A prompt on a line
+/// following output (with or without its final line break) remains valid.
+fn detect_final_prompt(text: &str) -> Option<String> {
+    let candidate = detect_prompt(text)?;
+    let position = text.rfind(&candidate)?;
+    let prefix = &text[..position];
+    if prefix.trim().is_empty() && !text.ends_with('\r') && !text.ends_with('\n') {
+        return None;
+    }
+    Some(candidate)
+}
+
 fn prompt_matches_context(candidate: &str, initial_prompt: Option<&str>, command: &str) -> bool {
     if !is_huawei_prompt(candidate) {
         return true;
     }
     let Some(initial_prompt) = initial_prompt.filter(|prompt| is_huawei_prompt(prompt)) else {
-        return true;
+        // A first transaction may start before the terminal has exposed its
+        // prompt state.  Angle-bracket prompts are unambiguous in Huawei user
+        // view; for bracket prompts, require either a view separator/digit or
+        // an explicit sysname command.  This prevents a final business line
+        // such as `[UP]` from completing a transaction while still accepting
+        // arbitrary, previously unknown view names.
+        if huawei_prompt_is_user_view(candidate) {
+            return true;
+        }
+        if huawei_prompt_inner(candidate).contains('-')
+            || huawei_prompt_inner(candidate)
+                .chars()
+                .any(|character| character.is_ascii_digit())
+        {
+            return true;
+        }
+        let mut command_parts = command.split_whitespace();
+        if command_parts
+            .next()
+            .is_some_and(|part| part.eq_ignore_ascii_case("sysname"))
+            && command_parts
+                .next()
+                .is_some_and(|name| prompt_root_matches(huawei_prompt_inner(candidate), name))
+        {
+            return true;
+        }
+        return false;
     };
     if candidate == initial_prompt {
         return true;
@@ -1158,7 +1212,20 @@ fn prompt_matches_context(candidate: &str, initial_prompt: Option<&str>, command
 }
 
 fn huawei_prompt_inner(prompt: &str) -> &str {
+    let prompt = huawei_prompt_body(prompt);
     &prompt[1..prompt.len() - 1]
+}
+
+fn huawei_prompt_is_user_view(prompt: &str) -> bool {
+    let prompt = huawei_prompt_body(prompt);
+    prompt.starts_with('<') && prompt.ends_with('>')
+}
+
+fn huawei_prompt_body(prompt: &str) -> &str {
+    prompt
+        .strip_prefix("HRP_M")
+        .or_else(|| prompt.strip_prefix("HRP_S"))
+        .unwrap_or(prompt)
 }
 
 fn prompt_root_matches(candidate: &str, root: &str) -> bool {
@@ -1193,14 +1260,16 @@ fn detect_interaction(text: &str) -> Option<String> {
 }
 
 fn is_huawei_prompt(line: &str) -> bool {
-    let (open, close) = if line.starts_with('<') && line.ends_with('>') {
+    let line = line.trim();
+    let body = huawei_prompt_body(line);
+    let (open, close) = if body.starts_with('<') && body.ends_with('>') {
         ('<', '>')
-    } else if line.starts_with('[') && line.ends_with(']') {
+    } else if body.starts_with('[') && body.ends_with(']') {
         ('[', ']')
     } else {
         return false;
     };
-    let inner = &line[open.len_utf8()..line.len() - close.len_utf8()];
+    let inner = &body[open.len_utf8()..body.len() - close.len_utf8()];
     !inner.is_empty()
         && inner.chars().all(|character| {
             !character.is_control() && !character.is_whitespace() && !matches!(character, '<' | '>')
@@ -1553,6 +1622,27 @@ mod tests {
     }
 
     #[test]
+    fn an_echoed_prompt_chunk_does_not_complete_before_command_activity() {
+        let mut collector = CommandCollector::new("display health", Some("<FW1>".to_owned()));
+        assert!(collector.push(b"<FW1>").unwrap().prompt.is_none());
+        assert!(
+            collector
+                .push(b"display health\r\nNormal\r\n")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        let signal = collector.push(b"<FW1>").unwrap();
+        assert_eq!(signal.prompt.as_deref(), Some("<FW1>"));
+    }
+
+    #[test]
+    fn first_prompt_can_complete_after_a_line_break_without_command_echo() {
+        let mut collector = CommandCollector::new("display version", Some("<FW1>".to_owned()));
+        assert!(collector.push(b"\r\n<FW1>\r\n").unwrap().prompt.is_some());
+    }
+
+    #[test]
     fn prompt_completion_does_not_require_a_command_echo() {
         let mut collector = CommandCollector::new("display health", Some("<FW1>".to_owned()));
         let signal = collector
@@ -1603,6 +1693,33 @@ mod tests {
     }
 
     #[test]
+    fn prompt_detector_accepts_hrp_role_prefixes_and_role_changes() {
+        assert_eq!(
+            detect_prompt("HRP_M<FW1>\r\n"),
+            Some("HRP_M<FW1>".to_owned())
+        );
+        assert_eq!(
+            detect_prompt("HRP_S[FW1-GigabitEthernet0/0/1]\r\n"),
+            Some("HRP_S[FW1-GigabitEthernet0/0/1]".to_owned())
+        );
+
+        let mut collector = CommandCollector::new("display health", Some("HRP_M<FW1>".to_owned()));
+        assert!(
+            collector
+                .push(b"Slot  Card  Status\r\n0     MPU   Normal\r\nHRP_S[")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        let signal = collector.push(b"FW1]\r\n").unwrap();
+        assert_eq!(signal.prompt.as_deref(), Some("HRP_S[FW1]"));
+        assert_eq!(
+            collector.normalized_output(signal.prompt.as_deref()),
+            "Slot  Card  Status\n0     MPU   Normal"
+        );
+    }
+
+    #[test]
     fn prompt_detection_is_tail_only_for_bracketed_status_text() {
         let mut collector = CommandCollector::new("display health", Some("<FW1>".to_owned()));
         assert!(
@@ -1627,6 +1744,20 @@ mod tests {
             signal.prompt.as_deref(),
             Some("[FW1-arbitrary-future-view]")
         );
+    }
+
+    #[test]
+    fn first_transaction_does_not_treat_bracketed_status_as_prompt() {
+        let mut collector = CommandCollector::new("display health", None);
+        assert!(
+            collector
+                .push(b"Status: [UP]\r\n[UP]\r\n")
+                .unwrap()
+                .prompt
+                .is_none()
+        );
+        let signal = collector.push(b"[FW1]\r\n").unwrap();
+        assert_eq!(signal.prompt.as_deref(), Some("[FW1]"));
     }
 
     #[test]

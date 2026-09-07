@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { CheckIcon, ChevronIcon } from "../workbench/icons";
+import { useFloatingMenu } from "./useFloatingMenu";
 
 export interface MultiSelectOption<T extends string = string> {
   value: T;
@@ -34,6 +36,9 @@ export function MultiSelect<T extends string>({
 }: MultiSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuStyle = useFloatingMenu(open, triggerRef);
   const selected = useMemo(() => new Set(values), [values]);
   const label = selectedLabel ?? (values.length === 0
     ? placeholder
@@ -42,7 +47,8 @@ export function MultiSelect<T extends string>({
   useEffect(() => {
     if (!open) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
@@ -64,13 +70,14 @@ export function MultiSelect<T extends string>({
         aria-label={ariaLabel}
         className="select-trigger multi-select-trigger"
         onClick={() => setOpen((current) => !current)}
+        ref={triggerRef}
         type="button"
       >
         <span className="select-trigger-label">{label}</span>
         <span aria-hidden="true" className="select-chevron"><ChevronIcon /></span>
       </button>
-      {open && (
-        <div className="select-menu multi-select-menu">
+      {open && createPortal(
+        <div className="select-menu multi-select-menu select-menu-portal" ref={menuRef} style={menuStyle}>
           <div aria-label={ariaLabel} aria-multiselectable="true" className="select-options" role="listbox">
             {options.length > 0 ? options.map((option) => (
               <button
@@ -91,7 +98,8 @@ export function MultiSelect<T extends string>({
               </button>
             )) : <div className="select-empty">{emptyLabel}</div>}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

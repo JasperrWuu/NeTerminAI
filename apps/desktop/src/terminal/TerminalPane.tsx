@@ -20,6 +20,7 @@ interface TerminalPaneCommonProps {
   theme: AppearanceTheme;
   onInput: (tabId: string, data: string) => void;
   onActivate: () => void;
+  onConnectionFailure?: () => void;
   registerInputTarget: (tabId: string, target: import("./useSynchronizedInput").TerminalInputTarget) => () => void;
   runtimeRegistry: TerminalSessionRegistry;
 }
@@ -87,6 +88,14 @@ export function TerminalPane(props: TerminalPaneProps) {
 
   const status = toPaneStatus(snapshot?.state ?? "connecting");
   const errorMessage = snapshot?.message ?? "";
+
+  useEffect(() => {
+    if (props.sessionType !== "ssh"
+      || snapshot?.state !== "failed"
+      || snapshot.reason !== "connectionFailed"
+      || !props.onConnectionFailure) return;
+    props.onConnectionFailure();
+  }, [props.onConnectionFailure, props.sessionType, snapshot?.reason, snapshot?.state]);
 
   return (
     <section

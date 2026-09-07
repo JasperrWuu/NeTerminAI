@@ -86,11 +86,20 @@ impl OutputReceiver {
         cancellation: &CancellationToken,
         maximum_batch_bytes: usize,
     ) -> Result<Option<Vec<u8>>, QueueReceiveError> {
-        if cancellation.is_cancelled() {
-            return Err(QueueReceiveError::Cancelled);
-        }
         if maximum_batch_bytes == 0 {
             return Ok(None);
+        }
+
+        // A reader can enqueue its final bytes immediately before it observes
+        // EOF and requests cleanup.  Cleanup cancels the output worker, but
+        // already queued bytes still belong to the session and must be
+        // delivered before the receiver exits.  Drain those bytes
+        // non-blockingly after cancellation; once the queue is empty, return
+        // the cancellation signal so a closed session cannot keep waiting.
+        if cancellation.is_cancelled() {
+            return self
+                .try_next_batch(maximum_batch_bytes)
+                .map_or(Err(QueueReceiveError::Cancelled), |batch| Ok(Some(batch)));
         }
 
         let first = match self.pending.take() {
@@ -129,6 +138,40 @@ impl OutputReceiver {
             }
         }
         Ok(Some(batch))
+    }
+
+    fn try_next_batch(&mut self, maximum_batch_bytes: usize) -> Option<Vec<u8>> {
+        let first = match self.pending.take() {
+            Some(chunk) => chunk,
+            None if self.closed => return None,
+            None => match self.receiver.try_recv() {
+                Ok(chunk) => chunk,
+                Err(TryRecvError::Empty) => return None,
+                Err(TryRecvError::Disconnected) => {
+                    self.closed = true;
+                    return None;
+                }
+            },
+        };
+
+        let mut batch = first;
+        while batch.len() < maximum_batch_bytes {
+            match self.receiver.try_recv() {
+                Ok(chunk) if batch.len() + chunk.len() <= maximum_batch_bytes => {
+                    batch.extend_from_slice(&chunk);
+                }
+                Ok(chunk) => {
+                    self.pending = Some(chunk);
+                    break;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.closed = true;
+                    break;
+                }
+            }
+        }
+        Some(batch)
     }
 }
 
@@ -239,6 +282,26 @@ mod tests {
                 .next_batch(&cancellation, OUTPUT_BATCH_BYTES)
                 .unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn cancellation_drains_bytes_already_queued_by_reader() {
+        let (sender, mut receiver) = output_queue();
+        let cancellation = CancellationToken::new();
+        sender.send(b"first".to_vec(), &cancellation).unwrap();
+        sender.send(b"second".to_vec(), &cancellation).unwrap();
+        cancellation.cancel();
+
+        assert_eq!(
+            receiver
+                .next_batch(&cancellation, OUTPUT_BATCH_BYTES)
+                .unwrap(),
+            Some(b"firstsecond".to_vec())
+        );
+        assert_eq!(
+            receiver.next_batch(&cancellation, OUTPUT_BATCH_BYTES),
+            Err(QueueReceiveError::Cancelled)
         );
     }
 }

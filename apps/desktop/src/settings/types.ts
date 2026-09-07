@@ -12,7 +12,8 @@ export type KeybindingCommandId =
   | "insertLocalIpv4"
   | "focusNextSession"
   | "balanceWorkspace"
-  | "collapseWorkspace";
+  | "collapseWorkspace"
+  | "toggleImmersiveMode";
 
 export interface KeybindingSetting {
   id: KeybindingCommandId;
@@ -57,6 +58,7 @@ export interface AiSettings {
   scriptPath: string;
   arguments: string[];
   cwd: string;
+  runAsAdministrator: boolean;
   timeoutMs: number;
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import type { RdpConnection, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
+import type { RdpConnection, SavedConnectionSession, SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import { getLocalTerminalProfile } from "../terminal/profiles";
 import type { LocalTerminalProfileId } from "../terminal/profiles";
 import {
@@ -186,6 +186,45 @@ export function useWorkspaceTabs(
     title: connection.name.trim() || `${connection.host}:${connection.port}`,
   })), [addTab]);
 
+  /**
+   * Open a saved connection once per project.  Project device actions use the
+   * persisted connection id as the stable identity; an existing tab is
+   * activated instead of creating a second runtime.
+   */
+  const openSavedConnection = useCallback((connection: SavedConnectionSession) => {
+    setWorkspace((current) => {
+      const existing = current.tabs.find((tab) => (
+        tab.projectId === current.projectId && tab.connectionId === connection.id
+      ));
+      if (existing) {
+        const pane = findPaneContainingTab(current.layout, existing.id);
+        if (!pane) return current;
+        return {
+          ...current,
+          layout: updatePane(current.layout, pane.id, (candidate) => ({
+            ...candidate,
+            activeTabId: existing.id,
+          })),
+          activePaneId: pane.id,
+        };
+      }
+
+      const tabId = crypto.randomUUID();
+      const tab = savedConnectionTab(connection, tabId, current.projectId);
+      const paneId = findPane(current.layout, current.activePaneId)?.id ?? firstPane(current.layout).id;
+      return {
+        ...current,
+        tabs: [...current.tabs, tab],
+        layout: updatePane(current.layout, paneId, (pane) => ({
+          ...pane,
+          tabIds: [...pane.tabIds, tab.id],
+          activeTabId: tab.id,
+        })),
+        activePaneId: paneId,
+      };
+    });
+  }, []);
+
   const activateTab = useCallback((paneId: string, tabId: string) => {
     setWorkspace((current) => ({
       ...current,
@@ -345,6 +384,7 @@ export function useWorkspaceTabs(
     openSerial,
     openSsh,
     openRdp,
+    openSavedConnection,
     closeTab,
     moveTab,
     mergeAllTabGroups,
@@ -367,6 +407,7 @@ export function useWorkspaceTabs(
     openSerial,
     openSsh,
     openRdp,
+    openSavedConnection,
     openTelnet,
     workspace.layout,
     workspace.tabs,
@@ -375,4 +416,23 @@ export function useWorkspaceTabs(
     switchProject,
     workspace.projectId,
   ]);
+}
+
+function savedConnectionTab(
+  connection: SavedConnectionSession,
+  tabId: string,
+  projectId: string,
+): WorkspaceTab {
+  const title = connection.name.trim()
+    || (connection.kind === "serial" ? connection.portName : `${connection.host}:${connection.port}`);
+  if (connection.kind === "telnet") {
+    return { id: tabId, projectId, connectionId: connection.id, kind: "telnet", connection, title };
+  }
+  if (connection.kind === "serial") {
+    return { id: tabId, projectId, connectionId: connection.id, kind: "serial", connection, title };
+  }
+  if (connection.kind === "ssh") {
+    return { id: tabId, projectId, connectionId: connection.id, kind: "ssh", connection, title };
+  }
+  return { id: tabId, projectId, connectionId: connection.id, kind: "rdp", connection, title };
 }

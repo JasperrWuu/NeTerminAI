@@ -37,6 +37,7 @@ import { useConnectionLibrary } from "../connections/useConnectionLibrary";
 import { collectVisibleTabIds } from "../workspace/layout";
 import { useSynchronizedInput } from "../terminal/useSynchronizedInput";
 import { systemApi } from "../ipc/system";
+import { terminalApi } from "../ipc/terminal";
 import {
   TerminalContextScope,
   AiContextSelector,
@@ -95,8 +96,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
   const [tabDragging, setTabDragging] = useState(false);
   const [runtimeApiKey, setRuntimeApiKey] = useState("");
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const [immersiveMode, setImmersiveMode] = useState(false);
+  const immersivePreviousRef = useRef<{ leftSidebarOpen: boolean; rightSidebarOpen: boolean } | null>(null);
   const statusNoticeTimerRef = useRef<number | undefined>(undefined);
   const mountedRef = useRef(true);
+  const sshConnectPendingRef = useRef(false);
   const connectionLibrary = useConnectionLibrary();
   const projectManager = useProjects();
   const initialProjectState = useMemo(() => {
@@ -252,6 +256,27 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     if (!preferences.leftSidebarOpen) preferences.toggleLeftSidebar();
   }, [preferences.leftSidebarOpen, preferences.toggleLeftSidebar]);
 
+  const toggleImmersiveMode = useCallback(() => {
+    if (!immersiveMode) {
+      immersivePreviousRef.current = {
+        leftSidebarOpen: preferences.leftSidebarOpen,
+        rightSidebarOpen: preferences.rightSidebarOpen,
+      };
+      if (preferences.leftSidebarOpen) preferences.toggleLeftSidebar();
+      if (preferences.rightSidebarOpen) preferences.toggleRightSidebar();
+      setImmersiveMode(true);
+      return;
+    }
+
+    const previous = immersivePreviousRef.current;
+    if (previous) {
+      if (preferences.leftSidebarOpen !== previous.leftSidebarOpen) preferences.toggleLeftSidebar();
+      if (preferences.rightSidebarOpen !== previous.rightSidebarOpen) preferences.toggleRightSidebar();
+    }
+    immersivePreviousRef.current = null;
+    setImmersiveMode(false);
+  }, [immersiveMode, preferences.leftSidebarOpen, preferences.rightSidebarOpen, preferences.toggleLeftSidebar, preferences.toggleRightSidebar]);
+
   const showStatusNotice = useCallback((message: string) => {
     if (!mountedRef.current) return;
     setStatusNotice(message);
@@ -270,14 +295,14 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       .then((address) => {
         if (activeTerminalIdRef.current !== targetTabId) return;
         if (!address) {
-          showStatusNotice("未找到可用的本机 IPv4 地址");
+          showStatusNotice("未找到 PPP 适配器 usg 的 IPv4 地址");
           return;
         }
         synchronizedInput.routeInput(targetTabId, address);
       })
       .catch(() => {
         if (activeTerminalIdRef.current === targetTabId) {
-          showStatusNotice("无法读取本机 IPv4 地址");
+          showStatusNotice("无法读取 PPP 适配器 usg 的 IPv4 地址");
         }
       });
   }, [showStatusNotice, synchronizedInput.routeInput]);
@@ -296,18 +321,15 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
       if (dialogOpen || target?.closest("[data-keybinding-recorder]")) return;
-      const editable = target?.closest("input, textarea, select, [contenteditable='true']");
-      if (editable && !target?.closest(".xterm")) return;
-
-      // Settings owns its own page and keyboard navigation. Workspace commands
-      // must not mutate the hidden session layout while the user is editing it.
-      if (settingsOpen) return;
-
       const command = resolveKeyboardShortcut(event, settings.keybindings);
       if (!command) return;
+      if (settingsOpen && command.id !== "toggleImmersiveMode") return;
+      const editable = target?.closest("input, textarea, select, [contenteditable='true']");
+      if (editable && !target?.closest(".xterm") && command.id !== "toggleImmersiveMode") return;
 
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (command.id === "toggleImmersiveMode" && event.repeat) return;
       if (command.id === "synchronizeVisibleTerminals") {
         synchronizedInput.enable();
       } else if (command.id === "stopSynchronizedInput") {
@@ -319,6 +341,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
         workspaceTabs.balanceWorkspace();
       } else if (command.id === "collapseWorkspace") {
         workspaceTabs.collapseWorkspace();
+      } else if (command.id === "toggleImmersiveMode") {
+        toggleImmersiveMode();
       } else {
         workspaceTabs.activateNextSession();
       }
@@ -335,16 +359,54 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     synchronizedInput.enable,
     synchronizedInput.focus,
     insertLocalIpv4,
+    toggleImmersiveMode,
     workspaceTabs.activateNextSession,
     workspaceTabs.balanceWorkspace,
     workspaceTabs.collapseWorkspace,
   ]);
-  const openSavedConnection = (session: SavedConnectionSession) => {
-    if (session.kind === "telnet") workspaceTabs.openTelnet(session, session.id);
-    else if (session.kind === "serial") workspaceTabs.openSerial(session, session.id);
-    else if (session.kind === "ssh") workspaceTabs.openSsh(session, session.id);
-    else workspaceTabs.openRdp(session, session.id);
-  };
+  const openSavedConnection = useCallback((session: SavedConnectionSession) => {
+    if (session.kind !== "ssh") {
+      workspaceTabs.openSavedConnection(session);
+      return;
+    }
+    void terminalApi.prepareSsh(session.host, session.port)
+      .then(() => workspaceTabs.openSavedConnection(session))
+      .catch((error: unknown) => showStatusNotice(error instanceof Error ? error.message : "无法准备 SSH 主机密钥"));
+  }, [showStatusNotice, workspaceTabs.openSavedConnection]);
+
+  const openProjectDevices = useCallback((projectId: string) => {
+    const project = projectManager.projects.find((candidate) => candidate.id === projectId);
+    if (!project) return;
+    const savedById = new Map(connectionLibrary.sessions.map((session) => [session.id, session]));
+    const openConnectionIds = new Set(
+      workspaceTabs.tabs
+        .filter((tab) => tab.projectId === projectId && tab.connectionId)
+        .map((tab) => tab.connectionId as string),
+    );
+    const processedConnectionIds = new Set<string>();
+    let opened = 0;
+    let alreadyOpen = 0;
+    let unavailable = 0;
+    for (const device of project.devices) {
+      if (processedConnectionIds.has(device.connectionId)) continue;
+      processedConnectionIds.add(device.connectionId);
+      const session = savedById.get(device.connectionId);
+      if (!session) {
+        unavailable += 1;
+        continue;
+      }
+      if (openConnectionIds.has(session.id)) alreadyOpen += 1;
+      else opened += 1;
+      openSavedConnection(session);
+    }
+    if (unavailable > 0) {
+      showStatusNotice(`${opened + alreadyOpen}/${project.devices.length} 个设备已打开，${unavailable} 个连接已移除`);
+    } else if (opened === 0) {
+      showStatusNotice(alreadyOpen > 0 ? "项目中的设备已在工作区打开" : "项目中暂无可打开的设备");
+    } else {
+      showStatusNotice(`正在打开 ${opened + alreadyOpen}/${project.devices.length} 个设备`);
+    }
+  }, [connectionLibrary.sessions, openSavedConnection, projectManager.projects, showStatusNotice, workspaceTabs.tabs]);
   const editSavedConnection = (session: SavedConnectionSession) => {
     if (session.kind === "telnet") setTelnetDialog({ open: true, session });
     else if (session.kind === "serial") setSerialDialog({ open: true, session });
@@ -490,6 +552,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           connection={tab.connection}
           key={tab.id}
           onActivate={() => workspaceTabs.activatePane(paneId)}
+          onConnectionFailure={() => workspaceTabs.closeTab(paneId, tab.id)}
           onInput={synchronizedInput.routeInput}
           registerInputTarget={synchronizedInput.registerTarget}
           sessionType="ssh"
@@ -636,6 +699,11 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
                   }}
                   onAddDevice={projectManager.addDevice}
                   onCreateProject={createProject}
+                  onOpenAllDevices={openProjectDevices}
+                  onOpenDevice={(connectionId) => {
+                    const session = connectionLibrary.sessions.find((candidate) => candidate.id === connectionId);
+                    if (session) openSavedConnection(session);
+                  }}
                   onRemoveDevice={projectManager.removeDevice}
                   onUpdateContext={projectManager.updateContext}
                   projects={projectManager.projects}
@@ -793,9 +861,20 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
           initialSession={sshDialog.session}
           onCancel={closeSshDialog}
           onSubmit={(connection, save) => {
-            if (save) connectionLibrary.saveSsh(connection, sshDialog.session?.folderId ?? null, sshDialog.session?.id);
-            if (!sshDialog.session) workspaceTabs.openSsh(connection);
-            closeSshDialog();
+            if (sshConnectPendingRef.current) return;
+            sshConnectPendingRef.current = true;
+            void terminalApi.prepareSsh(connection.host, connection.port)
+              .then(() => {
+                if (save) connectionLibrary.saveSsh(connection, sshDialog.session?.folderId ?? null, sshDialog.session?.id);
+                if (!sshDialog.session) workspaceTabs.openSsh(connection);
+                closeSshDialog();
+              })
+              .catch((error: unknown) => {
+                showStatusNotice(error instanceof Error ? error.message : "无法准备 SSH 主机密钥");
+              })
+              .finally(() => {
+                sshConnectPendingRef.current = false;
+              });
           }}
         />
       )}

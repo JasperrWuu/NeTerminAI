@@ -10,6 +10,7 @@ export interface AiProcessRequest {
   cwd?: string;
   stdin: string;
   timeoutMs: number;
+  runAsAdministrator: boolean;
 }
 
 export interface AiProcessOutputEvent {
@@ -29,6 +30,7 @@ export const aiProcessApi = {
           cwd: request.cwd || null,
           stdin: request.stdin,
           timeoutMs: request.timeoutMs,
+          runAsAdministrator: request.runAsAdministrator,
         },
       });
       return decodeResult(result);

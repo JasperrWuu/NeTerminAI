@@ -27,6 +27,7 @@ test("defaults expose one versioned settings model", () => {
   assert.equal(settings.schemaVersion, CURRENT_SETTINGS_SCHEMA_VERSION);
   assert.equal(settings.keybindings.balanceWorkspace.binding, "Ctrl+Equal");
   assert.equal(settings.keybindings.balanceWorkspace.enabled, true);
+  assert.equal(settings.ai.runAsAdministrator, true);
   assert.deepEqual(settings.workspacePreferences, {
     leftSidebarOpen: true,
     rightSidebarOpen: false,

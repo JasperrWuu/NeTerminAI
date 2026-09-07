@@ -969,9 +969,6 @@ fn run_output_pump(
         return;
     }
     while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
-        if !control.writable() {
-            break;
-        }
         crate::output_stream::publish_output(&app, &session_id, &batch);
         if app
             .emit(

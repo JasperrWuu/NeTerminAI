@@ -35,6 +35,10 @@ export class RdpSessionRuntime {
   private resizeFrame: number | undefined;
   private statusTimer: number | undefined;
   private disconnectedSince: number | undefined;
+  private resizeRequestId = 0;
+  private resizeInFlight = false;
+  private pendingResize: { bounds: RdpBounds; visible: boolean; id: number } | undefined;
+  private readonly handleWindowResize = () => this.scheduleResize();
   private created = false;
   private started = false;
   private closeRequested = false;
@@ -70,6 +74,8 @@ export class RdpSessionRuntime {
     this.view = view;
     this.resizeObserver ??= new ResizeObserver(() => this.scheduleResize());
     this.resizeObserver.observe(view.container);
+    if (view.container.parentElement) this.resizeObserver.observe(view.container.parentElement);
+    window.addEventListener("resize", this.handleWindowResize);
     this.scheduleResize();
     this.start();
     this.notify();
@@ -80,6 +86,7 @@ export class RdpSessionRuntime {
     if (this.view?.container !== view.container) {
       this.resizeObserver?.disconnect();
       this.resizeObserver = undefined;
+      window.removeEventListener("resize", this.handleWindowResize);
       this.attachView(view);
       return;
     }
@@ -91,6 +98,7 @@ export class RdpSessionRuntime {
     if (this.disposed || this.view?.container !== container) return;
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
+    window.removeEventListener("resize", this.handleWindowResize);
     this.view = undefined;
     this.sendResize(false);
   }
@@ -111,6 +119,7 @@ export class RdpSessionRuntime {
     this.statusTimer = undefined;
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
+    window.removeEventListener("resize", this.handleWindowResize);
     this.view = undefined;
     this.requestClose();
     this.listeners.clear();
@@ -205,9 +214,26 @@ export class RdpSessionRuntime {
   private sendResize(visible: boolean) {
     if (this.disposed || !this.created) return;
     const bounds = this.view ? readBounds(this.view.container) : EMPTY_BOUNDS;
-    void rdpApi.resize(this.sessionId, bounds, visible).catch((error: unknown) => {
-      if (!this.disposed) this.setError(String(error));
-    });
+    const id = ++this.resizeRequestId;
+    this.pendingResize = { bounds, visible, id };
+    this.flushResize();
+  }
+
+  private flushResize() {
+    if (this.disposed || this.resizeInFlight || !this.pendingResize) return;
+    const request = this.pendingResize;
+    this.pendingResize = undefined;
+    this.resizeInFlight = true;
+    void rdpApi.resize(this.sessionId, request.bounds, request.visible)
+      .catch((error: unknown) => {
+        if (!this.disposed) this.setError(String(error));
+      })
+      .finally(() => {
+        this.resizeInFlight = false;
+        if (!this.disposed && this.pendingResize && this.pendingResize.id > request.id) {
+          this.flushResize();
+        }
+      });
   }
 
   private requestClose() {

@@ -181,6 +181,15 @@
   z-index: 120;
 }
 
+/* Portalled menus escape clipped cards, xterm surfaces and nested splitters.
+   The trigger's measured rect supplies the same width and inline edges. */
+.select-menu-portal {
+  inset-inline: auto;
+  margin-top: 0;
+  position: fixed;
+  z-index: 1000;
+}
+
 .select-search {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);

@@ -13,6 +13,7 @@ export interface ProcessRunner {
     cwd?: string;
     stdin: string;
     timeoutMs: number;
+    runAsAdministrator: boolean;
   }): Promise<AiProcessResult>;
   cancel(requestId: string): Promise<void>;
   subscribeOutput?(requestId: string, onEvent: (event: { stream: "stdout" | "stderr"; data: string }) => void): Promise<() => void>;
@@ -31,14 +32,18 @@ export class ProcessAiProvider implements AiProvider {
   async analyze(request: ContextAnalysisRequest, options: AiProviderRequestOptions = {}): Promise<ContextAnalysisResult> {
     const requestId = `ai-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const command = resolveCommand(this.config);
-    if (!command.executable || (this.config.preset === "powershell" && !command.args[2])) {
+    if (!command.executable || (this.config.preset === "powershell" && !this.config.scriptPath.trim())) {
       throw new AiProviderError("provider", "AI 脚本路径尚未配置");
     }
     const input = buildProcessInput(request);
     const onAbort = () => { void this.runner.cancel(requestId).catch(() => undefined); };
     options.signal?.addEventListener("abort", onAbort, { once: true });
+    let receivedStdout = false;
     const subscription = this.runner.subscribeOutput?.(requestId, (event) => {
-      if (event.stream === "stdout") options.onToken?.(event.data);
+      if (event.stream === "stdout") {
+        receivedStdout = true;
+        options.onToken?.(event.data);
+      }
     });
     const unlisten = subscription ? await subscription.catch(() => undefined) : undefined;
     try {
@@ -49,13 +54,18 @@ export class ProcessAiProvider implements AiProvider {
         ...(command.cwd ? { cwd: command.cwd } : {}),
         stdin: input,
         timeoutMs: options.timeoutMs ?? this.config.timeoutMs,
+        runAsAdministrator: command.runAsAdministrator,
       });
       if (result.cancelled) throw new AiProviderError("cancelled", "AI 请求已停止");
       if (result.timedOut) throw new AiProviderError("timeout", "AI 请求超时");
       if (result.exitCode !== null && result.exitCode !== 0) {
         throw new AiProviderError("provider", result.stderr.trim() || `AI 进程退出（${result.exitCode}）`);
       }
-      if (result.stdout) options.onToken?.(result.stdout);
+      // The native runner streams stdout before resolving. Sending the final
+      // buffer again would duplicate the answer in the live transcript. A
+      // fake/custom runner may not expose streaming, so retain the fallback
+      // for that case.
+      if (result.stdout && !receivedStdout) options.onToken?.(result.stdout);
       return parseAnalysisResponse(result.stdout);
     } catch (error) {
       if (error instanceof AiProviderError) throw error;
@@ -74,16 +84,32 @@ function resolveCommand(config: AiProviderConfig) {
   const cwd = config.cwd.trim();
   if (config.preset === "powershell") {
     return {
-      executable: executable || "powershell.exe",
-      args: ["-NoProfile", "-File", config.scriptPath.trim()],
+      executable: isPowerShellExecutable(executable) ? executable : "pwsh.exe",
+      args: [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        config.scriptPath.trim(),
+        ...config.arguments,
+      ],
       cwd,
+      runAsAdministrator: config.runAsAdministrator === true,
     };
   }
   return {
     executable: executable || (config.preset === "claude" ? "claude" : config.preset === "opencode" ? "opencode" : ""),
     args: [...config.arguments],
     cwd,
+    runAsAdministrator: false,
   };
+}
+
+function isPowerShellExecutable(value: string) {
+  const name = value.split(/[\\/]/u).at(-1)?.toLowerCase();
+  return name === "pwsh" || name === "pwsh.exe" || name === "powershell" || name === "powershell.exe";
 }
 
 function buildProcessInput(request: ContextAnalysisRequest) {

@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useFloatingMenu } from "./useFloatingMenu";
 
 export interface SelectOption<T extends string = string> {
   value: T;
@@ -46,8 +48,10 @@ export function Select<T extends string>({
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const menuStyle = useFloatingMenu(open, triggerRef);
 
   const selectedOption = options.find((option) => option.value === value);
   const filteredOptions = useMemo(() => {
@@ -67,7 +71,8 @@ export function Select<T extends string>({
     const selectedIndex = filteredOptions.findIndex((option) => option.value === value);
     setActiveIndex(Math.max(0, selectedIndex));
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
@@ -140,8 +145,8 @@ export function Select<T extends string>({
         <span aria-hidden="true" className="select-chevron"><svg viewBox="0 0 16 16"><path d="m4.5 6 3.5 3.5L11.5 6" /></svg></span>
       </button>
 
-      {open && (
-        <div className="select-menu">
+      {open && createPortal(
+        <div className="select-menu select-menu-portal" ref={menuRef} style={menuStyle}>
           {searchable && (
             <input
               aria-label={`搜索${ariaLabel}`}
@@ -190,7 +195,8 @@ export function Select<T extends string>({
               </button>
             )) : <div className="select-empty">{emptyLabel}</div>}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

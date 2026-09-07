@@ -28,6 +28,10 @@ const OUTPUT_EVENTS = {
 type Unlisten = () => void;
 
 export const terminalApi = {
+  prepareSsh(host: string, port: number) {
+    return invokeCommand<void>("prepare_ssh", { host, port });
+  },
+
   create(request: TerminalCreateRequest) {
     return invokeCommand<void>(COMMANDS.create[request.kind], createCommandArguments(request));
   },

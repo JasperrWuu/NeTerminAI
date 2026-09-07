@@ -27,6 +27,7 @@ export interface AiProviderConfig {
   scriptPath: string;
   arguments: string[];
   cwd: string;
+  runAsAdministrator: boolean;
   timeoutMs: number;
 }
 

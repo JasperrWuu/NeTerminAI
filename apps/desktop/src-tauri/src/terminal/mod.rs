@@ -318,6 +318,17 @@ impl TerminalManager {
         self.begin_with_type(session_id, "ssh")
     }
 
+    /// Prepare the host-key record before a visible SSH tab is created.  This
+    /// keeps a known-hosts update failure in the connection dialog instead of
+    /// briefly mounting a terminal that can never authenticate.
+    pub(crate) fn prepare_ssh(&self, host: &str, port: u16) -> Result<(), String> {
+        let host = host.trim();
+        if host.is_empty() || port == 0 || host.contains(['\r', '\n']) {
+            return Err("SSH 主机地址或端口无效".to_owned());
+        }
+        remove_ssh_known_host(host, port)
+    }
+
     fn begin_with_type(
         &self,
         session_id: &str,
@@ -592,13 +603,11 @@ impl TerminalManager {
                 "密码认证需要填写 SSH 账号".to_owned(),
             );
         }
-        // A reinstalled VM legitimately presents a new host key. Remove the
-        // old entry before every connection so OpenSSH can record the current
-        // key with its normal accept-new verification behavior.
+        // Keep the backend defensive for saved-connection and direct command
+        // paths that do not go through the dialog's preflight call.
         if let Err(error) = remove_ssh_known_host(host, port) {
             return self.fail_starting_ssh(&session_id, &runtime, error);
         }
-
         self.create_command(
             app,
             session_id,
@@ -1072,16 +1081,27 @@ fn run_terminal_reader(
     let mut buffer = [0_u8; 8192];
     let mut terminal_reason = None;
     let mut terminal_error = None;
+    let mut ssh_authentication_failed = false;
     loop {
         if worker_cancellation.is_cancelled() || control.cancellation.is_cancelled() {
             break;
         }
         match reader.read(&mut buffer) {
             Ok(0) => {
-                terminal_reason = Some(DisconnectReason::ProcessExited);
+                terminal_reason = Some(if ssh_authentication_failed {
+                    DisconnectReason::ConnectionFailed
+                } else {
+                    DisconnectReason::ProcessExited
+                });
+                if ssh_authentication_failed {
+                    terminal_error = Some("SSH 认证失败".to_owned());
+                }
                 break;
             }
             Ok(length) => {
+                if exit_event == "ssh:exit" && ssh_authentication_failure(&buffer[..length]) {
+                    ssh_authentication_failed = true;
+                }
                 if control.writable() {
                     match output_sender.send(buffer[..length].to_vec(), &worker_cancellation) {
                         Ok(()) => {}
@@ -1130,6 +1150,18 @@ fn run_terminal_reader(
     });
 }
 
+fn ssh_authentication_failure(bytes: &[u8]) -> bool {
+    let output = String::from_utf8_lossy(bytes).to_ascii_lowercase();
+    [
+        "permission denied",
+        "authentication failed",
+        "too many authentication failures",
+        "access denied",
+    ]
+    .iter()
+    .any(|marker| output.contains(marker))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_terminal_output_pump(
     app: AppHandle,
@@ -1146,9 +1178,6 @@ fn run_terminal_output_pump(
         return;
     }
     while let Ok(Some(batch)) = receiver.next_batch(&worker_cancellation, OUTPUT_BATCH_BYTES) {
-        if !control.writable() {
-            break;
-        }
         crate::output_stream::publish_output(&app, &session_id, &batch);
         if app
             .emit(
@@ -1452,6 +1481,20 @@ mod tests {
             arguments.last().map(String::as_str),
             Some("operator@server.example")
         );
+    }
+
+    #[test]
+    fn ssh_authentication_failure_markers_are_detected_without_logging_input() {
+        assert!(ssh_authentication_failure(
+            b"Permission denied, please try again.\r\n"
+        ));
+        assert!(ssh_authentication_failure(b"Authentication failed\r\n"));
+        assert!(ssh_authentication_failure(
+            b"Too many authentication failures\r\n"
+        ));
+        assert!(ssh_authentication_failure(b"Access denied\r\n"));
+        assert!(!ssh_authentication_failure(b"Password:\r\n"));
+        assert!(!ssh_authentication_failure(b"display health\r\nNormal\r\n"));
     }
 
     #[test]

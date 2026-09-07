@@ -38,8 +38,7 @@ export function SshConnectionDialog({
   const setField = <K extends keyof SshConnection>(key: K, value: SshConnection[K]) => {
     setConnection((current) => ({ ...current, [key]: value }));
   };
-  const valid = connection.name.trim().length > 0
-    && connection.host.trim().length > 0
+  const valid = connection.host.trim().length > 0
     && connection.port > 0
     && connection.port <= 65535
     && connection.username.trim().length > 0;
@@ -79,7 +78,7 @@ export function SshConnectionDialog({
         <div className="connection-form-grid">
           <label className="form-field form-field-wide">
             <span>会话名称</span>
-            <input onChange={(event) => setField("name", event.target.value)} placeholder="例如：生产环境 Linux" required value={connection.name} />
+            <input onChange={(event) => setField("name", event.target.value)} placeholder="例如：生产环境 Linux" value={connection.name} />
           </label>
           <label className="form-field form-field-host">
             <span>IP 地址或主机名</span>
