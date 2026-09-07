@@ -182,9 +182,14 @@ export class RdpSessionRuntime {
       return;
     }
     if (runtime.state === "connecting" || runtime.state === "initializing") {
+      // Keep an already connected native surface visible while the ActiveX
+      // control performs an in-place Reconnect(width, height). Hiding it on
+      // every transient status poll creates a black/empty flash during a
+      // sidebar or window resize.
+      const wasConnected = this.snapshot.state === "connected";
       this.disconnectedSince = undefined;
       this.setState(runtime.state);
-      this.sendResize(false);
+      this.sendResize(wasConnected && Boolean(this.view?.active));
       return;
     }
 

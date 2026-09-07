@@ -1247,8 +1247,16 @@ fn configure_ssh_password_authentication(command: &mut CommandBuilder) {
 
 fn remove_ssh_known_host(host: &str, port: u16) -> Result<(), String> {
     let lookup = ssh_known_host_lookup(host, port);
-    let output = Command::new(ssh_keygen_executable())
-        .args(["-R", lookup.as_str()])
+    let mut command = Command::new(ssh_keygen_executable());
+    command.args(["-R", lookup.as_str()]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // OpenSSH's helper is a console-subsystem executable.  It is a
+        // background known_hosts maintenance step, not a user-facing shell.
+        command.creation_flags(0x0800_0000);
+    }
+    let output = command
         .output()
         .map_err(|error| format!("无法运行 ssh-keygen 清理主机密钥：{error}"))?;
     if output.status.success() {

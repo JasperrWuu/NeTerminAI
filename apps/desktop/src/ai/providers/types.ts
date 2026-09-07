@@ -42,4 +42,6 @@ export interface AiProcessResult {
   exitCode: number | null;
   cancelled: boolean;
   timedOut: boolean;
+  /** Present when the native runner can distinguish startup from inference timeout. */
+  timeoutPhase?: "startup" | "execution";
 }

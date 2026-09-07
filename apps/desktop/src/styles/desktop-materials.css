@@ -3,47 +3,22 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
-  --bg-panel: rgb(32 33 37 / 94%);
-  --bg-panel-solid: #202125;
-  --bg-elevated: #2a2b30;
-  --separator: rgb(255 255 255 / 8%);
-  --text-secondary: #bfc0c8;
-  --text-tertiary: #a1a3ae;
-  --material-raised: #37383e;
-  --material-edge: rgb(255 255 255 / 7%);
-  --shadow-control: inset 0 1px 0 rgb(255 255 255 / 4%), 0 1px 2px rgb(0 0 0 / 16%);
-  --shadow-card: 0 2px 8px rgb(0 0 0 / 8%);
-  --control-fill: #303136;
+  /* Surface/text/accent values come from global.css so Terminal and the
+     surrounding desktop chrome share one theme instead of two palettes. */
+  --material-raised: color-mix(in srgb, var(--bg-elevated) 88%, var(--text-primary));
+  --material-edge: var(--border-subtle);
+  --shadow-control: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent), 0 1px 2px rgb(0 0 0 / 16%);
+  --shadow-card: 0 2px 8px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  --control-fill: var(--bg-elevated);
   --control-focus: 0 0 0 3px var(--accent-soft);
-  --action-fill: #1766d6;
-  --danger: #f08080;
+  --action-fill: var(--accent);
 }
 
 :root[data-theme="light"] {
-  --bg-canvas: #f5f5f7;
-  --bg-panel: rgb(238 239 242 / 90%);
-  --bg-panel-solid: #eeeff2;
-  --bg-elevated: #ffffff;
-  --bg-hover: rgb(30 35 45 / 5%);
-  --bg-active: rgb(30 35 45 / 8%);
-  --text-primary: #232428;
-  --accent: #1766d6;
-  --accent-strong: #1459bc;
-  --accent-soft: rgb(23 102 214 / 11%);
-  --separator: rgb(30 35 45 / 8%);
-  --border-subtle: rgb(30 35 45 / 8%);
-  --border-strong: rgb(30 35 45 / 17%);
-  --icon-color: #646872;
-  --icon-surface: rgb(30 35 45 / 5%);
-  --icon-border: rgb(30 35 45 / 10%);
-  --text-secondary: #5d6068;
-  --text-tertiary: #71747c;
-  --material-raised: #ffffff;
-  --control-fill: #ffffff;
-  --danger: #b83232;
-  --material-edge: rgb(30 35 45 / 9%);
-  --shadow-control: inset 0 1px 0 rgb(255 255 255 / 70%), 0 1px 2px rgb(30 35 45 / 7%);
-  --shadow-card: 0 2px 8px rgb(30 35 45 / 4%);
+  --material-raised: var(--bg-elevated);
+  --control-fill: var(--bg-elevated);
+  --shadow-control: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent), 0 1px 2px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  --shadow-card: 0 2px 8px color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .titlebar, .sidebar { backdrop-filter: blur(24px) saturate(135%); }

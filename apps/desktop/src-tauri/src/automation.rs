@@ -39,6 +39,11 @@ const MAX_INTERACTION_RESPONSES: usize = 32;
 const MAX_INTERACTION_PATTERN_BYTES: usize = 8 * 1024;
 const MAX_INTERACTION_RESPONSE_BYTES: usize = 8 * 1024;
 const MAX_INTERACTION_COUNT: usize = 32;
+// Pagination is a terminal-control interaction, not a scripted response.
+// Huawei devices can emit dozens (or hundreds) of pages for one command, so
+// keep a separate, deliberately generous guard instead of sharing the small
+// Y/N interaction limit.
+const MAX_PAGINATION_COUNT: usize = 512;
 const COMMAND_POLL: Duration = Duration::from_millis(25);
 const SHUTDOWN_POLL: Duration = Duration::from_millis(20);
 
@@ -93,6 +98,10 @@ def send(command, timeout=None, responses=None):
                     raise TimeoutError(message)
                 if response.get("code") == "interaction_required":
                     raise RuntimeError("[interaction_required] " + message)
+                if response.get("code") == "pagination_limit":
+                    raise RuntimeError("[pagination_limit] " + message)
+                if response.get("code") == "output_overflow":
+                    raise RuntimeError("[output_overflow] " + message)
                 raise RuntimeError(message)
             output = response.get("output", "")
             if not isinstance(output, str):
@@ -689,6 +698,20 @@ impl CommandFailure {
             message: message.into(),
         }
     }
+
+    fn pagination_limit(message: impl Into<String>) -> Self {
+        Self {
+            code: "pagination_limit",
+            message: message.into(),
+        }
+    }
+
+    fn output_overflow(message: impl Into<String>) -> Self {
+        Self {
+            code: "output_overflow",
+            message: message.into(),
+        }
+    }
 }
 
 fn execute_command(
@@ -748,6 +771,19 @@ fn execute_command(
                 let signal = collector.push(&chunk)?;
                 if signal.more_markers > collector.pages_requested {
                     let pages = signal.more_markers - collector.pages_requested;
+                    let requested_total = collector.pages_requested.saturating_add(pages);
+                    if requested_total > MAX_PAGINATION_COUNT {
+                        transaction_log(
+                            target,
+                            session_id,
+                            "pagination_limit",
+                            transaction_started,
+                        );
+                        return Err(CommandFailure::pagination_limit(format!(
+                            "命令 `{}` 在终端 {session_id} 的分页次数超过安全上限 {}",
+                            message.command, MAX_PAGINATION_COUNT
+                        )));
+                    }
                     for _ in 0..pages {
                         if control.cancelled.load(Ordering::Acquire) {
                             return Err(CommandFailure::cancelled("自动化运行已停止"));
@@ -952,9 +988,8 @@ struct CommandCollector {
     command: String,
     initial_prompt: Option<String>,
     pages_requested: usize,
-    more_scan_offset: usize,
     more_markers_seen: usize,
-    trailing_more_marker_seen: bool,
+    more_detector: MoreDetector,
     saw_output: bool,
     interaction_suppressed_until_next_chunk: bool,
 }
@@ -966,9 +1001,8 @@ impl CommandCollector {
             command: command.to_owned(),
             initial_prompt,
             pages_requested: 0,
-            more_scan_offset: 0,
             more_markers_seen: 0,
-            trailing_more_marker_seen: false,
+            more_detector: MoreDetector::default(),
             saw_output: false,
             interaction_suppressed_until_next_chunk: false,
         }
@@ -980,14 +1014,16 @@ impl CommandCollector {
         }
         self.saw_output = self.saw_output || !chunk.is_empty();
         if self.raw.len().saturating_add(chunk.len()) > MAX_COLLECTED_OUTPUT_BYTES {
-            return Err(CommandFailure::io(format!(
+            return Err(CommandFailure::output_overflow(format!(
                 "命令 `{}` 输出超过 {} MB，已停止采集",
                 self.command,
                 MAX_COLLECTED_OUTPUT_BYTES / (1024 * 1024)
             )));
         }
         self.raw.extend_from_slice(chunk);
-        self.scan_more_markers();
+        self.more_markers_seen = self
+            .more_markers_seen
+            .saturating_add(self.more_detector.feed(chunk));
         let tail_start = self.raw.len().saturating_sub(8 * 1024);
         let tail = normalize_terminal_text(&self.raw[tail_start..]);
         let interaction = if self.saw_output && !self.interaction_suppressed_until_next_chunk {
@@ -1013,35 +1049,6 @@ impl CommandCollector {
         self.interaction_suppressed_until_next_chunk = true;
     }
 
-    fn scan_more_markers(&mut self) {
-        let pending = &self.raw[self.more_scan_offset..];
-        let end = pending
-            .iter()
-            .enumerate()
-            .filter(|(_, byte)| matches!(*byte, b'\r' | b'\n'))
-            .map(|(index, _)| index + 1)
-            .next_back();
-        if let Some(end) = end {
-            let complete_lines = normalize_terminal_text(&pending[..end]);
-            let mut marker_count = count_more_markers(&complete_lines);
-            if self.trailing_more_marker_seen
-                && complete_lines.lines().next().is_some_and(is_more_marker)
-            {
-                marker_count = marker_count.saturating_sub(1);
-                self.trailing_more_marker_seen = false;
-            }
-            self.more_markers_seen = self.more_markers_seen.saturating_add(marker_count);
-            self.more_scan_offset += end;
-        }
-
-        let trailing = normalize_terminal_text(&self.raw[self.more_scan_offset..]);
-        let exact_trailing_marker = is_exact_more_marker(&trailing);
-        if exact_trailing_marker && !self.trailing_more_marker_seen {
-            self.more_markers_seen = self.more_markers_seen.saturating_add(1);
-        }
-        self.trailing_more_marker_seen = exact_trailing_marker;
-    }
-
     fn normalized_output(&self, final_prompt: Option<&str>) -> String {
         normalize_command_output(
             &self.raw,
@@ -1049,6 +1056,119 @@ impl CommandCollector {
             self.initial_prompt.as_deref(),
             final_prompt,
         )
+    }
+}
+
+/// Incremental detector for terminal pagination prompts.
+///
+/// The device is free to split an ANSI-wrapped marker over any number of
+/// output chunks and may overwrite it with carriage returns/backspaces rather
+/// than terminating the logical line.  Keeping a small normalized character
+/// window lets us recognize each occurrence exactly once without rescanning
+/// the complete (potentially megabyte-sized) transaction buffer.
+#[derive(Default)]
+struct MoreDetector {
+    escape: MoreEscapeState,
+    window: String,
+    occurrences: usize,
+    marker_armed: bool,
+}
+
+#[derive(Default)]
+enum MoreEscapeState {
+    #[default]
+    Normal,
+    Escape,
+    Csi,
+    Osc,
+    OscEscape,
+}
+
+impl MoreDetector {
+    fn feed(&mut self, bytes: &[u8]) -> usize {
+        let before = self.occurrences;
+        for &byte in bytes {
+            self.feed_byte(byte);
+        }
+        self.occurrences.saturating_sub(before)
+    }
+
+    fn feed_byte(&mut self, byte: u8) {
+        match self.escape {
+            MoreEscapeState::Normal => match byte {
+                0x1b => self.escape = MoreEscapeState::Escape,
+                0x08 => {
+                    self.window.pop();
+                }
+                b'\r' | b'\n' => self.push_visible('\n'),
+                0x20..=0x7e => self.push_visible(byte as char),
+                _ => {}
+            },
+            MoreEscapeState::Escape => {
+                self.escape = match byte {
+                    b'[' => MoreEscapeState::Csi,
+                    b']' => MoreEscapeState::Osc,
+                    _ => MoreEscapeState::Normal,
+                };
+            }
+            MoreEscapeState::Csi => {
+                // CSI sequences end at a final byte in the @–~ range.
+                if (0x40..=0x7e).contains(&byte) {
+                    self.escape = MoreEscapeState::Normal;
+                }
+            }
+            MoreEscapeState::Osc => match byte {
+                0x07 => self.escape = MoreEscapeState::Normal,
+                0x1b => self.escape = MoreEscapeState::OscEscape,
+                _ => {}
+            },
+            MoreEscapeState::OscEscape => {
+                self.escape = if byte == b'\\' || byte == 0x07 {
+                    MoreEscapeState::Normal
+                } else {
+                    MoreEscapeState::Osc
+                };
+            }
+        }
+    }
+
+    fn push_visible(&mut self, character: char) {
+        self.window.push(character);
+        let excess = self.window.chars().count().saturating_sub(128);
+        if excess > 0 {
+            let cutoff = self
+                .window
+                .char_indices()
+                .nth(excess)
+                .map_or(self.window.len(), |(index, _)| index);
+            self.window.drain(..cutoff);
+        }
+
+        let compact = self
+            .window
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        if !character.is_whitespace() {
+            self.marker_armed = false;
+        }
+        let dashed_marker = ["----more----", "--more--"].into_iter().any(|marker| {
+            compact.ends_with(marker) && !compact[..compact.len() - marker.len()].ends_with('-')
+        });
+        let plain_marker = self
+            .window
+            .rsplit('\n')
+            .next()
+            .is_some_and(|line| line.trim().eq_ignore_ascii_case("more"));
+        if (dashed_marker || plain_marker) && !self.marker_armed {
+            self.occurrences = self.occurrences.saturating_add(1);
+            self.marker_armed = true;
+            // A marker has been consumed.  Keeping it in the detector window
+            // would make a following occurrence look like the suffix of the
+            // previous one (especially after CR/backspace pagination).
+            self.window.clear();
+        }
     }
 }
 
@@ -1276,10 +1396,12 @@ fn is_huawei_prompt(line: &str) -> bool {
         })
 }
 
+#[cfg(test)]
 fn count_more_markers(text: &str) -> usize {
     text.lines().filter(|line| is_more_marker(line)).count()
 }
 
+#[cfg(test)]
 fn is_more_marker(line: &str) -> bool {
     let trimmed = line.trim();
     let compact = trimmed
@@ -1293,16 +1415,6 @@ fn is_more_marker(line: &str) -> bool {
         || (compact.len() <= 80
             && compact.contains("more")
             && (compact.starts_with('-') || compact.ends_with('-')))
-}
-
-fn is_exact_more_marker(line: &str) -> bool {
-    let compact = line
-        .trim()
-        .chars()
-        .filter(|character| !character.is_whitespace())
-        .collect::<String>()
-        .to_ascii_lowercase();
-    matches!(compact.as_str(), "more" | "--more--" | "----more----")
 }
 
 fn normalize_command_output(
@@ -1348,8 +1460,74 @@ fn normalize_command_output(
     }) {
         lines.pop();
     }
-    lines.retain(|line| !is_more_marker(line));
+    lines = lines
+        .into_iter()
+        .filter_map(|line| {
+            if is_standalone_more_marker(&line) {
+                return None;
+            }
+            Some(strip_inline_more_marker(&line))
+        })
+        .collect();
     lines.join("\n").trim_matches('\n').to_owned()
+}
+
+/// Removes an ANSI-normalized pagination marker even when the device keeps it
+/// on the same logical line as the next page.  Ordinary words containing
+/// `more` are left untouched; only a marker surrounded by at least two dashes
+/// is removed inline (a plain `More` is removed above when it is its own line).
+fn strip_inline_more_marker(line: &str) -> String {
+    let mut value = line.to_owned();
+    let mut search_from = 0;
+    loop {
+        let lower = value.to_ascii_lowercase();
+        let Some(relative) = lower[search_from..].find("more") else {
+            break;
+        };
+        let more_start = search_from + relative;
+        let more_end = more_start + "more".len();
+        let bytes = value.as_bytes();
+
+        let mut left = more_start;
+        while left > 0 && bytes[left - 1].is_ascii_whitespace() {
+            left -= 1;
+        }
+        let dash_end = left;
+        while left > 0 && bytes[left - 1] == b'-' {
+            left -= 1;
+        }
+        if dash_end - left < 2 {
+            search_from = more_end;
+            continue;
+        }
+
+        let mut right = more_end;
+        while right < bytes.len() && bytes[right].is_ascii_whitespace() {
+            right += 1;
+        }
+        let dash_start = right;
+        while right < bytes.len() && bytes[right] == b'-' {
+            right += 1;
+        }
+        if right - dash_start < 2 {
+            search_from = more_end;
+            continue;
+        }
+
+        value.replace_range(left..right, "");
+        search_from = left;
+    }
+    value
+}
+
+fn is_standalone_more_marker(line: &str) -> bool {
+    let compact = line
+        .trim()
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    matches!(compact.as_str(), "more" | "--more--" | "----more----")
 }
 
 fn is_command_echo(line: &str, command: &str, initial_prompt: Option<&str>) -> bool {
@@ -1831,6 +2009,58 @@ mod tests {
         large_chunk.extend_from_slice(b"\r\n---- More ----\r\n");
         let third = collector.push(&large_chunk).unwrap();
         assert_eq!(third.more_markers, 2);
+    }
+
+    #[test]
+    fn repeated_more_markers_are_rearmed_and_counted_once_each() {
+        let mut collector = CommandCollector::new("display current-configuration", None);
+        for index in 0..50 {
+            let first = collector.push(b"\x1b[7m---- Mo").unwrap();
+            assert_eq!(first.more_markers, index);
+            let signal = collector.push(b"re ----\x1b[0m\r").unwrap();
+            assert_eq!(signal.more_markers, index + 1);
+        }
+        assert_eq!(collector.more_markers_seen, 50);
+    }
+
+    #[test]
+    fn pagination_detector_covers_common_page_lengths() {
+        for expected in [1, 2, 10, 50] {
+            let mut collector = CommandCollector::new("display current-configuration", None);
+            for index in 0..expected {
+                let signal = collector.push(b"---- More ----\r").unwrap();
+                assert_eq!(signal.more_markers, index + 1);
+            }
+            assert_eq!(collector.more_markers_seen, expected);
+        }
+    }
+
+    #[test]
+    fn more_markers_without_newlines_and_with_backspace_are_each_detected() {
+        let mut collector = CommandCollector::new("display current-configuration", None);
+        assert_eq!(collector.push(b"---- More ----").unwrap().more_markers, 1);
+        assert_eq!(
+            collector
+                .push(b"\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08")
+                .unwrap()
+                .more_markers,
+            1
+        );
+        assert_eq!(collector.push(b"\x1b[7m-- Mo").unwrap().more_markers, 1);
+        assert_eq!(collector.push(b"re --\x1b[0m").unwrap().more_markers, 2);
+    }
+
+    #[test]
+    fn inline_more_marker_is_removed_without_dropping_adjacent_page_output() {
+        assert_eq!(
+            normalize_command_output(
+                b"<FW1>display current-configuration\r\nline one\r\n---- More ----line two\r\n<FW1>\r\n",
+                "display current-configuration",
+                Some("<FW1>"),
+                Some("<FW1>"),
+            ),
+            "line one\nline two"
+        );
     }
 
     #[test]

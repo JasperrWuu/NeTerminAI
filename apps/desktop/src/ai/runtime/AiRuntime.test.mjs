@@ -87,6 +87,34 @@ test("PowerShell preset runs the configured ps1 with pwsh and administrator mode
   assert.equal(calls[0].runAsAdministrator, true);
 });
 
+test("Claude preset uses non-interactive print mode without overriding explicit flags", async () => {
+  const calls = [];
+  const runner = {
+    async run(request) {
+      calls.push(request);
+      return { stdout: '{"diagnosis":"ok","evidence":[],"suggestedChecks":[],"proposals":[]}', stderr: "", exitCode: 0, cancelled: false, timedOut: false };
+    },
+    async cancel() {},
+  };
+  const provider = new ProcessAiProvider({
+    mode: "process",
+    preset: "claude",
+    baseUrl: "",
+    model: "",
+    temperature: 0.2,
+    executable: "",
+    scriptPath: "",
+    arguments: ["--output-format", "json"],
+    cwd: "C:\\Work",
+    runAsAdministrator: false,
+    timeoutMs: 10_000,
+  }, runner);
+
+  await provider.analyze({ context: assembly(), question: "status" });
+  assert.equal(calls[0].executable, "claude");
+  assert.deepEqual(calls[0].args, ["-p", "--output-format", "json"]);
+});
+
 test("assistant captures latest selected contexts on every send", async () => {
   let output = "first";
   const providerContext = {

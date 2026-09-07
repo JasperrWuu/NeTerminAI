@@ -57,7 +57,9 @@ export class ProcessAiProvider implements AiProvider {
         runAsAdministrator: command.runAsAdministrator,
       });
       if (result.cancelled) throw new AiProviderError("cancelled", "AI 请求已停止");
-      if (result.timedOut) throw new AiProviderError("timeout", "AI 请求超时");
+      if (result.timedOut) {
+        throw new AiProviderError("timeout", timeoutMessage(result.timeoutPhase));
+      }
       if (result.exitCode !== null && result.exitCode !== 0) {
         throw new AiProviderError("provider", result.stderr.trim() || `AI 进程退出（${result.exitCode}）`);
       }
@@ -70,7 +72,9 @@ export class ProcessAiProvider implements AiProvider {
     } catch (error) {
       if (error instanceof AiProviderError) throw error;
       if (error instanceof IpcError && error.code === "ai_cancelled") throw new AiProviderError("cancelled", error.message, error);
-      if (error instanceof IpcError && error.code === "ai_timeout") throw new AiProviderError("timeout", error.message, error);
+      if (error instanceof IpcError && (error.code === "ai_timeout" || error.code === "ai_startup_timeout")) {
+        throw new AiProviderError("timeout", error.message, error);
+      }
       throw new AiProviderError("provider", error instanceof Error ? error.message : "AI 进程执行失败", error);
     } finally {
       unlisten?.();
@@ -99,12 +103,35 @@ function resolveCommand(config: AiProviderConfig) {
       runAsAdministrator: config.runAsAdministrator === true,
     };
   }
+  if (config.preset === "claude") {
+    const args = [...config.arguments];
+    // Claude's print mode is the documented non-interactive path. It also
+    // avoids an interactive workspace-trust prompt when the request is
+    // supplied through stdin. Respect an explicit user-provided flag.
+    if (!args.some((argument) => argument === "-p" || argument === "--print")) {
+      args.unshift("-p");
+    }
+    return {
+      executable: executable || "claude",
+      args,
+      cwd,
+      runAsAdministrator: false,
+    };
+  }
   return {
-    executable: executable || (config.preset === "claude" ? "claude" : config.preset === "opencode" ? "opencode" : ""),
+    executable: executable || (config.preset === "opencode" ? "opencode" : ""),
     args: [...config.arguments],
     cwd,
     runAsAdministrator: false,
   };
+}
+
+function timeoutMessage(phase: AiProcessResult["timeoutPhase"]) {
+  return phase === "startup"
+    ? "AI CLI 启动超时（未收到启动输出）"
+    : phase === "execution"
+      ? "AI 推理超时"
+      : "AI 请求超时";
 }
 
 function isPowerShellExecutable(value: string) {

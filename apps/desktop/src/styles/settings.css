@@ -486,7 +486,7 @@
   padding: 0 10px;
 }
 .highlight-add-rule-button { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--accent-strong); }
-.highlight-delete-set-button:hover { background: color-mix(in srgb, #d75c4a 10%, transparent); border-color: color-mix(in srgb, #d75c4a 28%, transparent); color: #d75c4a; }
+.highlight-delete-set-button:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); border-color: color-mix(in srgb, var(--danger) 28%, transparent); color: var(--danger); }
 .highlight-delete-set-button svg { height: 13px; width: 13px; }
 .highlight-add-rule-button:active,
 .highlight-delete-set-button:active { transform: scale(0.97); }
@@ -584,8 +584,8 @@
   width: 100%;
 }
 
-.highlight-rule-grid input[aria-invalid="true"] { border-color: #d75c4a; }
-.field-error { color: #d75c4a; font-size: 11px; line-height: 1.4; }
+.highlight-rule-grid input[aria-invalid="true"] { border-color: var(--danger); }
+.field-error { color: var(--danger); font-size: 11px; line-height: 1.4; }
 
 .highlight-color-control {
   align-items: center;
@@ -603,7 +603,7 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.highlight-color-control[data-invalid="true"] { border-color: #d75c4a; }
+.highlight-color-control[data-invalid="true"] { border-color: var(--danger); }
 
 .highlight-color-control input[type="text"] {
   background: transparent;
@@ -725,8 +725,8 @@
   margin: -1px 2px 0;
 }
 
-.keybinding-message[data-tone="error"] { color: #d75c4a; }
-.keybinding-message[data-tone="warning"] { color: #c67a3e; }
+.keybinding-message[data-tone="error"] { color: var(--danger); }
+.keybinding-message[data-tone="warning"] { color: var(--warning); }
 
 .keybinding-help { color: var(--text-secondary); font-size: 12px; line-height: 1.5; margin: 9px 2px 0; }
 

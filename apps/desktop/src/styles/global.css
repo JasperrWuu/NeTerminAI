@@ -36,6 +36,7 @@
   --accent-soft: rgba(117, 167, 255, 0.13);
   --success: #65c88a;
   --warning: #e3aa5f;
+  --danger: #e56f6f;
   --shadow-panel: 0 14px 36px rgba(0, 0, 0, 0.18);
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(255, 255, 255, 0.22);
@@ -66,6 +67,7 @@
   --accent-soft: rgba(201, 100, 66, 0.12);
   --success: #4f7754;
   --warning: #a76532;
+  --danger: #b94a3d;
   --shadow-panel: 0 14px 36px rgba(78, 63, 51, 0.09);
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(78, 63, 51, 0.24);
@@ -245,7 +247,7 @@ button:focus-visible,
   width: 34px;
 }
 .window-control:hover { background: var(--icon-surface); color: var(--text-primary); }
-.window-control-close:hover { background: #d75c4a; color: #fff; }
+.window-control-close:hover { background: var(--danger); color: #fff; }
 .window-control svg { fill: none; height: 14px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.35; width: 14px; }
 
 .icon-button,
@@ -1301,7 +1303,7 @@ button:focus-visible,
 }
 
 .terminal-state[data-status="error"] {
-  color: #ef7777;
+  color: var(--danger);
 }
 
 .welcome-mark {
@@ -1545,7 +1547,7 @@ button:focus-visible,
 .ai-message-assistant { align-self: flex-start; background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary); min-width: 0; }
 .ai-streaming-dot { animation: ai-pulse 1s ease-in-out infinite; background: var(--accent); border-radius: 50%; display: inline-block; height: 6px; margin-left: 4px; width: 6px; }
 @keyframes ai-pulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
-.ai-assistant-error { background: color-mix(in srgb, #e56f6f 12%, transparent); border: 1px solid color-mix(in srgb, #e56f6f 25%, transparent); border-radius: 8px; color: #d96a6a; font-size: 12px; padding: 8px 9px; }
+.ai-assistant-error { background: color-mix(in srgb, var(--danger) 12%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); border-radius: 8px; color: var(--danger); font-size: 12px; padding: 8px 9px; }
 .ai-assistant-composer { display: flex; gap: 7px; }
 .ai-assistant-composer textarea { flex: 1; min-height: 66px; resize: vertical; }
 .ai-send-button, .ai-stop-button { align-self: flex-end; background: var(--accent); border: 0; border-radius: 8px; color: #fff; cursor: pointer; font: inherit; font-size: 12px; font-weight: 650; min-width: 52px; padding: 8px 10px; }

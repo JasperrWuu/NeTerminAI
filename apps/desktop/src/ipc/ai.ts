@@ -69,5 +69,8 @@ function decodeResult(value: unknown): AiProcessResult {
     exitCode: typeof result.exitCode === "number" ? result.exitCode : null,
     cancelled: result.cancelled === true,
     timedOut: result.timedOut === true,
+    ...(result.timeoutPhase === "startup" || result.timeoutPhase === "execution"
+      ? { timeoutPhase: result.timeoutPhase }
+      : {}),
   };
 }

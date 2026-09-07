@@ -9,6 +9,7 @@ export type IpcErrorCode =
   | "invalid_response"
   | "ai_cancelled"
   | "ai_timeout"
+  | "ai_startup_timeout"
   | "ai_process"
   | "ai_provider"
   | "ai_not_found"
@@ -44,6 +45,7 @@ export function invalidResponse(message: string) {
 function classifyMessage(message: string): IpcErrorCode {
   if (/队列繁忙|backpressure/i.test(message)) return "backpressure";
   if (/ai_cancelled|AI 请求已停止|已取消/i.test(message)) return "ai_cancelled";
+  if (/ai_startup_timeout|AI CLI 启动超时/i.test(message)) return "ai_startup_timeout";
   if (/ai_timeout|AI 请求超时/i.test(message)) return "ai_timeout";
   if (/ai_not_found|AI 请求不存在/i.test(message)) return "ai_not_found";
   if (/ai_process|AI 进程/i.test(message)) return "ai_process";
@@ -68,6 +70,7 @@ function isIpcErrorCode(value: unknown): value is IpcErrorCode {
     "invalid_response",
     "ai_cancelled",
     "ai_timeout",
+    "ai_startup_timeout",
     "ai_process",
     "ai_provider",
     "ai_not_found",

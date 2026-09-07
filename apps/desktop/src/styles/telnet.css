@@ -401,10 +401,10 @@
 
 .dialog-protocol-icon {
   align-items: center;
-  background: color-mix(in srgb, #59b998 16%, transparent);
-  border: 1px solid color-mix(in srgb, #72c6aa 25%, transparent);
+  background: color-mix(in srgb, var(--protocol-telnet) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--protocol-telnet) 25%, transparent);
   border-radius: 10px;
-  color: #72c6aa;
+  color: var(--protocol-telnet);
   display: flex;
   flex: 0 0 40px;
   font-family: "Cascadia Mono", Consolas, monospace;
@@ -430,9 +430,9 @@
 }
 
 .serial-dialog-icon {
-  background: color-mix(in srgb, #d08a57 14%, transparent);
-  border-color: color-mix(in srgb, #d08a57 25%, transparent);
-  color: #d08a57;
+  background: color-mix(in srgb, var(--protocol-serial) 14%, transparent);
+  border-color: color-mix(in srgb, var(--protocol-serial) 25%, transparent);
+  color: var(--protocol-serial);
   font-size: 10px;
 }
 
@@ -1010,8 +1010,8 @@
 .rdp-session-state i { background: var(--accent); border-radius: 50%; height: 5px; width: 5px; }
 .rdp-session-state[data-status="initializing"] i,
 .rdp-session-state[data-status="connecting"] i { background: var(--warning); }
-.rdp-session-state[data-status="error"] { color: #d75c4a; }
-.rdp-session-state[data-status="error"] i { background: #d75c4a; }
+.rdp-session-state[data-status="error"] { color: var(--danger); }
+.rdp-session-state[data-status="error"] i { background: var(--danger); }
 
 .rdp-native-viewport {
   align-items: center;
@@ -1059,5 +1059,5 @@
 .rdp-status-copy h1 { font-size: 20px; letter-spacing: -0.02em; margin: 5px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rdp-status-copy > p { color: var(--text-secondary); font-size: 13px; margin: 0; }
 .rdp-launch-state { color: var(--text-secondary); font-size: 12px; line-height: 1.55; margin: 14px 0; min-height: 37px; }
-.rdp-status-card[data-status="error"] .rdp-launch-state { color: #d75c4a; }
+.rdp-status-card[data-status="error"] .rdp-launch-state { color: var(--danger); }
 .rdp-retry-button { margin-top: 2px; }

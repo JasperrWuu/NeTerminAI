@@ -44,6 +44,7 @@ pub(crate) struct AiProcessResult {
     pub exit_code: Option<i32>,
     pub cancelled: bool,
     pub timed_out: bool,
+    pub timeout_phase: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -146,14 +147,31 @@ pub(crate) fn run(
         }
     };
 
+    let output_seen = Arc::new(AtomicBool::new(false));
     let output_request_id = request.request_id.clone();
     let output_app = app.clone();
-    let stdout_thread =
-        thread::spawn(move || read_stream(stdout, output_app, output_request_id, "stdout"));
+    let output_seen_stdout = Arc::clone(&output_seen);
+    let stdout_thread = thread::spawn(move || {
+        read_stream(
+            stdout,
+            output_app,
+            output_request_id,
+            "stdout",
+            output_seen_stdout,
+        )
+    });
     let error_request_id = request.request_id.clone();
     let error_app = app;
-    let stderr_thread =
-        thread::spawn(move || read_stream(stderr, error_app, error_request_id, "stderr"));
+    let output_seen_stderr = Arc::clone(&output_seen);
+    let stderr_thread = thread::spawn(move || {
+        read_stream(
+            stderr,
+            error_app,
+            error_request_id,
+            "stderr",
+            output_seen_stderr,
+        )
+    });
     if let Some(mut input) = stdin.take() {
         if let Err(error) = input.write_all(request.stdin.as_bytes()) {
             terminate_child(&mut child);
@@ -199,7 +217,7 @@ pub(crate) fn run(
         return Err("[ai_cancelled] AI 请求已停止".to_owned());
     }
     if timed_out {
-        return Err("[ai_timeout] AI 请求超时".to_owned());
+        return Err(timeout_error(output_seen.load(Ordering::Acquire)));
     }
     Ok(AiProcessResult {
         stdout,
@@ -207,6 +225,7 @@ pub(crate) fn run(
         exit_code,
         cancelled,
         timed_out,
+        timeout_phase: None,
     })
 }
 
@@ -215,6 +234,7 @@ fn read_stream<R: Read>(
     app: Option<AppHandle>,
     request_id: String,
     stream_name: &str,
+    output_seen: Arc<AtomicBool>,
 ) -> Result<String, String> {
     let mut text = String::new();
     let mut decoder = Utf8StreamDecoder::default();
@@ -224,6 +244,7 @@ fn read_stream<R: Read>(
         if length == 0 {
             break;
         }
+        output_seen.store(true, Ordering::Release);
         let decoded = decoder.push(&chunk[..length], false);
         text.push_str(&decoded);
         if let Some(app) = app.as_ref()
@@ -411,7 +432,15 @@ fn run_elevated_process_in_directory(
         return Err("[ai_cancelled] AI 请求已停止".to_owned());
     }
     if timed_out {
-        return Err("[ai_timeout] AI 请求超时".to_owned());
+        let output_seen = stdout_path
+            .metadata()
+            .map(|metadata| metadata.len() > 0)
+            .unwrap_or(false)
+            || stderr_path
+                .metadata()
+                .map(|metadata| metadata.len() > 0)
+                .unwrap_or(false);
+        return Err(timeout_error(output_seen));
     }
 
     let launcher_diagnostics = launcher_stderr
@@ -448,7 +477,16 @@ fn run_elevated_process_in_directory(
         exit_code: status.code(),
         cancelled: false,
         timed_out: false,
+        timeout_phase: None,
     })
+}
+
+fn timeout_error(output_seen: bool) -> String {
+    if output_seen {
+        "[ai_timeout] AI 推理超时".to_owned()
+    } else {
+        "[ai_startup_timeout] AI CLI 启动超时（未收到启动输出）".to_owned()
+    }
 }
 
 #[cfg(windows)]

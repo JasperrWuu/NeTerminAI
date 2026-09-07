@@ -1,10 +1,10 @@
-use std::{net::Ipv4Addr, process::Command};
+use std::{cmp::Ordering, net::Ipv4Addr, process::Command};
 
 use super::run_blocking;
 
-const PPP_ADAPTER_ALIAS: &str = "usg";
+const PPP_ADAPTER_PREFIX: &str = "usg";
 
-/// Returns the IPv4 address assigned to the `PPP adapter usg` connection.
+/// Returns the IPv4 address assigned to the first usable `usg*` PPP adapter.
 ///
 /// This intentionally does not use the default route: a machine can have a
 /// normal Ethernet/Wi-Fi route and a separate PPP address at the same time,
@@ -20,7 +20,7 @@ pub async fn get_local_ipv4() -> Result<Option<String>, String> {
 fn select_usg_ipv4() -> Option<Ipv4Addr> {
     #[cfg(windows)]
     {
-        query_ipconfig_adapter_ipv4(PPP_ADAPTER_ALIAS)
+        query_ipconfig_adapter_ipv4(PPP_ADAPTER_PREFIX)
     }
 
     #[cfg(not(windows))]
@@ -31,24 +31,39 @@ fn select_usg_ipv4() -> Option<Ipv4Addr> {
 
 #[cfg(windows)]
 fn query_ipconfig_adapter_ipv4(interface_alias: &str) -> Option<Ipv4Addr> {
-    let output = Command::new("ipconfig.exe").arg("/all").output().ok()?;
+    let mut command = Command::new("ipconfig.exe");
+    command.arg("/all");
+    // `ipconfig.exe` is a console-subsystem process.  A GUI build must not
+    // briefly create a console window merely to read the adapter inventory.
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(0x0800_0000);
+    let output = command.output().ok()?;
     parse_ipconfig_adapter_ipv4(&output.stdout, interface_alias)
 }
 
 fn parse_ipconfig_adapter_ipv4(output: &[u8], interface_alias: &str) -> Option<Ipv4Addr> {
-    let target_suffix = format!("{}:", interface_alias.trim().to_ascii_lowercase());
-    let mut in_target_adapter = false;
+    let target_prefix = interface_alias.trim().to_ascii_lowercase();
+    let mut current: Option<(String, Vec<Ipv4Addr>)> = None;
+    let mut candidates = Vec::<(String, Vec<Ipv4Addr>)>::new();
     for line in String::from_utf8_lossy(output).lines() {
         let trimmed = line.trim();
         let lower = trimmed.to_ascii_lowercase();
-        if lower.ends_with(&target_suffix) && !lower.contains('.') {
-            in_target_adapter = true;
+        if is_adapter_heading(&lower) {
+            if let Some((alias, addresses)) = current.take()
+                && alias.starts_with(&target_prefix)
+            {
+                candidates.push((alias, addresses));
+            }
+            current = lower
+                .strip_suffix(':')
+                .and_then(|heading| heading.split_whitespace().last())
+                .map(|alias| (alias.to_owned(), Vec::new()));
             continue;
         }
-        if in_target_adapter && lower.ends_with(':') && !lower.contains('.') {
-            break;
-        }
-        if !in_target_adapter {
+        let Some((alias, addresses)) = current.as_mut() else {
+            continue;
+        };
+        if !alias.starts_with(&target_prefix) {
             continue;
         }
         if !lower.contains("ipv4") {
@@ -61,11 +76,48 @@ fn parse_ipconfig_adapter_ipv4(output: &[u8], interface_alias: &str) -> Option<I
                 continue;
             };
             if is_usable_ipv4(address) {
-                return Some(address);
+                addresses.push(address);
             }
         }
     }
-    None
+    if let Some((alias, addresses)) = current
+        && alias.starts_with(&target_prefix)
+    {
+        candidates.push((alias, addresses));
+    }
+    candidates.sort_by(|left, right| compare_usg_alias(&left.0, &right.0));
+    candidates
+        .into_iter()
+        .find_map(|(_, addresses)| addresses.into_iter().next())
+}
+
+fn is_adapter_heading(line: &str) -> bool {
+    line.ends_with(':') && !line.contains('.') && !line.contains("ipv4") && !line.contains("ipv6")
+}
+
+fn compare_usg_alias(left: &str, right: &str) -> Ordering {
+    let left = left.trim().to_ascii_lowercase();
+    let right = right.trim().to_ascii_lowercase();
+    let left_suffix = left.strip_prefix(PPP_ADAPTER_PREFIX).unwrap_or(&left);
+    let right_suffix = right.strip_prefix(PPP_ADAPTER_PREFIX).unwrap_or(&right);
+    let left_number = if left_suffix.is_empty() {
+        Some(0)
+    } else {
+        left_suffix.parse::<u32>().ok()
+    };
+    let right_number = if right_suffix.is_empty() {
+        Some(0)
+    } else {
+        right_suffix.parse::<u32>().ok()
+    };
+    // Numeric aliases sort before any non-numeric `usg-*` alias; the latter
+    // still match the prefix but use a stable lexical order.
+    let left_rank = usize::from(left_number.is_none());
+    let right_rank = usize::from(right_number.is_none());
+    left_rank
+        .cmp(&right_rank)
+        .then_with(|| left_number.cmp(&right_number))
+        .then_with(|| left.cmp(&right))
 }
 
 fn is_usable_ipv4(address: Ipv4Addr) -> bool {
@@ -117,6 +169,17 @@ mod tests {
                 "usg",
             ),
             Some("100.64.20.8".parse().unwrap()),
+        );
+    }
+
+    #[test]
+    fn matches_all_usg_adapters_and_uses_natural_numeric_order() {
+        assert_eq!(
+            parse_ipconfig_adapter_ipv4(
+                b"PPP adapter usg10:\r\n    IPv4 Address. . . : 100.64.10.10\r\n\r\nPPP adapter USG2:\r\n    IPv4 Address. . . : 100.64.2.2\r\n\r\nPPP adapter usg1:\r\n    IPv4 Address. . . : 100.64.1.1\r\n",
+                "usg",
+            ),
+            Some("100.64.1.1".parse().unwrap()),
         );
     }
 }

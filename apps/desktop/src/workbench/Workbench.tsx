@@ -295,14 +295,14 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       .then((address) => {
         if (activeTerminalIdRef.current !== targetTabId) return;
         if (!address) {
-          showStatusNotice("未找到 PPP 适配器 usg 的 IPv4 地址");
+          showStatusNotice("未找到 usg* 适配器的 IPv4 地址");
           return;
         }
         synchronizedInput.routeInput(targetTabId, address);
       })
       .catch(() => {
         if (activeTerminalIdRef.current === targetTabId) {
-          showStatusNotice("无法读取 PPP 适配器 usg 的 IPv4 地址");
+          showStatusNotice("无法读取 usg* 适配器的 IPv4 地址");
         }
       });
   }, [showStatusNotice, synchronizedInput.routeInput]);
