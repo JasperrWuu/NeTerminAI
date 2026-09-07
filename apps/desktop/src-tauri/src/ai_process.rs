@@ -131,6 +131,12 @@ pub(crate) fn run(
     let mut child = command
         .spawn()
         .map_err(|error| format!("[ai_process] 无法启动 AI 进程：{error}"))?;
+    process_stage(
+        &request.request_id,
+        "process_started",
+        child.id(),
+        request.stdin.len(),
+    );
     let mut stdin = child.stdin.take();
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
@@ -173,13 +179,27 @@ pub(crate) fn run(
         )
     });
     if let Some(mut input) = stdin.take() {
+        process_stage(
+            &request.request_id,
+            "request_delivery",
+            child.id(),
+            request.stdin.len(),
+        );
         if let Err(error) = input.write_all(request.stdin.as_bytes()) {
             terminate_child(&mut child);
             let _ = stdout_thread.join();
             let _ = stderr_thread.join();
             return Err(format!("[ai_process] 写入 AI stdin 失败：{error}"));
         }
-        let _ = input.flush();
+        // Drop closes the one-shot request pipe and delivers EOF. There is no
+        // interactive READY handshake in this runner.
+        drop(input);
+        process_stage(
+            &request.request_id,
+            "stdin_closed_waiting_output",
+            child.id(),
+            request.stdin.len(),
+        );
     }
 
     let started = Instant::now();
@@ -217,6 +237,12 @@ pub(crate) fn run(
         return Err("[ai_cancelled] AI 请求已停止".to_owned());
     }
     if timed_out {
+        process_stage(
+            &request.request_id,
+            "provider_timeout",
+            child.id(),
+            request.stdin.len(),
+        );
         return Err(timeout_error(output_seen.load(Ordering::Acquire)));
     }
     Ok(AiProcessResult {
@@ -483,10 +509,19 @@ fn run_elevated_process_in_directory(
 
 fn timeout_error(output_seen: bool) -> String {
     if output_seen {
-        "[ai_timeout] AI 推理超时".to_owned()
+        "[ai_timeout] AI 进程等待完成超时（已收到输出，无法仅据此判断启动或推理阶段）".to_owned()
     } else {
-        "[ai_startup_timeout] AI CLI 启动超时（未收到启动输出）".to_owned()
+        "[ai_timeout] AI 进程等待完成超时（未收到输出；不代表进程尚未启动）".to_owned()
     }
+}
+
+fn process_stage(request_id: &str, stage: &str, pid: u32, request_bytes: usize) {
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[neterminai][ai] request={request_id} stage={stage} pid={pid} request_bytes={request_bytes}"
+    );
+    #[cfg(not(debug_assertions))]
+    let _ = (request_id, stage, pid, request_bytes);
 }
 
 #[cfg(windows)]

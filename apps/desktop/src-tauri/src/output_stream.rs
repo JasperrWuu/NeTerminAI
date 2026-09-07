@@ -174,14 +174,26 @@ impl TerminalOutputHub {
 }
 
 impl TerminalOutputSubscription {
+    pub(crate) fn recv_with_cursor(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<(u64, Vec<u8>), mpsc::RecvTimeoutError> {
+        self.receiver.recv_timeout(timeout)
+    }
+
+    #[cfg(test)]
     pub(crate) fn recv_timeout(
         &self,
         timeout: std::time::Duration,
     ) -> Result<Vec<u8>, mpsc::RecvTimeoutError> {
-        self.receiver.recv_timeout(timeout).map(|(cursor, data)| {
+        self.recv_with_cursor(timeout).map(|(cursor, data)| {
             debug_assert!(cursor > self.start_cursor);
             data
         })
+    }
+
+    pub(crate) fn start_cursor(&self) -> u64 {
+        self.start_cursor
     }
 }
 

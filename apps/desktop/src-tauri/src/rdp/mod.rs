@@ -63,8 +63,6 @@ enum RdpSessionState {
         cancellation: Arc<AtomicBool>,
         handle: isize,
         parent: isize,
-        remote_width: i32,
-        remote_height: i32,
     },
 }
 
@@ -199,8 +197,6 @@ impl RdpManager {
         cancellation: &Arc<AtomicBool>,
         handle: isize,
         parent: isize,
-        remote_width: i32,
-        remote_height: i32,
     ) -> Result<bool, String> {
         let mut sessions = self
             .sessions
@@ -217,50 +213,20 @@ impl RdpManager {
                     cancellation: Arc::clone(cancellation),
                     handle,
                     parent,
-                    remote_width,
-                    remote_height,
                 },
             );
         }
         Ok(is_current)
     }
 
-    fn get(&self, session_id: &str) -> Result<Option<(isize, isize, i32, i32)>, String> {
+    fn get(&self, session_id: &str) -> Result<Option<(isize, isize)>, String> {
         self.sessions
             .lock()
             .map(|sessions| match sessions.get(session_id) {
-                Some(RdpSessionState::Connected {
-                    handle,
-                    parent,
-                    remote_width,
-                    remote_height,
-                    ..
-                }) => Some((*handle, *parent, *remote_width, *remote_height)),
+                Some(RdpSessionState::Connected { handle, parent, .. }) => Some((*handle, *parent)),
                 _ => None,
             })
             .map_err(|_| "RDP 会话状态不可用".to_owned())
-    }
-
-    fn set_remote_dimensions(
-        &self,
-        session_id: &str,
-        width: i32,
-        height: i32,
-    ) -> Result<(), String> {
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| "RDP 会话状态不可用".to_owned())?;
-        if let Some(RdpSessionState::Connected {
-            remote_width,
-            remote_height,
-            ..
-        }) = sessions.get_mut(session_id)
-        {
-            *remote_width = width;
-            *remote_height = height;
-        }
-        Ok(())
     }
 
     fn remove(&self, session_id: &str) -> Result<Option<RdpSessionState>, String> {
@@ -387,8 +353,6 @@ mod windows_host {
             &cancellation,
             window.0 as isize,
             parent.0 as isize,
-            initial_remote_dimension(bounds.width),
-            initial_remote_dimension(bounds.height),
         ) {
             Ok(true) => {}
             Ok(false) => {
@@ -410,12 +374,16 @@ mod windows_host {
         bounds: PhysicalRdpBounds,
         visible: bool,
     ) -> Result<(), String> {
-        let Some((handle, parent, remote_width, remote_height)) = manager.get(session_id)? else {
+        let Some((handle, parent)) = manager.get(session_id)? else {
             return Ok(());
         };
         let window = HWND(handle as *mut c_void);
         let parent = HWND(parent as *mut c_void);
         let bounds = map_bounds(root, parent, bounds);
+        let mut previous = windows::Win32::Foundation::RECT::default();
+        let previous_known = unsafe {
+            windows::Win32::UI::WindowsAndMessaging::GetClientRect(window, &mut previous).is_ok()
+        };
         native_log(&format!(
             "resize session={} host={:?} parent={:?} bounds=({},{} {}x{}) visible={}",
             session_id, window, parent, bounds.x, bounds.y, bounds.width, bounds.height, visible,
@@ -437,32 +405,17 @@ mod windows_host {
                 let _ = ShowWindow(window, SW_HIDE);
             }
         }
-        if visible {
-            let width = remote_dimension(bounds.width);
-            let height = remote_dimension(bounds.height);
-            if (width, height) != (remote_width, remote_height) {
-                match control_dispatch(window)
-                    .and_then(|control| invoke_reconnect(&control, width, height))
-                {
-                    Ok(()) => {
-                        manager.set_remote_dimensions(session_id, width, height)?;
-                        native_log(&format!(
-                            "remote display session={} size={}x{}",
-                            session_id, width, height
-                        ));
-                    }
-                    Err(error) => {
-                        // The host window remains correctly sized even when a
-                        // legacy ActiveX control does not expose IMsRdpClient8
-                        // Reconnect.  Do not mark the session failed; a later
-                        // resize retries the remote update.
-                        native_log(&format!(
-                            "remote display resize unavailable session={} size={}x{} error={}",
-                            session_id, width, height, error
-                        ));
-                    }
-                }
-            }
+        if visible
+            && (!previous_known
+                || previous.right != bounds.width
+                || previous.bottom != bounds.height)
+            && let Ok(control) = control_dispatch(window)
+            && get_i16_property(&control, "Connected") == Ok(1)
+            && let Err(error) = update_display(&control, bounds.width, bounds.height)
+        {
+            native_log(&format!(
+                "display update unavailable; keeping connected SmartSizing viewport: {error}"
+            ));
         }
         Ok(())
     }
@@ -486,7 +439,7 @@ mod windows_host {
     }
 
     pub fn focus(manager: &RdpManager, session_id: &str) -> Result<(), String> {
-        let Some((handle, _, _, _)) = manager.get(session_id)? else {
+        let Some((handle, _)) = manager.get(session_id)? else {
             return Ok(());
         };
         let window = HWND(handle as *mut c_void);
@@ -870,6 +823,10 @@ mod windows_host {
             .map_err(|error| format!("Windows 没有注册 RDP ActiveX 控件：{error}"))?;
         let control: IDispatch = unsafe { CoCreateInstance(&class_id, None, CLSCTX_INPROC_SERVER) }
             .map_err(|error| format!("无法创建 RDP ActiveX 控件：{error}"))?;
+        eprintln!(
+            "RDP installed control UpdateSessionDisplaySettings dispatch available: {}",
+            dispatch_id(&control, "UpdateSessionDisplaySettings").is_ok()
+        );
         put_property(&control, "Server", "127.0.0.1".into())
     }
 
@@ -1001,38 +958,40 @@ mod windows_host {
         }
     }
 
-    fn invoke_reconnect(dispatch: &IDispatch, width: i32, height: i32) -> Result<(), String> {
-        let id = dispatch_id(dispatch, "Reconnect")?;
-        // COM automation arrays are passed right-to-left.  The ActiveX
-        // signature is Reconnect(width, height, [out] status); the status is
-        // the retval and therefore only needs a result VARIANT here.
-        let mut arguments = [VARIANT::from(height), VARIANT::from(width)];
-        let iid = GUID::default();
+    fn update_display(control: &IDispatch, width: i32, height: i32) -> Result<(), String> {
+        let id = dispatch_id(control, "UpdateSessionDisplaySettings")?;
+        let width = width.clamp(200, 8192) as u32;
+        let height = height.clamp(200, 8192) as u32;
+        // Physical dimensions correspond to the existing 100% desktop scale.
+        // COM arguments are in reverse order; no reconnect operation is used.
+        let mut args = [
+            VARIANT::from(100u32),
+            VARIANT::from(100u32),
+            VARIANT::from(0u32),
+            VARIANT::from((height * 254 / 960).max(10)),
+            VARIANT::from((width * 254 / 960).max(10)),
+            VARIANT::from(height),
+            VARIANT::from(width),
+        ];
         let parameters = DISPPARAMS {
-            rgvarg: arguments.as_mut_ptr(),
-            rgdispidNamedArgs: std::ptr::null_mut(),
-            cArgs: arguments.len() as u32,
-            cNamedArgs: 0,
+            rgvarg: args.as_mut_ptr(),
+            cArgs: args.len() as u32,
+            ..Default::default()
         };
-        let mut result = VARIANT::default();
         unsafe {
-            dispatch
+            control
                 .Invoke(
                     id,
-                    &iid,
+                    &GUID::default(),
                     0,
                     DISPATCH_METHOD,
                     &parameters,
-                    Some(&mut result),
+                    None,
                     None,
                     None,
                 )
-                .map_err(|error| format!("无法调整 RDP 远程桌面分辨率：{error}"))
+                .map_err(|error| format!("UpdateSessionDisplaySettings: {error}"))
         }
-    }
-
-    fn remote_dimension(value: i32) -> i32 {
-        value.clamp(200, 8192)
     }
 
     fn initial_remote_dimension(value: i32) -> i32 {

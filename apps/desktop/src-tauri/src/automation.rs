@@ -6,7 +6,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex, PoisonError, TryLockError,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread::{self, JoinHandle},
@@ -744,6 +744,9 @@ fn execute_command(
 
     let initial_prompt = output_hub.current_prompt(session_id);
     let subscription = output_hub.subscribe(session_id);
+    static NEXT_TRANSACTION: AtomicU64 = AtomicU64::new(1);
+    let transaction_id = NEXT_TRANSACTION.fetch_add(1, Ordering::Relaxed);
+    let mut output_cursor = subscription.start_cursor();
     let mut collector = CommandCollector::new(&message.command, initial_prompt);
     let mut interaction_count: usize = 0;
     let mut command_bytes = message.command.as_bytes().to_vec();
@@ -766,8 +769,15 @@ fn execute_command(
                 timeout.as_secs_f64(),
             )));
         }
-        match subscription.recv_timeout(remaining.min(COMMAND_POLL)) {
-            Ok(chunk) => {
+        match subscription.recv_with_cursor(remaining.min(COMMAND_POLL)) {
+            Ok((cursor, chunk)) => {
+                pagination_trace(transaction_id, session_id, "rx", cursor, chunk.len());
+                if cursor != output_cursor.saturating_add(1) {
+                    return Err(CommandFailure::io(
+                        "终端输出序号不连续，已停止采集以避免返回不完整结果",
+                    ));
+                }
+                output_cursor = cursor;
                 let signal = collector.push(&chunk)?;
                 if signal.more_markers > collector.pages_requested {
                     let pages = signal.more_markers - collector.pages_requested;
@@ -785,6 +795,14 @@ fn execute_command(
                         )));
                     }
                     for _ in 0..pages {
+                        let occurrence = collector.pages_requested + 1;
+                        pagination_trace(
+                            transaction_id,
+                            session_id,
+                            "more_detected_space_requested",
+                            cursor,
+                            occurrence,
+                        );
                         if control.cancelled.load(Ordering::Acquire) {
                             return Err(CommandFailure::cancelled("自动化运行已停止"));
                         }
@@ -792,6 +810,15 @@ fn execute_command(
                             CommandFailure::io(format!("发送分页确认到终端失败：{error}"))
                         })?;
                         collector.pages_requested += 1;
+                        // Manager::write acknowledges queue admission only;
+                        // this must never be reported as transport completion.
+                        pagination_trace(
+                            transaction_id,
+                            session_id,
+                            "space_enqueued",
+                            cursor,
+                            occurrence,
+                        );
                         transaction_log(target, session_id, "paging", transaction_started);
                     }
                 }
@@ -1584,6 +1611,17 @@ fn transaction_log(
     );
     #[cfg(not(debug_assertions))]
     let _ = (target, session_id, stage, started_at);
+}
+
+fn pagination_trace(transaction_id: u64, session_id: &str, stage: &str, cursor: u64, count: usize) {
+    #[cfg(debug_assertions)]
+    if std::env::var_os("NETERMINAI_PAGINATION_TRACE").is_some() {
+        eprintln!(
+            "[neterminai][pagination] transaction={transaction_id} session={session_id} stage={stage} cursor={cursor} count={count}"
+        );
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = (transaction_id, session_id, stage, cursor, count);
 }
 
 fn write_script_file(run_id: &str, code: &str) -> Result<String, String> {
