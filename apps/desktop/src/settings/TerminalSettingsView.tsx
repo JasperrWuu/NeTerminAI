@@ -379,13 +379,18 @@ function HighlightRuleEditor({
     <section className="highlight-rule" data-enabled={rule.enabled}>
       <header>
         <span className="highlight-rule-color" style={{ background: colorValid ? rule.color : "transparent" }} />
-        <span className="highlight-rule-title"><strong>规则 {index + 1}</strong><small>{rule.pattern || "尚未设置匹配内容"}</small></span>
+        <span className="highlight-rule-title"><strong>{rule.name.trim() || `规则 ${index + 1}`}</strong><small>{rule.pattern || "尚未设置匹配内容"}</small></span>
         <span className="highlight-rule-spacer" />
-        <button aria-checked={rule.enabled} aria-label={`启用规则 ${index + 1}`} className="switch compact-switch" data-active={rule.enabled}
+        <button aria-checked={rule.enabled} aria-label={`启用${rule.name.trim() || `规则 ${index + 1}`}`} className="switch compact-switch" data-active={rule.enabled}
           onClick={() => onChange({ enabled: !rule.enabled })} role="switch" type="button"><span /></button>
-        <button aria-label={`删除规则 ${index + 1}`} className="highlight-remove-button" onClick={onRemove} type="button"><CloseIcon /></button>
+        <button aria-label={`删除${rule.name.trim() || `规则 ${index + 1}`}`} className="highlight-remove-button" onClick={onRemove} type="button"><CloseIcon /></button>
       </header>
       <div className="highlight-rule-grid">
+        <label className="highlight-pattern-field">
+          <span>规则名称</span>
+          <input className="settings-text-input" value={rule.name} placeholder="例如：接口状态"
+            onChange={(event) => onChange({ name: event.target.value })} />
+        </label>
         <label className="highlight-match-mode">
           <span>匹配方式</span>
           <SegmentedControl compact items={[{ value: "text", label: "文本" }, { value: "regex", label: "正则" }] as const}
@@ -419,6 +424,7 @@ function HighlightRuleEditor({
 function createHighlightRule(): TerminalHighlightRule {
   return {
     id: crypto.randomUUID(),
+    name: "新规则",
     enabled: true,
     matchMode: "text",
     pattern: "",

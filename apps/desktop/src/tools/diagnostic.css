@@ -1,0 +1,20 @@
+.diagnostic-panel { container-type: inline-size; display: flex; flex: 1; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; padding: 16px 12px; overflow: auto; }
+.diagnostic-heading { display: grid; gap: 8px; }
+.diagnostic-heading h2 { font-size: 16px; margin: 0; }
+.diagnostic-heading p, .diagnostic-heading small { margin: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+.diagnostic-heading p { font-size: 12px; }
+.diagnostic-heading small { font-size: 11px; }
+.diagnostic-heading button { justify-self: start; }
+.diagnostic-panel button svg { width: 14px; height: 14px; }
+.diagnostic-layout { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 2fr); flex: 1; min-height: 360px; gap: 14px; }
+.diagnostic-navigation, .diagnostic-reader { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
+.diagnostic-commands { overflow: auto; flex: 1; }
+.diagnostic-commands button { display: grid; gap: 4px; width: 100%; padding: 9px 10px; background: transparent; border: 0; border-radius: var(--radius-sm); text-align: left; color: var(--text-primary); cursor: pointer; overflow-wrap: anywhere; }
+.diagnostic-commands button:hover { background: var(--bg-hover); }
+.diagnostic-commands button[aria-current] { background: var(--accent-soft); }
+.diagnostic-commands small, .diagnostic-paging small { color: var(--text-secondary); font-size: 11px; }
+.diagnostic-reader header, .diagnostic-paging { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.diagnostic-reader header strong { font-size: 12px; overflow-wrap: anywhere; min-width: 0; }
+.diagnostic-reader header button { flex-shrink: 0; }
+.diagnostic-reader pre { flex: 1; min-height: 260px; max-height: 75vh; overflow: auto; margin: 0; padding: 12px; border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-primary); font-family: var(--font-mono, monospace); font-size: 12px; line-height: 1.6; tab-size: 4; }
+@container (max-width: 480px) { .diagnostic-layout { grid-template-columns: minmax(0, 1fr); } .diagnostic-commands { max-height: 180px; } }

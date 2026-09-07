@@ -7,6 +7,8 @@ export type SettingsSection = "terminal" | "keyboard" | "ai";
 export type AiProviderMode = "api" | "process";
 export type AiProviderPreset = "openaiCompatible" | "claude" | "opencode" | "powershell" | "custom";
 export type KeybindingCommandId =
+  | "newTelnetSession"
+  | "closeCurrentSession"
   | "synchronizeVisibleTerminals"
   | "stopSynchronizedInput"
   | "insertLocalIpv4"
@@ -29,6 +31,7 @@ export type KeybindingPatch = Partial<Record<
 
 export interface TerminalHighlightRule {
   id: string;
+  name: string;
   enabled: boolean;
   matchMode: TerminalHighlightMatchMode;
   pattern: string;

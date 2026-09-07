@@ -329,8 +329,12 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
 
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (command.id === "toggleImmersiveMode" && event.repeat) return;
-      if (command.id === "synchronizeVisibleTerminals") {
+      if (["toggleImmersiveMode", "newTelnetSession", "closeCurrentSession"].includes(command.id) && event.repeat) return;
+      if (command.id === "newTelnetSession") {
+        setTelnetDialog({ open: true });
+      } else if (command.id === "closeCurrentSession") {
+        if (workspaceTabs.activeTabId) workspaceTabs.closeTab(workspaceTabs.activePaneId, workspaceTabs.activeTabId);
+      } else if (command.id === "synchronizeVisibleTerminals") {
         synchronizedInput.enable();
       } else if (command.id === "stopSynchronizedInput") {
         synchronizedInput.disable();
@@ -363,6 +367,9 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     workspaceTabs.activateNextSession,
     workspaceTabs.balanceWorkspace,
     workspaceTabs.collapseWorkspace,
+    workspaceTabs.activePaneId,
+    workspaceTabs.activeTabId,
+    workspaceTabs.closeTab,
   ]);
   const openSavedConnection = useCallback((session: SavedConnectionSession) => {
     if (session.kind !== "ssh") {

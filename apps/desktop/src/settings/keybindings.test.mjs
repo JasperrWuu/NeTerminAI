@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDefaultApplicationSettings } from "./applicationSettings.ts";
+import { createDefaultApplicationSettings, migrateSettings } from "./applicationSettings.ts";
 import {
   findKeybindingConflict,
   resolveKeyboardShortcut,
@@ -9,6 +9,19 @@ import {
 function keyEvent({ key, code = key, ctrlKey = false, shiftKey = false, altKey = false, metaKey = false }) {
   return { key, code, ctrlKey, shiftKey, altKey, metaKey };
 }
+
+test("Telnet and close use distinct customizable default shortcuts", () => {
+  const { keybindings } = createDefaultApplicationSettings();
+  assert.equal(resolveKeyboardShortcut(keyEvent({ key: "n", ctrlKey: true }), keybindings)?.id, "newTelnetSession");
+  assert.equal(resolveKeyboardShortcut(keyEvent({ key: "N", ctrlKey: true, shiftKey: true }), keybindings)?.id, "closeCurrentSession");
+  assert.equal(findKeybindingConflict(keybindings, "newTelnetSession", "Ctrl+N"), null);
+  const migrated = migrateSettings({ schemaVersion: 5, keybindings: {
+    insertLocalIpv4: { binding: "Ctrl+N", enabled: true },
+  } });
+  assert.equal(migrated.keybindings.newTelnetSession.enabled, false);
+  assert.equal(resolveKeyboardShortcut(keyEvent({ key: "n", ctrlKey: true }), migrated.keybindings)?.id, "insertLocalIpv4");
+  assert.equal(migrateSettings({ keybindings: { newTelnetSession: { binding: "Ctrl+Alt+T", enabled: true } } }).keybindings.newTelnetSession.binding, "Ctrl+Alt+T");
+});
 
 test("enabled Ctrl+Equal resolves to tile layout", () => {
   const settings = createDefaultApplicationSettings();

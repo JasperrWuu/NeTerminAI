@@ -9,12 +9,14 @@ import type {
 
 import { createDefaultHighlightSets } from "./defaultHighlightSets.ts";
 
-export const CURRENT_SETTINGS_SCHEMA_VERSION = 5;
+export const CURRENT_SETTINGS_SCHEMA_VERSION = 6;
 export const SETTINGS_STORAGE_KEY = "neterminai.application.settings.v2";
 export const LEGACY_SETTINGS_STORAGE_KEY = "neterminai.application.settings.v1";
 export const LEGACY_WORKBENCH_STORAGE_KEY = "neterminai.workbench.preferences.v2";
 
 const KEYBINDING_IDS: readonly KeybindingCommandId[] = [
+  "newTelnetSession",
+  "closeCurrentSession",
   "synchronizeVisibleTerminals",
   "stopSynchronizedInput",
   "insertLocalIpv4",
@@ -44,6 +46,8 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
       highlightSets: createDefaultHighlightSets(),
     },
     keybindings: {
+      newTelnetSession: { id: "newTelnetSession", binding: "Ctrl+N", enabled: true },
+      closeCurrentSession: { id: "closeCurrentSession", binding: "Ctrl+Shift+N", enabled: true },
       synchronizeVisibleTerminals: {
         id: "synchronizeVisibleTerminals",
         binding: "Ctrl+L",
@@ -128,6 +132,18 @@ export function migrateSettings(
         .filter((preset) => !highlightSets.some((set) => set.id === preset.id))
         .map((set) => ({ ...set, enabled: false }))];
     }
+  }
+  if (typeof root?.schemaVersion === "number" && root.schemaVersion < 6) {
+    const presets = createDefaultHighlightSets();
+    highlightSets = highlightSets.map((set) => {
+      const preset = presets.find((item) => item.id === set.id);
+      if (!preset) return set;
+      return {
+        ...set,
+        name: ["夜色 · 暗色", "日光 · 亮色"].includes(set.name) ? preset.name : set.name,
+        rules: [...set.rules, ...preset.rules.filter((rule) => !set.rules.some((existing) => existing.id === rule.id))],
+      };
+    });
   }
   const highlightSelection = normalizeTerminalHighlightSelection(
     highlightSets,
@@ -308,6 +324,13 @@ function normalizeKeybindings(
 
   // A stored binding is treated as a user choice. Defaults only fill missing
   // commands, so changing defaults never overwrites an existing customization.
+  for (const id of ["newTelnetSession", "closeCurrentSession"] as const) {
+    if (value?.[id] !== undefined) continue;
+    if (KEYBINDING_IDS.some((other) => other !== id && value?.[other] !== undefined
+      && settings[other].enabled && settings[other].binding.toLowerCase() === settings[id].binding.toLowerCase())) {
+      settings[id].enabled = false;
+    }
+  }
   return settings;
 }
 
@@ -342,6 +365,8 @@ function normalizeHighlightRule(value: unknown): TerminalHighlightRule[] {
   if (typeof rule.color !== "string" || !/^#[0-9a-f]{6}$/i.test(rule.color)) return [];
   return [{
     id: rule.id,
+    name: typeof rule.name === "string" ? rule.name : createDefaultHighlightSets()
+      .flatMap((set) => set.rules).find((preset) => preset.id === rule.id)?.name ?? "自定义匹配",
     enabled: typeof rule.enabled === "boolean" ? rule.enabled : true,
     matchMode: rule.matchMode,
     pattern: rule.pattern,

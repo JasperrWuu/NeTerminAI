@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { TerminalCapability } from "../capabilities/terminal";
-import { AutomationIcon, ConfigurationIcon } from "../workbench/icons";
+import { AutomationIcon, ConfigurationIcon, FolderIcon } from "../workbench/icons";
+import { DiagnosticPanel } from "./DiagnosticPanel";
 import { AutomationPanel } from "./AutomationPanel";
 import { CfgPanel } from "./CfgPanel";
 
@@ -32,4 +33,5 @@ export const toolRegistry: readonly ToolDefinition[] = [
     icon: AutomationIcon,
     component: AutomationPanel,
   },
+  { id: "diagnostic", name: "诊断信息检查", description: "按命令检索、阅读与复制华为诊断 TXT", icon: FolderIcon, component: DiagnosticPanel },
 ];

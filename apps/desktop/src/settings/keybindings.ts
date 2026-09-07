@@ -8,6 +8,8 @@ export interface KeybindingCommand {
 }
 
 export const keybindingCommands: KeybindingCommand[] = [
+  { id: "newTelnetSession", label: "新建 Telnet 会话", description: "打开 Telnet 连接窗口。" },
+  { id: "closeCurrentSession", label: "关闭当前会话", description: "关闭当前活动分区中的会话。" },
   {
     id: "synchronizeVisibleTerminals",
     label: "开启可见终端同步输入",
