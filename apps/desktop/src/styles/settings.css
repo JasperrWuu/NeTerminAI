@@ -753,3 +753,9 @@
   .keybinding-editor { justify-self: stretch; min-width: 0; }
   .keybinding-recorder { min-width: 0; }
 }
+.rule-drag-handle { width: 24px; height: 24px; padding: 4px; color: var(--text-tertiary); background: transparent; border: 0; cursor: grab; touch-action: none; }
+.rule-drag-handle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.highlight-rule[data-dragging="true"] { position: relative; z-index: 1; box-shadow: var(--shadow-control); }
+.highlight-rule[data-drop-target="true"] { outline: 1px solid var(--accent); }
+.quick-text-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px 20px; }
+.quick-text-grid textarea { font-family: var(--font-family-mono); resize: vertical; }

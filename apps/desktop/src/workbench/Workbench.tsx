@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNativeSurfaceOcclusion } from "../ui/nativeSurfaceOcclusion";
 import type { CSSProperties, ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WorkbenchPreferencesController } from "./useWorkbenchPreferences";
@@ -169,6 +170,7 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     folder?: ConnectionFolder;
   }>({ open: false });
   const dialogOpen = telnetDialog.open || serialDialog.open || sshDialog.open || rdpDialog.open || folderDialog.open;
+  useNativeSurfaceOcclusion(dialogOpen);
   const visibleTabIds = useMemo(
     () => collectVisibleTabIds(workspaceTabs.layout),
     [workspaceTabs.layout],
@@ -327,6 +329,17 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
       const editable = target?.closest("input, textarea, select, [contenteditable='true']");
       if (editable && !target?.closest(".xterm") && command.id !== "toggleImmersiveMode") return;
 
+      if (command.id === "toggleTerminalTimestamps" || command.id.startsWith("quickText")) {
+        const focused = runtimeRegistry.getFocused();
+        if (!focused) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (event.repeat) return;
+        if (command.id === "toggleTerminalTimestamps") focused.toggleTimestamps();
+        else focused.sendQuickText(settings.terminal.quickTexts[Number(command.id.slice("quickText".length))] ?? "");
+        return;
+      }
+
       event.preventDefault();
       event.stopImmediatePropagation();
       if (["toggleImmersiveMode", "newTelnetSession", "closeCurrentSession"].includes(command.id) && event.repeat) return;
@@ -359,6 +372,8 @@ export function Workbench({ preferences, settings }: WorkbenchProps) {
     dialogOpen,
     settingsOpen,
     settings.keybindings,
+    settings.terminal.quickTexts,
+    runtimeRegistry,
     synchronizedInput.disable,
     synchronizedInput.enable,
     synchronizedInput.focus,

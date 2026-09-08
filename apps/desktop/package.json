@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:interactions": "node --experimental-strip-types --test src/ui/reorder.test.mjs src/ui/nativeSurfaceOcclusion.test.mjs src/terminal/TerminalPresentation.test.mjs src/terminal/clipboard.test.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

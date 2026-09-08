@@ -12,6 +12,7 @@ import {
   collapseWorkspaceLayout,
   removePane,
   removeTabFromPane,
+  reorderPaneTabs,
   replacePane,
   resizeWorkspaceSplit,
   updatePane,
@@ -274,12 +275,16 @@ export function useWorkspaceTabs(
     sourcePaneId: string,
     targetPaneId: string,
     zone: WorkspaceDropZone,
+    beforeTabId?: string | null,
   ) => {
     setWorkspace((current) => {
       const sourcePane = findPane(current.layout, sourcePaneId);
       const targetPane = findPane(current.layout, targetPaneId);
       if (!sourcePane?.tabIds.includes(tabId) || !targetPane) return current;
-      if (sourcePaneId === targetPaneId && zone === "center") return current;
+      if (sourcePaneId === targetPaneId && zone === "center") {
+        if (beforeTabId === undefined || beforeTabId === tabId) return current;
+        return { ...current, layout: updatePane(current.layout, sourcePaneId, (pane) => reorderPaneTabs(pane, tabId, beforeTabId)) };
+      }
 
       const direction = zone === "left" || zone === "right" ? "row" : "column";
       const placeFirst = zone === "left" || zone === "top";

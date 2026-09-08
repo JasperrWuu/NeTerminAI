@@ -1370,7 +1370,13 @@ fn prompt_matches_context(candidate: &str, initial_prompt: Option<&str>, command
         if initial_prompt.is_some_and(is_huawei_prompt) {
             return false;
         }
-        return !matches!(candidate, "#" | "$" | "%") || initial_prompt == Some(candidate);
+        // A suffix alone is not enough: table rows, progress percentages and
+        // separators must not learn a shell prompt from a command's output.
+        // Unlearned shell prompts need actual shell framing, not arbitrary text.
+        return initial_prompt == Some(candidate)
+            || candidate.starts_with("PS ")
+            || candidate.contains(":\\")
+            || (candidate.contains('@') && candidate.contains(':'));
     }
     let Some(initial_prompt) = initial_prompt.filter(|prompt| is_huawei_prompt(prompt)) else {
         // A first transaction may start before the terminal has exposed its
@@ -1854,6 +1860,45 @@ mod tests {
     fn run_ids_are_safe_for_temporary_script_paths() {
         assert_eq!(safe_component("run/with spaces"), "run-with-spaces");
         assert_eq!(safe_component(""), "run");
+    }
+
+    #[test]
+    fn repeated_separators_never_complete_or_truncate_a_transaction() {
+        let business =
+            "----------\n\n内容\n\n--------------------\n\n  内容  \n    内容\n\n---\n\n最后一段\n";
+        for size in [1, 2, 7, 64, 4096] {
+            let mut collector = CommandCollector::new("display output", Some("<FW1>".into()));
+            collector.push(b"<FW1>display output\r\n").unwrap();
+            for chunk in business.as_bytes().chunks(size) {
+                let signal = collector.push(chunk).unwrap();
+                assert!(signal.prompt.is_none());
+                assert!(signal.interaction.is_none());
+                assert_eq!(signal.more_markers, 0);
+            }
+            let signal = collector.push(b"<FW1>").unwrap();
+            assert_eq!(signal.prompt.as_deref(), Some("<FW1>"));
+            assert_eq!(
+                collector.normalized_output(signal.prompt.as_deref()),
+                business.trim_end_matches('\n')
+            );
+        }
+    }
+
+    #[test]
+    fn unlearned_shell_suffix_in_business_output_does_not_complete() {
+        let mut collector = CommandCollector::new("display output", None);
+        for chunk in [
+            b"output\n----------\n".as_slice(),
+            b"Progress: 50%\n",
+            b"########\n",
+            b"more output\n",
+        ] {
+            assert!(collector.push(chunk).unwrap().prompt.is_none());
+        }
+        assert_eq!(
+            collector.push(b"<FW1>").unwrap().prompt.as_deref(),
+            Some("<FW1>")
+        );
     }
 
     #[test]

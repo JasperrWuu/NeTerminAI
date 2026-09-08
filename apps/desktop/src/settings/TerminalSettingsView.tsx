@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { usePointerReorder } from "../ui/usePointerReorder";
+import { moveItem } from "../ui/reorder";
 import type {
   AppearanceTheme,
   TerminalColorScheme,
@@ -341,6 +343,7 @@ function HighlightSetsEditor({
                         {set.rules.map((rule, ruleIndex) => (
                           <HighlightRuleEditor
                             index={ruleIndex}
+                            onMove={(from, to) => updateSet(set.id, { rules: moveItem(set.rules, from, to) })}
                             key={rule.id}
                             onChange={(patch) => updateSet(set.id, {
                               rules: set.rules.map((item) => item.id === rule.id ? { ...item, ...patch } : item),
@@ -364,20 +367,30 @@ function HighlightSetsEditor({
 
 function HighlightRuleEditor({
   index,
+  onMove,
   onChange,
   onRemove,
   rule,
 }: {
   index: number;
+  onMove: (from: number, to: number) => void;
   onChange: (patch: Partial<TerminalHighlightRule>) => void;
   onRemove: () => void;
   rule: TerminalHighlightRule;
 }) {
+  const beginDrag = usePointerReorder(onMove);
   const regexValid = rule.matchMode !== "regex" || isValidRegex(rule.pattern);
   const colorValid = isValidHexColor(rule.color);
   return (
-    <section className="highlight-rule" data-enabled={rule.enabled}>
+    <section className="highlight-rule" data-reorder-row data-enabled={rule.enabled}>
       <header>
+        <button className="rule-drag-handle" aria-label="拖动排序；方向键上下移动" type="button"
+          onPointerDown={(event) => beginDrag(event, index)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+              event.preventDefault(); onMove(index, index + (event.key === "ArrowUp" ? -1 : 1));
+            }
+          }}><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M5 4h6M5 8h6M5 12h6" /></svg></button>
         <span className="highlight-rule-color" style={{ background: colorValid ? rule.color : "transparent" }} />
         <span className="highlight-rule-title"><strong>{rule.name.trim() || `规则 ${index + 1}`}</strong><small>{rule.pattern || "尚未设置匹配内容"}</small></span>
         <span className="highlight-rule-spacer" />

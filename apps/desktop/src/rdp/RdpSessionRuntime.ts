@@ -1,4 +1,5 @@
 import type { RdpConnection } from "../connections/types";
+import { nativeSurfaceOcclusion } from "../ui/nativeSurfaceOcclusion";
 import { rdpApi, type RdpBounds, type RdpRuntimeState, type RdpRuntimeStatus } from "../ipc/rdp";
 
 export interface RdpViewAttachment {
@@ -44,12 +45,16 @@ export class RdpSessionRuntime {
   private closeRequested = false;
   private disposed = false;
   private snapshot: RdpSessionRuntimeSnapshot;
+  private readonly unsubscribeOcclusion: () => void;
 
   constructor(tabId: string, connection: RdpConnection) {
     this.tabId = tabId;
     this.sessionId = crypto.randomUUID();
     this.connection = connection;
     this.snapshot = { sessionId: this.sessionId, state: "initializing" };
+    this.unsubscribeOcclusion = nativeSurfaceOcclusion.subscribe(() => {
+      this.sendResize(Boolean(this.view?.active && this.snapshot.state === "connected"));
+    });
   }
 
   get isDisposed() {
@@ -104,6 +109,7 @@ export class RdpSessionRuntime {
   }
 
   focus() {
+    if (nativeSurfaceOcclusion.blocked || !this.view?.active || !this.view.paneActive) return;
     if (this.disposed || !this.created || this.snapshot.state !== "connected") return;
     void rdpApi.focus(this.sessionId).catch((error: unknown) => {
       if (!this.disposed) this.setError(String(error));
@@ -113,6 +119,7 @@ export class RdpSessionRuntime {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.unsubscribeOcclusion();
     if (this.resizeFrame !== undefined) cancelAnimationFrame(this.resizeFrame);
     if (this.statusTimer !== undefined) window.clearTimeout(this.statusTimer);
     this.resizeFrame = undefined;
@@ -172,13 +179,14 @@ export class RdpSessionRuntime {
 
   private applyRuntimeStatus(runtime: RdpRuntimeStatus) {
     if (runtime.state === "connected") {
+      const justConnected = this.snapshot.state !== "connected";
       this.disconnectedSince = undefined;
       this.setState("connected");
       this.sendResize(Boolean(this.view?.active));
-      if (runtime.focused && this.view && !this.view.paneActive) {
+      if (runtime.focused && this.view?.active && !this.view.paneActive && !nativeSurfaceOcclusion.blocked) {
         this.view.onActivate();
       }
-      if (this.view?.active) this.focus();
+      if (justConnected && this.view?.active) this.focus();
       return;
     }
     if (runtime.state === "connecting" || runtime.state === "initializing") {
@@ -215,7 +223,7 @@ export class RdpSessionRuntime {
     if (this.disposed || !this.created) return;
     const bounds = this.view ? readBounds(this.view.container) : EMPTY_BOUNDS;
     const id = ++this.resizeRequestId;
-    this.pendingResize = { bounds, visible, id };
+    this.pendingResize = { bounds, visible: visible && !nativeSurfaceOcclusion.blocked, id };
     this.flushResize();
   }
 

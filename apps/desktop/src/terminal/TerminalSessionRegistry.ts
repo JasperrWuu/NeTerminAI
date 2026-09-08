@@ -40,6 +40,10 @@ export class TerminalSessionRegistry {
     return this.runtimes.get(tabId);
   }
 
+  getFocused() {
+    return [...this.runtimes.values()].find((runtime) => runtime.hasInputFocus && !runtime.isDisposed);
+  }
+
   subscribe(listener: () => void) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

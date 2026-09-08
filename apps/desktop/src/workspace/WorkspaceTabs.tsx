@@ -92,6 +92,7 @@ export function WorkspaceTabs({
           <div
             className="tab"
             data-active={activeTabId === tab.id}
+            data-tab-order-id={tab.id}
             key={tab.id}
             ref={(element) => {
               if (element) tabRefs.current.set(tab.id, element);

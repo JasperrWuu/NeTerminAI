@@ -18,7 +18,7 @@ interface WorkspaceAreaProps {
   onActivateTab: (paneId: string, tabId: string) => void;
   onCloseTab: (paneId: string, tabId: string) => void;
   onClosePane: (paneId: string) => void;
-  onMoveTab: (tabId: string, sourcePaneId: string, targetPaneId: string, zone: WorkspaceDropZone) => void;
+  onMoveTab: (tabId: string, sourcePaneId: string, targetPaneId: string, zone: WorkspaceDropZone, beforeTabId?: string | null) => void;
   onResizeSplit: (splitId: string, ratio: number) => void;
   onDraggingChange?: (dragging: boolean) => void;
   renderTab: (tab: WorkspaceTab, active: boolean, paneId: string) => ReactNode;
@@ -35,6 +35,7 @@ interface DraggedTab {
 interface DropTarget {
   paneId: string;
   zone: WorkspaceDropZone;
+  beforeTabId?: string | null;
 }
 
 interface PaneBounds {
@@ -58,7 +59,11 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
   const updateDropTarget = useCallback((clientX: number, clientY: number) => {
     const next = resolveDropTarget(clientX, clientY);
     const current = dropTargetRef.current;
-    if (current?.paneId === next?.paneId && current?.zone === next?.zone) return;
+    if (current?.paneId === next?.paneId && current?.zone === next?.zone && current?.beforeTabId === next?.beforeTabId) return;
+    document.querySelectorAll("[data-tab-drop-before]").forEach((element) => element.removeAttribute("data-tab-drop-before"));
+    if (next?.beforeTabId) document.querySelectorAll<HTMLElement>("[data-tab-order-id]").forEach((element) => {
+      if (element.dataset.tabOrderId === next.beforeTabId) element.setAttribute("data-tab-drop-before", "true");
+    });
     dropTargetRef.current = next;
     setDropTarget(next);
   }, []);
@@ -74,6 +79,7 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
     const startX = event.clientX;
     const startY = event.clientY;
     const pointerId = event.pointerId;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     let dragging = false;
 
     try {
@@ -117,12 +123,15 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
 
       if (wasDragging && commit) {
         const target = dropTargetRef.current;
-        if (target) onMoveTab(tab.id, sourcePaneId, target.paneId, target.zone);
+        if (target) onMoveTab(tab.id, sourcePaneId, target.paneId, target.zone, target.beforeTabId);
+        if (target?.paneId === sourcePaneId && target.beforeTabId !== undefined
+          && previousFocus?.isConnected && previousFocus.closest(".xterm")) previousFocus.focus({ preventScroll: true });
       }
       dragging = false;
       dropTargetRef.current = null;
       setDropTarget(null);
       setDraggedTab(null);
+      document.querySelectorAll("[data-tab-drop-before]").forEach((element) => element.removeAttribute("data-tab-drop-before"));
       if (wasDragging) {
         pointerEvent.preventDefault();
         window.setTimeout(() => element.removeEventListener("click", suppressClick, true), 0);
@@ -448,6 +457,10 @@ function resolveDropTarget(clientX: number, clientY: number): DropTarget | null 
   return {
     paneId: pane.dataset.workspacePaneId ?? "",
     zone: resolveWorkspaceDropZone(bounds, clientX, clientY, overTabBar),
+    beforeTabId: overTabBar ? Array.from(pane.querySelectorAll<HTMLElement>("[data-tab-order-id]")).find((tab) => {
+      const rect = tab.getBoundingClientRect();
+      return clientX < rect.left + rect.width / 2;
+    })?.dataset.tabOrderId ?? null : undefined,
   };
 }
 

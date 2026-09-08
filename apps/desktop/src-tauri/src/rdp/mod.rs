@@ -445,7 +445,10 @@ mod windows_host {
         let window = HWND(handle as *mut c_void);
         native_log(&format!("focus session={} host={:?}", session_id, window));
         unsafe {
-            let _ = ShowWindow(window, SW_SHOW);
+            // Focus must never resurrect a surface hidden behind app dialogs.
+            if !windows::Win32::UI::WindowsAndMessaging::IsWindowVisible(window).as_bool() {
+                return Ok(());
+            }
             BringWindowToTop(window).map_err(|error| format!("无法激活 RDP 视图：{error}"))?;
             SetFocus(Some(window)).map_err(|error| format!("无法聚焦 RDP 视图：{error}"))?;
         }

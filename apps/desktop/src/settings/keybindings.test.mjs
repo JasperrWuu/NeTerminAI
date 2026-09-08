@@ -10,6 +10,20 @@ function keyEvent({ key, code = key, ctrlKey = false, shiftKey = false, altKey =
   return { key, code, ctrlKey, shiftKey, altKey, metaKey };
 }
 
+test("timestamp and ten quick texts share the shortcut registry and survive persistence", () => {
+  const defaults = createDefaultApplicationSettings();
+  const { keybindings } = defaults;
+  assert.equal(resolveKeyboardShortcut(keyEvent({ key: "t", ctrlKey: true, altKey: true }), keybindings)?.id, "toggleTerminalTimestamps");
+  for (let index = 0; index < 10; index++) {
+    assert.equal(resolveKeyboardShortcut(keyEvent({ key: String(index), altKey: true }), keybindings)?.id, `quickText${index}`);
+    defaults.terminal.quickTexts[index] = `  command ${index}\n`;
+  }
+  assert.deepEqual(migrateSettings(JSON.parse(JSON.stringify(defaults))).terminal.quickTexts, defaults.terminal.quickTexts);
+  assert.deepEqual(migrateSettings({}).terminal.quickTexts, Array(10).fill(""));
+  const custom = migrateSettings({ keybindings: { newTelnetSession: { binding: "Ctrl+Alt+T", enabled: true } } });
+  assert.equal(custom.keybindings.toggleTerminalTimestamps.enabled, false);
+});
+
 test("Telnet and close use distinct customizable default shortcuts", () => {
   const { keybindings } = createDefaultApplicationSettings();
   assert.equal(resolveKeyboardShortcut(keyEvent({ key: "n", ctrlKey: true }), keybindings)?.id, "newTelnetSession");

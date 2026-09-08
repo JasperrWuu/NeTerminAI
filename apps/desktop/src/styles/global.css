@@ -1697,3 +1697,6 @@ button:focus-visible,
     --icon-border: rgba(0, 0, 0, 0.32);
   }
 }
+.tab[data-tab-drop-before="true"] { box-shadow: inset 2px 0 var(--accent); }
+.terminal-container.terminal-with-timestamps { padding-left: 13ch; }
+.terminal-timestamp-gutter { position: absolute; top: 0; left: 0; width: 12ch; overflow: hidden; color: var(--text-tertiary); font: 11px var(--font-family-mono); pointer-events: none; user-select: none; }

@@ -42,6 +42,8 @@ export function SettingsPage({
           />
         ) : section === "keyboard" ? (
           <KeyboardShortcutsView
+            quickTexts={terminal.quickTexts}
+            onQuickTextsChange={(quickTexts) => onChangeTerminal({ quickTexts })}
             onChange={onChangeKeybindings}
             onReset={onResetKeybindings}
             settings={keybindings}

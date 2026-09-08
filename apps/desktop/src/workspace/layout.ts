@@ -1,5 +1,14 @@
 import type { WorkspaceDropZone, WorkspaceLayoutNode, WorkspacePaneNode, WorkspaceSplitDirection } from "./types";
 
+export function reorderPaneTabs(pane: WorkspacePaneNode, tabId: string, beforeTabId: string | null): WorkspacePaneNode {
+  if (!pane.tabIds.includes(tabId) || beforeTabId === tabId) return pane;
+  const tabIds = pane.tabIds.filter((id) => id !== tabId);
+  const index = beforeTabId === null ? tabIds.length : tabIds.indexOf(beforeTabId);
+  if (index < 0) return pane;
+  tabIds.splice(index, 0, tabId);
+  return { ...pane, tabIds };
+}
+
 interface DropBounds {
   bottom: number;
   height: number;

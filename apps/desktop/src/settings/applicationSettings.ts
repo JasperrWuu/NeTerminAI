@@ -15,6 +15,8 @@ export const LEGACY_SETTINGS_STORAGE_KEY = "neterminai.application.settings.v1";
 export const LEGACY_WORKBENCH_STORAGE_KEY = "neterminai.workbench.preferences.v2";
 
 const KEYBINDING_IDS: readonly KeybindingCommandId[] = [
+  "toggleTerminalTimestamps",
+  ...Array.from({ length: 10 }, (_, index) => `quickText${index}` as KeybindingCommandId),
   "newTelnetSession",
   "closeCurrentSession",
   "synchronizeVisibleTerminals",
@@ -33,6 +35,7 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
     schemaVersion: CURRENT_SETTINGS_SCHEMA_VERSION,
     appearance: { theme: "dark" },
     terminal: {
+      quickTexts: Array.from({ length: 10 }, () => ""),
       fontFamilyLatin: "Cascadia Mono",
       fontFamilyCjk: "Microsoft YaHei",
       fontSize: 14,
@@ -46,6 +49,8 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
       highlightSets: createDefaultHighlightSets(),
     },
     keybindings: {
+      toggleTerminalTimestamps: { id: "toggleTerminalTimestamps", binding: "Ctrl+Alt+T", enabled: true },
+      ...Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`quickText${index}`, { id: `quickText${index}`, binding: `Alt+${index}`, enabled: true }])),
       newTelnetSession: { id: "newTelnetSession", binding: "Ctrl+N", enabled: true },
       closeCurrentSession: { id: "closeCurrentSession", binding: "Ctrl+Shift+N", enabled: true },
       synchronizeVisibleTerminals: {
@@ -83,7 +88,7 @@ export function createDefaultApplicationSettings(): ApplicationSettings {
         binding: "F11",
         enabled: true,
       },
-    },
+    } as KeybindingSettings,
     ai: {
       enabled: true,
       providerMode: "api",
@@ -188,6 +193,10 @@ export function migrateSettings(
         ? terminal.scrollback
         : defaults.terminal.scrollback,
       colorScheme,
+      quickTexts: Array.from({ length: 10 }, (_, index) => {
+        const text = Array.isArray(terminal?.quickTexts) ? terminal.quickTexts[index] : undefined;
+        return typeof text === "string" ? text : "";
+      }),
       ...highlightSelection,
     },
     keybindings: normalizeKeybindings(keybindings, defaults.keybindings),
@@ -324,7 +333,7 @@ function normalizeKeybindings(
 
   // A stored binding is treated as a user choice. Defaults only fill missing
   // commands, so changing defaults never overwrites an existing customization.
-  for (const id of ["newTelnetSession", "closeCurrentSession"] as const) {
+  for (const id of KEYBINDING_IDS) {
     if (value?.[id] !== undefined) continue;
     if (KEYBINDING_IDS.some((other) => other !== id && value?.[other] !== undefined
       && settings[other].enabled && settings[other].binding.toLowerCase() === settings[id].binding.toLowerCase())) {

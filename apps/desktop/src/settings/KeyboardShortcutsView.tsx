@@ -10,6 +10,8 @@ import {
 import type { KeybindingCommandId, KeybindingPatch, KeybindingSettings } from "./types";
 
 interface KeyboardShortcutsViewProps {
+  quickTexts: string[];
+  onQuickTextsChange: (texts: string[]) => void;
   settings: KeybindingSettings;
   onChange: (settings: KeybindingPatch) => void;
   onReset: () => void;
@@ -21,6 +23,8 @@ interface KeybindingMessage {
 }
 
 export function KeyboardShortcutsView({
+  quickTexts,
+  onQuickTextsChange,
   settings,
   onChange,
   onReset,
@@ -87,6 +91,17 @@ export function KeyboardShortcutsView({
         </header>
 
         <div className="settings-layout">
+          <section className="settings-group">
+            <h2>快捷文本</h2>
+            <div className="quick-text-grid">
+              {quickTexts.map((text, index) => <label key={index} className="form-field">
+                <span>Alt + {index}</span>
+                <textarea className="settings-text-input" rows={2} value={text} spellCheck={false}
+                  aria-label={`快捷文本 ${index}`}
+                  onChange={(event) => onQuickTextsChange(quickTexts.map((item, i) => i === index ? event.target.value : item))} />
+              </label>)}
+            </div>
+          </section>
           <section className="settings-group">
             <h2>工作台命令</h2>
             <div className="settings-card keybinding-list">

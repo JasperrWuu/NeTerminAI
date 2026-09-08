@@ -4,7 +4,20 @@ import {
   buildBalancedWorkspaceLayout,
   collectTabIds,
   countWorkspacePanes,
+  reorderPaneTabs,
 } from "./layout.ts";
+
+test("tab reorder changes order only, including end drops and split pane identity", () => {
+  const pane = { type: "pane", id: "pane-a", tabIds: ["ssh", "rdp", "serial"], activeTabId: "rdp" };
+  const next = reorderPaneTabs(pane, "serial", "ssh");
+  assert.deepEqual(next.tabIds, ["serial", "ssh", "rdp"]);
+  assert.equal(next.id, pane.id);
+  assert.equal(next.activeTabId, "rdp");
+  assert.deepEqual(reorderPaneTabs(next, "serial", null), pane);
+  assert.equal(reorderPaneTabs(pane, "missing", null), pane);
+  assert.equal(reorderPaneTabs(pane, "ssh", "missing"), pane);
+  assert.deepEqual(pane.tabIds, ["ssh", "rdp", "serial"]);
+});
 
 function leafCount(node) {
   return node.type === "pane" ? 1 : leafCount(node.first) + leafCount(node.second);

@@ -1,11 +1,13 @@
 import { useCallback, useLayoutEffect, useState } from "react";
 import type { CSSProperties } from "react";
+import { useNativeSurfaceOcclusion } from "./nativeSurfaceOcclusion";
 
 interface FloatingMenuAnchor {
   current: HTMLElement | null;
 }
 
 export function useFloatingMenu(open: boolean, anchorRef: FloatingMenuAnchor) {
+  useNativeSurfaceOcclusion(open);
   const [style, setStyle] = useState<CSSProperties>({});
 
   const updatePosition = useCallback(() => {

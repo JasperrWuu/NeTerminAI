@@ -4,7 +4,7 @@ import type { AppearanceTheme, TerminalSettings } from "../settings/types";
 import type { SerialConnection, SshConnection, TelnetConnection } from "../connections/types";
 import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalClipboardAction } from "./clipboard";
-import { TerminalHighlightStream } from "./highlighting";
+import { TerminalPresentation } from "./TerminalPresentation";
 import { resolveTerminalTheme } from "./themes";
 import { terminalFontStack } from "./fontStack";
 import { reportTerminalRendering } from "./renderDiagnostics";
@@ -67,7 +67,7 @@ export class TerminalSessionRuntime {
   private readonly terminal: Terminal;
   private readonly fitAddon: FitAddon;
   private readonly parkingHost: HTMLDivElement;
-  private readonly highlighter: TerminalHighlightStream;
+  private readonly presentation: TerminalPresentation;
   private readonly inputPump: TerminalInputPump;
   private readonly listeners = new Set<SnapshotListener>();
   private readonly tabId: string;
@@ -82,6 +82,9 @@ export class TerminalSessionRuntime {
   private outputDecoder = new TextDecoder();
   private snapshot: TerminalSessionRuntimeSnapshot;
   private disposed = false;
+  private readonly handleUserTextInput = () => {
+    if (this.hasInputFocus) this.terminal.scrollToBottom();
+  };
 
   constructor(tabId: string, definition: TerminalSessionDefinition, view: TerminalViewAttachment) {
     this.tabId = tabId;
@@ -90,6 +93,7 @@ export class TerminalSessionRuntime {
     this.parkingHost = document.createElement("div");
     this.parkingHost.className = "terminal-runtime-parking";
     this.terminal = new Terminal({
+      allowProposedApi: true,
       allowTransparency: false,
       cursorBlink: view.settings.cursorBlink,
       cursorStyle: view.settings.cursorStyle,
@@ -103,7 +107,8 @@ export class TerminalSessionRuntime {
     this.fitAddon = new FitAddon();
     this.terminal.loadAddon(this.fitAddon);
     this.terminal.open(view.container);
-    this.highlighter = new TerminalHighlightStream(activeHighlightRules(view.settings));
+    this.presentation = new TerminalPresentation(this.terminal);
+    this.presentation.attach(view.container);
     this.inputPump = new TerminalInputPump({
       write: async (data) => {
         const controller = this.controller;
@@ -115,6 +120,9 @@ export class TerminalSessionRuntime {
     this.inputSubscription = this.terminal.onData((data) => {
       if (!this.disposed && this.view?.active) this.view.onInput(data);
     });
+    this.terminal.onKey(() => this.terminal.scrollToBottom());
+    this.terminal.textarea?.addEventListener("input", this.handleUserTextInput);
+    this.terminal.textarea?.addEventListener("paste", this.handleUserTextInput);
     this.terminal.attachCustomKeyEventHandler((event) => this.handleClipboardKey(event));
     this.controller = this.createController(view.container, true);
     this.snapshot = { sessionId: this.controller.id, state: "connecting" };
@@ -138,6 +146,19 @@ export class TerminalSessionRuntime {
 
   get isDisposed() {
     return this.disposed;
+  }
+
+  get hasInputFocus() { return this.terminal.textarea === document.activeElement; }
+
+  sendQuickText(text: string) {
+    if (!this.hasInputFocus || !text) return;
+    this.terminal.scrollToBottom();
+    this.enqueueInput(text);
+  }
+
+  toggleTimestamps() {
+    this.presentation.toggle();
+    this.controller.resize();
   }
 
   /** Queue approved AI input through the same serialized path as keyboard input. */
@@ -168,6 +189,7 @@ export class TerminalSessionRuntime {
       this.moveTerminalTo(view.container);
     }
     this.view = view;
+    this.presentation.attach(view.container);
     this.registerInputTarget(view);
     this.applySettings(view.settings, view.theme);
     this.controller.attachView(view.container);
@@ -230,6 +252,9 @@ export class TerminalSessionRuntime {
     this.pendingOutput = [];
     this.pendingOutputBytes = 0;
     this.controller.dispose();
+    this.presentation.dispose();
+    this.terminal.textarea?.removeEventListener("input", this.handleUserTextInput);
+    this.terminal.textarea?.removeEventListener("paste", this.handleUserTextInput);
     this.terminal.dispose();
     this.listeners.clear();
     this.view = undefined;
@@ -301,7 +326,7 @@ export class TerminalSessionRuntime {
     this.terminal.options.cursorStyle = settings.cursorStyle;
     this.terminal.options.cursorBlink = settings.cursorBlink;
     this.terminal.options.scrollback = settings.scrollback;
-    this.highlighter.setRules(activeHighlightRules(settings));
+    this.presentation.setRules(activeHighlightRules(settings));
   }
 
   private enqueueOutput(encodedData: string) {
@@ -335,7 +360,7 @@ export class TerminalSessionRuntime {
     this.pendingOutput = [];
     this.pendingOutputBytes = 0;
     const text = this.outputDecoder.decode(combined, { stream: true });
-    this.terminal.write(this.highlighter.write(text));
+    this.terminal.write(text);
   }
 
   private handleClipboardKey(event: KeyboardEvent) {
@@ -355,7 +380,7 @@ export class TerminalSessionRuntime {
       event.preventDefault();
       event.stopPropagation();
       void navigator.clipboard.readText().then((text) => {
-        if (text && !this.disposed) this.terminal.paste(text);
+        if (text && !this.disposed) { this.terminal.scrollToBottom(); this.terminal.paste(text); }
       }).catch(() => undefined);
     }
     return false;

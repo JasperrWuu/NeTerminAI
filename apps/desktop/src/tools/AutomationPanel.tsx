@@ -441,7 +441,7 @@ function ExecutionStatus({ execution, sessions, scriptName }: { execution: Scrip
                 </span>
                 <span className="automation-run-name">{session?.title ?? run.title}</span>
                 <span className="automation-run-state">{runStatusLabel(run.status)}</span>
-                {run.message && <span className="automation-run-message" title={run.message}>{run.message}</span>}
+                {run.message && <span className="automation-run-message">{run.message}</span>}
               </div>
             </div>
           );
