@@ -17,7 +17,7 @@ import {
   type AutomationTarget,
 } from "./automationDraft";
 import { useAutomationDrafts } from "./useAutomationDrafts";
-import { appendRunLog, createRunLogs, logRunStatus, logSummary, type RunLogs } from "./automationLogs";
+import { appendRunLog, bufferStdout, flushStdout, formatRunLog, runLogFilename, STDOUT_IDLE_MS, createRunLogs, logRunStatus, logSummary, type RunLogs } from "./automationLogs";
 
 interface AutomationPanelProps {
   activeTabId: string | null;
@@ -89,6 +89,7 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
     let disposed = false;
     let statusUnlisten: (() => void) | undefined;
     let outputUnlisten: (() => void) | undefined;
+    const stdoutTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const statusReady = automationApi.subscribeStatus((event) => {
       if (!disposed) setExecutions((current) => reduceStatusEvent(current, event));
     }).then((cleanup) => {
@@ -100,7 +101,20 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
       return false;
     });
     const outputReady = automationApi.subscribeOutput((event) => {
-      if (!disposed) setExecutions((current) => reduceOutputEvent(current, event));
+      if (disposed) return;
+      setExecutions((current) => reduceOutputEvent(current, event));
+      const key = JSON.stringify([event.runId, event.tabId, event.sessionId]);
+      clearTimeout(stdoutTimers.get(key));
+      stdoutTimers.delete(key);
+      if (event.stream === "stdout") stdoutTimers.set(key, setTimeout(() => {
+        stdoutTimers.delete(key);
+        if (!disposed) setExecutions((current) => {
+          const execution = current[event.scriptId];
+          if (!execution || execution.runId !== event.runId) return current;
+          return { ...current, [event.scriptId]: { ...execution, runs: execution.runs.map((run) =>
+            run.tabId === event.tabId && run.sessionId === event.sessionId ? { ...run, logs: flushStdout(run.logs) } : run) } };
+        });
+      }, STDOUT_IDLE_MS));
     }).then((cleanup) => {
       if (disposed) cleanup();
       else outputUnlisten = cleanup;
@@ -116,6 +130,7 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
       pendingStarts.current.clear();
       statusUnlisten?.();
       outputUnlisten?.();
+      stdoutTimers.forEach(clearTimeout);
       Object.values(executionRef.current).forEach((execution) => {
         if (execution.status === "running") void automationApi.stop(execution.runId).catch(() => undefined);
       });
@@ -400,14 +415,14 @@ function AutomationScriptBlock({
               />
             )}
           </div>
-          {execution && <ExecutionStatus execution={execution} sessions={sessions} />}
+          {execution && <ExecutionStatus execution={execution} sessions={sessions} scriptName={script.name} />}
         </div>
       )}
     </section>
   );
 }
 
-function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionView; sessions: readonly TerminalSessionDescriptor[] }) {
+function ExecutionStatus({ execution, sessions, scriptName }: { execution: ScriptExecutionView; sessions: readonly TerminalSessionDescriptor[]; scriptName: string }) {
   const completed = execution.runs.filter((run) => run.status === "success" || run.status === "error" || run.status === "cancelled").length;
   return (
     <div className="automation-execution" aria-live="polite">
@@ -434,17 +449,39 @@ function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionVi
       </div>
       <details className="automation-logs-disclosure">
         <summary>日志 <small>{execution.runs.reduce((sum, run) => sum + run.logs.entries.length, 0)} 条</small></summary>
-        {execution.runs.map((run) => <SessionRunLogs key={run.tabId} run={run} />)}
+        {execution.runs.map((run) => <SessionRunLogs key={`${execution.runId}-${run.tabId}`} run={run} scriptName={scriptName} />)}
       </details>
     </div>
   );
 }
 
-function SessionRunLogs({ run }: { run: SessionRunView }) {
+function SessionRunLogs({ run, scriptName }: { run: SessionRunView; scriptName: string }) {
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [saveError, setSaveError] = useState("");
+  const alive = useRef(true);
+  const saving = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; clearTimeout(saveTimer.current); }; }, []);
+  const save = async () => {
+    if (saving.current) return;
+    saving.current = true; clearTimeout(saveTimer.current); setSaveState("saving"); setSaveError("");
+    try {
+      const saved = await automationApi.saveLog(runLogFilename(scriptName, run.title), formatRunLog(run.logs));
+      if (!alive.current) return;
+      setSaveState(saved ? "saved" : "idle");
+      if (saved) saveTimer.current = setTimeout(() => setSaveState("idle"), 1500);
+    } catch (error) {
+      if (alive.current) { setSaveError(errorMessage(error)); setSaveState("idle"); }
+    } finally { saving.current = false; }
+  };
   const ref = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   useEffect(() => { if (ref.current && follow.current) ref.current.scrollTop = ref.current.scrollHeight; }, [run.logs]);
-  return <section className="automation-log-session"><h4>{run.title}</h4>
+  return <section className="automation-log-session"><header className="automation-log-heading"><h4>{run.title}</h4>
+    <button type="button" className="secondary-button" disabled={saveState === "saving" || (!run.logs.entries.length && !run.logs.stdout)} onClick={() => void save()}>
+      {saveState === "saved" && <CheckIcon />}{saveState === "saved" ? "已保存" : saveState === "saving" ? "正在保存…" : "保存日志"}
+    </button></header>
+    {saveError && <p className="field-error" role="alert">{saveError}</p>}
     {run.logs.truncated && <small className="automation-output-truncated">日志已达显示上限，仅保留最近内容。</small>}
     <div className="automation-log-lines" ref={ref} onScroll={(event) => {
       const el = event.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 16;
@@ -655,7 +692,8 @@ function reduceOutputEvent(current: Record<string, ScriptExecutionView>, event: 
     if (run.tabId !== event.tabId
       || run.sessionId !== event.sessionId
     ) return run;
-    const logs = appendRunLog(run.logs, event.stream === "send" ? "send" : event.stream === "stderr" ? "error" : "info", event.data, event.timestamp, event.stream === "stderr");
+    const logs = event.stream === "stdout" ? bufferStdout(run.logs, event.data, event.timestamp)
+      : appendRunLog(run.logs, event.stream === "send" ? "send" : "error", event.data, event.timestamp, event.stream === "stderr");
     if (event.stream === "send") return { ...run, logs };
     const key = event.stream === "stderr" ? "stderr" : "stdout";
     const nextOutput = `${run[key]}${event.data}`;

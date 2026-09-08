@@ -48,7 +48,7 @@ export function IpCalculatorPanel() {
   ] : [];
   return <section className="ip-calculator" aria-label="IP 地址计算器">
     <header><h2>IP 地址计算器</h2><p>查看子网范围与地址信息</p></header>
-    <SegmentedControl ariaLabel="地址协议" items={[{ value: "ipv4", label: "IPv4" }, { value: "ipv6", label: "IPv6" }] as const}
+    <SegmentedControl tool ariaLabel="地址协议" items={[{ value: "ipv4", label: "IPv4" }, { value: "ipv6", label: "IPv6" }] as const}
       value={draft.tab} onChange={(tab) => { setDraft({ ...draft, tab }); setFeedback(""); }} />
     <form noValidate onSubmit={(event) => { event.preventDefault(); recalculate((value) => value + 1); }}>
       <div className="ip-input-grid">

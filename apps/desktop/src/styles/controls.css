@@ -71,6 +71,10 @@
 .segmented-control button:active { transform: scale(0.97); }
 .segmented-control button[data-active="true"] { color: var(--text-primary); }
 .compact-segmented-control button { min-width: 37px; padding: 0 7px; }
+.segmented-control.tool-segmented-control { width: 100%; }
+.segmented-control.tool-segmented-control button { min-width: 0; padding: 0 6px; font-size: 12px; }
+.segmented-control.tool-segmented-control button[data-active="true"] { color: var(--text-primary); font-weight: 650; }
+.tool-segmented-control .segmented-control-indicator { background: var(--material-raised); box-shadow: var(--shadow-control); }
 
 /* Shared select primitive. Keep the panel anchored to the trigger's root so
    every consumer gets identical edges without per-page offset fixes. */

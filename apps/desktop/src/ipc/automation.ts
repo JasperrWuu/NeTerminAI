@@ -42,6 +42,9 @@ export interface AutomationOutputEvent {
 type Unlisten = () => void;
 
 export const automationApi = {
+  saveLog(defaultName: string, content: string): Promise<boolean> {
+    return invoke<boolean>("save_automation_log", { defaultName, content }).catch((error: unknown) => { throw normalizeIpcError(error); });
+  },
   start(request: AutomationRunRequest) {
     return invoke<void>("start_automation", { request: toBackendRequest(request) }).catch((error: unknown) => {
       throw normalizeIpcError(error);

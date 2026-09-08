@@ -30,6 +30,7 @@ pub fn run() {
             commands::ai::cancel_ai_process,
             commands::automation::start_automation,
             commands::automation::stop_automation,
+            commands::log_export::save_automation_log,
             commands::terminal::create_terminal,
             commands::terminal::write_terminal,
             commands::terminal::resize_terminal,

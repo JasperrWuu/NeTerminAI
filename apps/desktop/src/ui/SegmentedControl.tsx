@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 interface SegmentedControlProps<T extends string | number> {
   ariaLabel?: string;
   compact?: boolean;
+  tool?: boolean;
   items: readonly { value: T; label: string }[];
   onChange: (value: T) => void;
   value: T;
@@ -11,6 +12,7 @@ interface SegmentedControlProps<T extends string | number> {
 export function SegmentedControl<T extends string | number>({
   ariaLabel,
   compact = false,
+  tool = false,
   items,
   onChange,
   value,
@@ -24,7 +26,7 @@ export function SegmentedControl<T extends string | number>({
   return (
     <div
       aria-label={ariaLabel}
-      className={`segmented-control${compact ? " compact-segmented-control" : ""}`}
+      className={`segmented-control${compact ? " compact-segmented-control" : ""}${tool ? " tool-segmented-control" : ""}`}
       role="group"
       style={style}
     >

@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod automation;
 pub mod fonts;
+pub mod log_export;
 pub mod rdp;
 pub mod serial;
 pub mod ssh;

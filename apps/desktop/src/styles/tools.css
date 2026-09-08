@@ -11,10 +11,15 @@
 .automation-logs-disclosure > summary small { margin-left: 8px; color: var(--text-tertiary); }
 .automation-log-session { margin-top: 12px; min-width: 0; }
 .automation-log-session h4 { font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+.automation-log-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.automation-log-heading h4 { margin: 0; }
+.automation-log-heading button { font-size: 11px; }
+.automation-log-heading svg { width: 14px; height: 14px; }
 .automation-log-lines { max-height: 280px; overflow: auto; }
 .automation-log-line { display: grid; grid-template-columns: auto 4.5em minmax(0, 1fr); gap: 8px; padding: 3px 0; font: 400 11px/1.7 var(--font-family-mono); }
 .automation-log-line time, .automation-log-level { color: var(--text-tertiary); }
 .automation-log-message, .automation-log-line details { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.automation-log-message { white-space: pre; overflow-wrap: normal; user-select: text; }
 .automation-log-line summary { cursor: pointer; }
 .automation-log-line[data-level="error"] .automation-log-message, .automation-log-line[data-level="error"] summary { color: var(--danger); }
 .automation-log-line[data-level="send"] .automation-log-level { color: var(--accent-strong); }
@@ -119,10 +124,6 @@
 .cfg-select .select-trigger:focus-visible { box-shadow: var(--control-focus); }
 .cfg-select .select-option { font-size: 13px; }
 .cfg-select .select-option-description { font-size: 12px; }
-.cfg-device-type .segmented-control { width: 100%; }
-.cfg-device-type .segmented-control button { min-width: 0; padding: 0 6px; font-size: 12px; }
-.cfg-device-type .segmented-control button[data-active="true"] { color: var(--text-primary); font-weight: 650; }
-.cfg-device-type .segmented-control-indicator { background: var(--material-raised); box-shadow: var(--shadow-control); }
 
 .cfg-access-list > * + * { border-top: 1px solid var(--border-subtle); }
 .cfg-disclosure-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 26px; align-items: center; gap: 8px; padding: 6px 8px; }

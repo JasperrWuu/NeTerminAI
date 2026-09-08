@@ -281,6 +281,7 @@ export function CfgPanel({ activeTabId, terminal }: CfgPanelProps) {
           <div className="cfg-device-type">
             <SegmentedControl
               ariaLabel="设备类型"
+              tool
               items={[{ value: "FW", label: "FW · 防火墙" }, { value: "AR", label: "AR · 路由器" }] as const}
               onChange={setDeviceType}
               value={deviceType}
