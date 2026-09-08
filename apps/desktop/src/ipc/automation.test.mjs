@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { decodeAutomationOutputEvent, decodeAutomationStatusEvent } from "./automation.ts";
 
+test("send log carries backend timestamp and exact command with session identity", () => {
+  const event = { runId: "run", scriptId: "script", tabId: "tab", sessionId: "session", stream: "send", data: "display health", timestamp: 123456 };
+  assert.deepEqual(decodeAutomationOutputEvent(event), event);
+  assert.equal(decodeAutomationOutputEvent({ ...event, timestamp: NaN }).timestamp, undefined);
+});
+
 test("automation status events are decoded without widening the payload", () => {
   assert.deepEqual(
     decodeAutomationStatusEvent({

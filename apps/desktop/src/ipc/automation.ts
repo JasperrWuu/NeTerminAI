@@ -4,7 +4,7 @@ import { normalizeIpcError } from "./errors.ts";
 import type { TerminalConnectionType } from "./types.ts";
 
 export type AutomationSessionRunStatus = "pending" | "running" | "success" | "error" | "cancelled";
-export type AutomationOutputStream = "stdout" | "stderr";
+export type AutomationOutputStream = "stdout" | "stderr" | "send";
 
 export interface AutomationTargetRequest {
   tabId: string;
@@ -20,6 +20,7 @@ export interface AutomationRunRequest {
 }
 
 export interface AutomationStatusEvent {
+  timestamp?: number;
   runId: string;
   scriptId: string;
   tabId: string;
@@ -29,6 +30,7 @@ export interface AutomationStatusEvent {
 }
 
 export interface AutomationOutputEvent {
+  timestamp?: number;
   runId: string;
   scriptId: string;
   tabId: string;
@@ -83,6 +85,7 @@ export function decodeAutomationStatusEvent(value: unknown): AutomationStatusEve
     tabId: value.tabId,
     sessionId: typeof value.sessionId === "string" ? value.sessionId : null,
     status: value.status,
+    ...(typeof value.timestamp === "number" && Number.isFinite(value.timestamp) ? { timestamp: value.timestamp } : {}),
     ...(typeof value.message === "string" ? { message: value.message } : {}),
   };
 }
@@ -100,6 +103,7 @@ export function decodeAutomationOutputEvent(value: unknown): AutomationOutputEve
     tabId: value.tabId,
     sessionId: typeof value.sessionId === "string" ? value.sessionId : null,
     stream: value.stream,
+    ...(typeof value.timestamp === "number" && Number.isFinite(value.timestamp) ? { timestamp: value.timestamp } : {}),
     data: value.data,
   };
 }
@@ -126,7 +130,7 @@ function isAutomationStatus(value: unknown): value is AutomationSessionRunStatus
 }
 
 function isAutomationOutputStream(value: unknown): value is AutomationOutputStream {
-  return value === "stdout" || value === "stderr";
+  return value === "stdout" || value === "stderr" || value === "send";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufRead, BufReader, Write},
     panic::{AssertUnwindSafe, catch_unwind},
     process::{Child, Command, Stdio},
     sync::{
@@ -10,7 +10,7 @@ use std::{
         mpsc,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use regex::Regex;
@@ -158,6 +158,7 @@ pub(crate) struct AutomationTargetRequest {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AutomationStatusEvent {
+    timestamp: u64,
     run_id: String,
     script_id: String,
     tab_id: String,
@@ -169,6 +170,7 @@ struct AutomationStatusEvent {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AutomationOutputEvent {
+    timestamp: u64,
     run_id: String,
     script_id: String,
     tab_id: String,
@@ -505,11 +507,21 @@ fn run_target(
         }
     };
     let stderr = child.stderr.take();
-    let stderr_worker = stderr.map(|mut stream| {
+    let stderr_worker = stderr.map(|stream| {
+        let app = app.clone();
+        let request = request.clone();
+        let target = target.clone();
         thread::spawn(move || {
-            let mut output = Vec::new();
-            let _ = stream.read_to_end(&mut output);
-            output
+            let mut reader = BufReader::new(stream);
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                match reader.read_until(b'\n', &mut line) {
+                    Ok(0) => return Ok(()),
+                    Err(error) => return Err(format!("读取 Python 标准错误失败：{error}")),
+                    Ok(_) => emit_output_worker(&app, &request, &target, "stderr", &line),
+                }
+            }
         })
     });
 
@@ -526,7 +538,7 @@ fn run_target(
                     .strip_prefix(SEND_PREFIX)
                 {
                     let response = match serde_json::from_str::<SendMessage>(payload) {
-                        Ok(message) => execute_command(&app, &target, &message, &control),
+                        Ok(message) => execute_command(&app, &request, &target, &message, &control),
                         Err(_) => Err(CommandFailure::invalid_argument(
                             "Python send() 请求格式无效",
                         )),
@@ -550,6 +562,7 @@ fn run_target(
                             .and_then(|_| stdin.flush())
                             .is_err()
                         {
+                            read_error = Some("返回命令结果到 Python 失败".to_owned());
                             break;
                         }
                     } else {
@@ -572,11 +585,12 @@ fn run_target(
     }
     let exit_status = child.wait();
     control.unregister_child(pid);
-    if let Some(worker) = stderr_worker
-        && let Ok(stderr) = worker.join()
-        && !stderr.is_empty()
-    {
-        emit_output_worker(&app, &request, &target, "stderr", &stderr);
+    if let Some(worker) = stderr_worker {
+        match worker.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => read_error = Some(error),
+            Err(_) => read_error = Some("Python 标准错误读取任务异常".to_owned()),
+        }
     }
 
     let status = if control.cancelled.load(Ordering::Acquire) {
@@ -716,6 +730,7 @@ impl CommandFailure {
 
 fn execute_command(
     app: &AppHandle,
+    request: &AutomationRunRequestWorker,
     target: &AutomationTargetRequest,
     message: &SendMessage,
     control: &AutomationRunControl,
@@ -754,6 +769,8 @@ fn execute_command(
     write_terminal_bytes(app, target, &command_bytes).map_err(|error| {
         CommandFailure::io(format!("发送命令到终端失败（{session_id}）：{error}"))
     })?;
+    // Log once after queue admission; never include the appended Enter or pager responses.
+    emit_output_worker(app, request, target, "send", message.command.as_bytes());
 
     loop {
         if control.cancelled.load(Ordering::Acquire) {
@@ -1638,6 +1655,7 @@ fn emit_output_worker(
     let _ = app.emit(
         OUTPUT_EVENT,
         AutomationOutputEvent {
+            timestamp: log_timestamp(),
             run_id: request.run_id.clone(),
             script_id: request.script_id.clone(),
             tab_id: target.tab_id.clone(),
@@ -1687,6 +1705,13 @@ fn write_script_file(run_id: &str, code: &str) -> Result<String, String> {
     Ok(path.to_string_lossy().into_owned())
 }
 
+fn log_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 fn emit_status(
     app: &AppHandle,
     request: &AutomationRunRequest,
@@ -1697,6 +1722,7 @@ fn emit_status(
     let _ = app.emit(
         STATUS_EVENT,
         AutomationStatusEvent {
+            timestamp: log_timestamp(),
             run_id: request.run_id.clone(),
             script_id: request.script_id.clone(),
             tab_id: target.tab_id.clone(),
@@ -1717,6 +1743,7 @@ fn emit_status_worker(
     let _ = app.emit(
         STATUS_EVENT,
         AutomationStatusEvent {
+            timestamp: log_timestamp(),
             run_id: request.run_id.clone(),
             script_id: request.script_id.clone(),
             tab_id: target.tab_id.clone(),

@@ -6,6 +6,19 @@
   overflow: hidden;
 }
 
+.automation-logs-disclosure { margin-top: 10px; }
+.automation-logs-disclosure > summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; padding: 6px 0; }
+.automation-logs-disclosure > summary small { margin-left: 8px; color: var(--text-tertiary); }
+.automation-log-session { margin-top: 12px; min-width: 0; }
+.automation-log-session h4 { font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+.automation-log-lines { max-height: 280px; overflow: auto; }
+.automation-log-line { display: grid; grid-template-columns: auto 4.5em minmax(0, 1fr); gap: 8px; padding: 3px 0; font: 400 11px/1.7 var(--font-family-mono); }
+.automation-log-line time, .automation-log-level { color: var(--text-tertiary); }
+.automation-log-message, .automation-log-line details { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.automation-log-line summary { cursor: pointer; }
+.automation-log-line[data-level="error"] .automation-log-message, .automation-log-line[data-level="error"] summary { color: var(--danger); }
+.automation-log-line[data-level="send"] .automation-log-level { color: var(--accent-strong); }
+
 .tool-library { overflow-y: auto; padding: 16px 12px; }
 .tool-library-description { color: var(--text-secondary); font-size: 12px; margin: 0 0 16px; }
 .tool-library-list { display: grid; gap: 8px; }

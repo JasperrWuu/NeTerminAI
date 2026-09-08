@@ -17,6 +17,7 @@ import {
   type AutomationTarget,
 } from "./automationDraft";
 import { useAutomationDrafts } from "./useAutomationDrafts";
+import { appendRunLog, createRunLogs, logRunStatus, logSummary, type RunLogs } from "./automationLogs";
 
 interface AutomationPanelProps {
   activeTabId: string | null;
@@ -24,6 +25,8 @@ interface AutomationPanelProps {
 }
 
 interface SessionRunView {
+  logs: RunLogs;
+  title: string;
   tabId: string;
   sessionId: string | null;
   status: AutomationSessionRunStatus;
@@ -57,6 +60,8 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
   const executionRef = useRef(executions);
   executionRef.current = executions;
   const mountedRef = useRef(true);
+  const listenersReady = useRef<Promise<boolean>>(Promise.resolve(false));
+  const pendingStarts = useRef(new Set<string>());
 
   const sessions = terminal.listSessions();
   const activeContext = activeTabId ? terminal.getContextForTab(activeTabId) : terminal.getActiveContext();
@@ -84,25 +89,31 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
     let disposed = false;
     let statusUnlisten: (() => void) | undefined;
     let outputUnlisten: (() => void) | undefined;
-    void automationApi.subscribeStatus((event) => {
+    const statusReady = automationApi.subscribeStatus((event) => {
       if (!disposed) setExecutions((current) => reduceStatusEvent(current, event));
     }).then((cleanup) => {
       if (disposed) cleanup();
       else statusUnlisten = cleanup;
+      return true;
     }).catch(() => {
       // Browser previews do not expose Tauri events; the start action reports that state.
+      return false;
     });
-    void automationApi.subscribeOutput((event) => {
+    const outputReady = automationApi.subscribeOutput((event) => {
       if (!disposed) setExecutions((current) => reduceOutputEvent(current, event));
     }).then((cleanup) => {
       if (disposed) cleanup();
       else outputUnlisten = cleanup;
+      return true;
     }).catch(() => {
       // Browser previews do not expose Tauri events.
+      return false;
     });
+    listenersReady.current = Promise.all([statusReady, outputReady]).then((ready) => ready.every(Boolean));
     return () => {
       disposed = true;
       mountedRef.current = false;
+      pendingStarts.current.clear();
       statusUnlisten?.();
       outputUnlisten?.();
       Object.values(executionRef.current).forEach((execution) => {
@@ -124,7 +135,7 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
     setDeleting(true);
     const execution = executions[script.id];
     try {
-      if (execution?.status === "running") await automationApi.stop(execution.runId);
+      if (execution?.status === "running" && !pendingStarts.current.delete(execution.runId)) await automationApi.stop(execution.runId);
     } catch (error) {
       setNotice(errorMessage(error));
       setDeleting(false);
@@ -174,6 +185,8 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
         runId,
         status: "running",
         runs: targetRequests.map((target) => ({
+          logs: target.sessionId ? createRunLogs() : logRunStatus(createRunLogs(), "error", "目标终端已关闭或尚未建立连接"),
+          title: sessions.find((session) => session.tabId === target.tabId)?.title ?? "不可用终端",
           tabId: target.tabId,
           sessionId: target.sessionId,
           status: target.sessionId ? "pending" : "error",
@@ -194,13 +207,17 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
       return;
     }
     try {
+      pendingStarts.current.add(runId);
+      if (!await listenersReady.current) throw new Error("无法订阅自动化运行日志，请重新打开应用后重试。");
+      if (!mountedRef.current || !pendingStarts.current.delete(runId)) return;
       await automationApi.start({ runId, scriptId: script.id, code: script.code, targets: targetRequests });
     } catch (error) {
+      pendingStarts.current.delete(runId);
       if (!mountedRef.current) return;
       setExecutions((current) => {
         const execution = current[script.id];
         if (!execution || execution.runId !== runId) return current;
-        return { ...current, [script.id]: { ...execution, status: "error", runs: execution.runs.map((run) => run.status === "success" ? run : { ...run, status: "error", message: errorMessage(error) }) } };
+        return { ...current, [script.id]: { ...execution, status: "error", runs: execution.runs.map((run) => run.status === "success" ? run : { ...run, status: "error", message: errorMessage(error), logs: logRunStatus(run.logs, "error", errorMessage(error)) }) } };
       });
       setNotice(errorMessage(error));
     }
@@ -210,7 +227,7 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
     const execution = executions[scriptId];
     if (!execution || execution.status !== "running") return;
     try {
-      await automationApi.stop(execution.runId);
+      if (!pendingStarts.current.delete(execution.runId)) await automationApi.stop(execution.runId);
       if (!mountedRef.current) return;
       setExecutions((current) => {
         const latest = current[scriptId];
@@ -220,7 +237,7 @@ export function AutomationPanel({ activeTabId, terminal }: AutomationPanelProps)
           [scriptId]: {
             ...latest,
             status: "cancelled",
-            runs: latest.runs.map((run) => run.status === "success" || run.status === "error" ? run : { ...run, status: "cancelled", message: "运行已停止" }),
+            runs: latest.runs.map((run) => run.status === "success" || run.status === "error" ? run : { ...run, status: "cancelled", message: "运行已停止", logs: logRunStatus(run.logs, "cancelled") }),
           },
         };
       });
@@ -407,22 +424,39 @@ function ExecutionStatus({ execution, sessions }: { execution: ScriptExecutionVi
                 <span className={`automation-status-icon automation-status-${run.status}`}>
                   {run.status === "success" ? <CheckIcon /> : run.status === "running" ? <i /> : run.status === "error" ? "!" : run.status === "cancelled" ? "–" : "·"}
                 </span>
-                <span className="automation-run-name">{session?.title ?? "已关闭终端"}</span>
+                <span className="automation-run-name">{session?.title ?? run.title}</span>
                 <span className="automation-run-state">{runStatusLabel(run.status)}</span>
                 {run.message && <span className="automation-run-message" title={run.message}>{run.message}</span>}
               </div>
-              {run.stdout && (
-                <RunOutputBlock truncated={run.stdoutTruncated}>{run.stdout}</RunOutputBlock>
-              )}
-              {run.stderr && (
-                <RunOutputBlock className="automation-run-stderr" truncated={run.stderrTruncated}>{run.stderr}</RunOutputBlock>
-              )}
             </div>
           );
         })}
       </div>
+      <details className="automation-logs-disclosure">
+        <summary>日志 <small>{execution.runs.reduce((sum, run) => sum + run.logs.entries.length, 0)} 条</small></summary>
+        {execution.runs.map((run) => <SessionRunLogs key={run.tabId} run={run} />)}
+      </details>
     </div>
   );
+}
+
+function SessionRunLogs({ run }: { run: SessionRunView }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  useEffect(() => { if (ref.current && follow.current) ref.current.scrollTop = ref.current.scrollHeight; }, [run.logs]);
+  return <section className="automation-log-session"><h4>{run.title}</h4>
+    {run.logs.truncated && <small className="automation-output-truncated">日志已达显示上限，仅保留最近内容。</small>}
+    <div className="automation-log-lines" ref={ref} onScroll={(event) => {
+      const el = event.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 16;
+    }}>
+      {run.logs.entries.map((entry) => <div key={entry.id} className="automation-log-line" data-level={entry.level}>
+        <time>{new Date(entry.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}</time><span className="automation-log-level">{entry.level.toUpperCase()}</span>
+        {entry.level === "error" && entry.message.trimEnd().includes("\n")
+          ? <details><summary>{logSummary(entry)}</summary><RunOutputBlock>{entry.message}</RunOutputBlock></details>
+          : <span className="automation-log-message">{entry.message}</span>}
+      </div>)}
+    </div>
+  </section>;
 }
 
 function RunOutputBlock({ children, className = "", truncated = false }: { children: string; className?: string; truncated?: boolean }) {
@@ -608,7 +642,7 @@ function reduceStatusEvent(current: Record<string, ScriptExecutionView>, event: 
   const execution = current[event.scriptId];
   if (!execution || execution.runId !== event.runId) return current;
   const runs = execution.runs.map((run) => run.tabId === event.tabId && run.sessionId === event.sessionId
-    ? { ...run, status: event.status, ...(event.message ? { message: event.message } : {}) }
+    ? { ...run, status: event.status, logs: logRunStatus(run.logs, event.status, event.message, event.timestamp), ...(event.message ? { message: event.message } : {}) }
     : run);
   const status = aggregateStatus(runs);
   return { ...current, [event.scriptId]: { ...execution, runs, status } };
@@ -621,12 +655,15 @@ function reduceOutputEvent(current: Record<string, ScriptExecutionView>, event: 
     if (run.tabId !== event.tabId
       || run.sessionId !== event.sessionId
     ) return run;
+    const logs = appendRunLog(run.logs, event.stream === "send" ? "send" : event.stream === "stderr" ? "error" : "info", event.data, event.timestamp, event.stream === "stderr");
+    if (event.stream === "send") return { ...run, logs };
     const key = event.stream === "stderr" ? "stderr" : "stdout";
     const nextOutput = `${run[key]}${event.data}`;
     const truncated = nextOutput.length > MAX_RUN_OUTPUT_CHARS;
     const truncatedKey = key === "stderr" ? "stderrTruncated" : "stdoutTruncated";
     return {
       ...run,
+      logs,
       [key]: truncated ? nextOutput.slice(-MAX_RUN_OUTPUT_CHARS) : nextOutput,
       [truncatedKey]: run[truncatedKey] || truncated,
     };

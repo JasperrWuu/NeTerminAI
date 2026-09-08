@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:ipc": "node --experimental-strip-types --test src/ipc/validation.test.mjs src/ipc/automation.test.mjs",
-    "test:automation": "node --experimental-strip-types --test src/tools/automationDraft.test.mjs",
+    "test:automation": "node --experimental-strip-types --test src/tools/automationDraft.test.mjs src/tools/automationLogs.test.mjs",
     "test:diagnostic": "node --experimental-strip-types --test src/tools/diagnosticParser.test.mjs",
     "test:ip": "node --experimental-strip-types --test src/tools/ipCalculator.test.mjs",
     "test:cfg": "node --experimental-strip-types --test src/tools/cfgConfig.test.mjs src/tools/cfgDraft.test.mjs",
