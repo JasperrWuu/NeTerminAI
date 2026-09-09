@@ -121,10 +121,7 @@ export class TerminalSessionRuntime {
     this.inputSubscription = this.terminal.onData((data) => {
       if (!this.disposed && this.view?.active) this.view.onInput(data);
     });
-    this.terminal.onKey(({ domEvent }) => {
-      this.terminal.scrollToBottom();
-      if (domEvent.key === "Enter") this.startTimestampsAfterEnter();
-    });
+    this.terminal.onKey(() => this.terminal.scrollToBottom());
     this.terminal.textarea?.addEventListener("input", this.handleUserTextInput);
     this.terminal.textarea?.addEventListener("paste", this.handleUserTextInput);
     this.terminal.attachCustomKeyEventHandler((event) => this.handleClipboardKey(event));
@@ -161,17 +158,11 @@ export class TerminalSessionRuntime {
   }
 
   toggleTimestamps() {
-    this.presentation.toggle();
-    this.controller.resize();
-  }
-
-  private startTimestampsAfterEnter() {
-    if (!this.presentation.awaitingEnter) return;
-    // Drain already-received display data before marking the new command boundary.
+    // Drain already-received display data before the toggle boundary.
     // The empty write is a parser barrier, not a delay or transport input.
     this.flushOutput();
     this.terminal.write("", () => {
-      if (!this.disposed && this.presentation.startAfterEnter()) this.controller.resize();
+      if (!this.disposed) { this.presentation.toggle(); this.controller.resize(); }
     });
   }
 

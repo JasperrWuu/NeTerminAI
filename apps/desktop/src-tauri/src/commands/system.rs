@@ -4,6 +4,45 @@ use super::run_blocking;
 
 const PPP_ADAPTER_PREFIX: &str = "usg";
 
+#[derive(serde::Serialize)]
+pub struct LocalIpv4 {
+    name: String,
+    address: String,
+}
+
+#[tauri::command]
+pub async fn list_local_ipv4() -> Result<Vec<LocalIpv4>, String> {
+    run_blocking("读取本机网卡", || {
+        #[cfg(windows)]
+        let mut adapters = native_adapters()?;
+        #[cfg(not(windows))]
+        let mut adapters: Vec<(String, Vec<Ipv4Addr>)> = Vec::new();
+        adapters.sort_by(|a, b| {
+            let usg = |name: &str| {
+                name.trim()
+                    .to_ascii_lowercase()
+                    .starts_with(PPP_ADAPTER_PREFIX)
+            };
+            usg(&b.0)
+                .cmp(&usg(&a.0))
+                .then_with(|| compare_usg_alias(&a.0, &b.0))
+        });
+        Ok(adapters
+            .into_iter()
+            .flat_map(|(name, addresses)| {
+                addresses
+                    .into_iter()
+                    .filter(|ip| is_usable_ipv4(*ip))
+                    .map(move |ip| LocalIpv4 {
+                        name: name.clone(),
+                        address: ip.to_string(),
+                    })
+            })
+            .collect())
+    })
+    .await
+}
+
 /// Returns the IPv4 address assigned to the first usable `usg*` PPP adapter.
 ///
 /// This intentionally does not use the default route: a machine can have a

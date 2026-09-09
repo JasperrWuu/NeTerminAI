@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { invalidResponse, normalizeIpcError } from "./errors";
 
 export const systemApi = {
+  async listLocalIpv4(): Promise<{ name: string; address: string }[]> {
+    const value = await invoke<unknown>("list_local_ipv4");
+    if (!Array.isArray(value) || !value.every((item) => item && typeof item.name === "string" && typeof item.address === "string" && isUsableIpv4(item.address))) throw invalidResponse("本机网卡列表格式无效");
+    return value;
+  },
   async listSystemFonts(): Promise<string[]> {
     try {
       const value = await invoke<unknown>("list_system_fonts");

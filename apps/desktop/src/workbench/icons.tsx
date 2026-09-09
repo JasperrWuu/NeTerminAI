@@ -31,11 +31,12 @@ export function ConnectionIcon(props: IconProps) {
 
 export function SubnetIcon(props: IconProps) {
   return <IconFrame {...props}>
-    <rect x="8" y="3" width="8" height="5" rx="1.5" />
-    <path d="M12 8v5M5 16v-3h14v3" />
-    <rect x="2.5" y="16" width="5" height="5" rx="1.5" />
-    <rect x="16.5" y="16" width="5" height="5" rx="1.5" />
+    <path d="M4 4v8M9 12V4h3a3 3 0 0 1 0 6H9M20 4l-3 8M3 17h18M3 16v4m6-4v4m6-4v4m6-4v4" />
   </IconFrame>;
+}
+
+export function SyslogIcon(props: IconProps) {
+  return <IconFrame {...props}><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M12 3v11m-4-4 4 4 4-4M8 17h8" /></IconFrame>;
 }
 
 export function DiagnosticTraceIcon(props: IconProps) {

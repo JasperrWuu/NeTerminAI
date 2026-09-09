@@ -15,7 +15,6 @@ export class TerminalPresentation {
   private subscriptions: IDisposable[];
   private gutter = document.createElement("div");
   private enabled = false;
-  private armed = false;
   private boundary: IMarker | undefined;
   private frame: number | undefined;
   private terminal: Terminal;
@@ -42,24 +41,15 @@ export class TerminalPresentation {
     this.schedule();
   }
   toggle() {
-    this.armed = !this.enabled && !this.armed;
-    this.enabled = false;
+    this.enabled = !this.enabled;
     this.boundary?.dispose();
-    this.boundary = undefined;
+    const buffer = this.terminal.buffer.active;
+    const currentHasText = Boolean(buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true));
+    this.boundary = this.enabled ? this.terminal.registerMarker(currentHasText ? 0 : -1) : undefined;
     this.gutter.parentElement?.classList.toggle("terminal-with-timestamps", this.enabled);
     this.gutter.hidden = !this.enabled;
     this.schedule();
   }
-  startAfterEnter() {
-    if (!this.armed) return false;
-    this.armed = false;
-    this.enabled = true;
-    this.boundary = this.terminal.registerMarker(0);
-    this.gutter.parentElement?.classList.toggle("terminal-with-timestamps", true);
-    this.schedule();
-    return true;
-  }
-  get awaitingEnter() { return this.armed; }
   dispose() {
     this.subscriptions.forEach((subscription) => subscription.dispose());
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);

@@ -17,16 +17,19 @@ export function CustomCommandsView({ texts, keybindings, onChange }: {
       <div className="custom-command-list">
         {texts.map((text, index) => {
           const shortcut = keybindings[`quickText${index}` as keyof KeybindingSettings];
-          return <label className="custom-command-row" key={index}>
+          return <div className="custom-command-row" data-editing={editing === index} key={index} onClick={() => { if (editing !== index) setEditing(index); }}>
             <span className="custom-command-meta">
               <span className="shortcut-keys">{shortcutParts(shortcut.binding).map((part) => <kbd key={part}>{part}</kbd>)}</span>
-              <small>{editing === index ? "编辑中" : !shortcut.enabled ? "快捷键已停用" : text ? "已设置" : "未设置"}</small>
+              {!shortcut.enabled && <small>已停用</small>}
             </span>
-            <textarea className="settings-text-input" rows={2} spellCheck={false}
+            {editing === index ? <textarea className="settings-text-input" rows={Math.max(2, text.split("\n").length)} spellCheck={false} autoFocus
               aria-label={`自定义命令 Alt + ${index}`} value={text} placeholder="输入命令…"
-              onFocus={() => setEditing(index)} onBlur={() => setEditing(null)}
+              onBlur={() => setEditing(null)} onKeyDown={(event) => { if (event.key === "Escape") setEditing(null); }}
               onChange={(event) => onChange(texts.map((value, i) => i === index ? event.target.value : value))} />
-          </label>;
+              : <button type="button" className="custom-command-preview" onClick={() => setEditing(index)} aria-label={`编辑 Alt + ${index} 命令`}>
+                <span data-empty={!text}>{text.split(/\r?\n/)[0] || "添加命令…"}</span><small>{text.includes("\n") ? `${text.split("\n").length} 行 · 编辑` : "编辑"}</small>
+              </button>}
+          </div>;
         })}
       </div>
     </div>

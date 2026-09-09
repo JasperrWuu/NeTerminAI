@@ -1,0 +1,17 @@
+.syslog-tool { display: grid; gap: 18px; padding: 8px 2px 24px; min-width: 0; }
+.syslog-tool h2, .syslog-tool h3, .syslog-tool p { margin: 0; }
+.syslog-tool header p, .syslog-note, .syslog-status, .syslog-empty { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.syslog-tool header { display: grid; gap: 6px; }
+.syslog-fields { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 14px; }
+.syslog-fields input { width: 100%; font-family: var(--font-family-mono); }
+.syslog-actions, .syslog-log-heading, .syslog-log-heading > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.syslog-actions { flex-wrap: wrap; }
+.syslog-status[data-running="true"] { color: var(--text-primary); }
+.syslog-log-heading small { color: var(--text-tertiary); font-size: 12px; font-weight: normal; }
+.syslog-log-heading .copy-result-button { opacity: 1; position: relative; }
+.syslog-output { height: clamp(280px, 45vh, 540px); overflow: auto; background: var(--bg-elevated); border-radius: var(--radius-sm); padding: 12px; }
+.syslog-entry { padding-block: 7px; font: 12px/1.6 "Cascadia Mono", Consolas, var(--font-family-mono); }
+.syslog-entry pre { margin: 0; font: inherit; white-space: pre; }
+.syslog-meta { color: var(--text-tertiary); white-space: pre; }
+.syslog-error, .syslog-fields [role="alert"] { color: var(--danger); font-size: 12px; }
+.syslog-fields input[aria-invalid="true"] { border-color: var(--danger); }

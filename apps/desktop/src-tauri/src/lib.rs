@@ -11,6 +11,7 @@ pub(crate) mod output_stream;
 mod rdp;
 mod serial;
 mod shutdown;
+mod syslog;
 mod telnet;
 mod terminal;
 
@@ -24,6 +25,7 @@ pub fn run() {
         .manage(ai_process::AiProcessManager::default())
         .manage(output_stream::TerminalOutputHub::default())
         .manage(automation::AutomationManager::default())
+        .manage(syslog::SyslogManager::default())
         .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![
             commands::ai::run_ai_process,
@@ -55,6 +57,11 @@ pub fn run() {
             commands::rdp::focus_rdp,
             commands::fonts::list_system_fonts,
             commands::system::get_local_ipv4,
+            commands::system::list_local_ipv4,
+            syslog::start_syslog,
+            syslog::stop_syslog,
+            syslog::read_syslog,
+            syslog::clear_syslog,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build NeTerminAI")
