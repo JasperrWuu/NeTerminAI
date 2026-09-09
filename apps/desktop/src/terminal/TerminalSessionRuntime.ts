@@ -5,6 +5,7 @@ import type { SerialConnection, SshConnection, TelnetConnection } from "../conne
 import type { LocalTerminalProfileId } from "./profiles";
 import { resolveTerminalClipboardAction } from "./clipboard";
 import { TerminalPresentation } from "./TerminalPresentation";
+import { executableQuickCommand } from "./quickCommand";
 import { resolveTerminalTheme } from "./themes";
 import { terminalFontStack } from "./fontStack";
 import { reportTerminalRendering } from "./renderDiagnostics";
@@ -120,7 +121,10 @@ export class TerminalSessionRuntime {
     this.inputSubscription = this.terminal.onData((data) => {
       if (!this.disposed && this.view?.active) this.view.onInput(data);
     });
-    this.terminal.onKey(() => this.terminal.scrollToBottom());
+    this.terminal.onKey(({ domEvent }) => {
+      this.terminal.scrollToBottom();
+      if (domEvent.key === "Enter") this.startTimestampsAfterEnter();
+    });
     this.terminal.textarea?.addEventListener("input", this.handleUserTextInput);
     this.terminal.textarea?.addEventListener("paste", this.handleUserTextInput);
     this.terminal.attachCustomKeyEventHandler((event) => this.handleClipboardKey(event));
@@ -153,12 +157,22 @@ export class TerminalSessionRuntime {
   sendQuickText(text: string) {
     if (!this.hasInputFocus || !text) return;
     this.terminal.scrollToBottom();
-    this.enqueueInput(text);
+    this.enqueueInput(executableQuickCommand(text));
   }
 
   toggleTimestamps() {
     this.presentation.toggle();
     this.controller.resize();
+  }
+
+  private startTimestampsAfterEnter() {
+    if (!this.presentation.awaitingEnter) return;
+    // Drain already-received display data before marking the new command boundary.
+    // The empty write is a parser barrier, not a delay or transport input.
+    this.flushOutput();
+    this.terminal.write("", () => {
+      if (!this.disposed && this.presentation.startAfterEnter()) this.controller.resize();
+    });
   }
 
   /** Queue approved AI input through the same serialized path as keyboard input. */

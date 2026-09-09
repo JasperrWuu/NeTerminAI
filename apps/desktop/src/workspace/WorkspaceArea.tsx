@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { WorkspaceTabs } from "./WorkspaceTabs";
-import { countWorkspacePanes, resolveWorkspaceDropZone } from "./layout";
+import { countWorkspacePanes, resolveWorkspaceDropZone, workspaceDragRegion } from "./layout";
 import type {
   WorkspaceDropZone,
   WorkspaceLayoutNode,
@@ -56,8 +56,8 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const dropTargetRef = useRef<DropTarget | null>(null);
 
-  const updateDropTarget = useCallback((clientX: number, clientY: number) => {
-    const next = resolveDropTarget(clientX, clientY);
+  const updateDropTarget = useCallback((clientX: number, clientY: number, rects: Map<string, DOMRect>, draggedId: string) => {
+    const next = resolveDropTarget(clientX, clientY, rects, draggedId);
     const current = dropTargetRef.current;
     if (current?.paneId === next?.paneId && current?.zone === next?.zone && current?.beforeTabId === next?.beforeTabId) return;
     document.querySelectorAll("[data-tab-drop-before]").forEach((element) => element.removeAttribute("data-tab-drop-before"));
@@ -80,6 +80,13 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
     const startY = event.clientY;
     const pointerId = event.pointerId;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const siblings = Array.from(tabElement?.parentElement?.querySelectorAll<HTMLElement>("[data-tab-order-id]") ?? []);
+    const rects = new Map(siblings.map((item) => [item.dataset.tabOrderId!, item.getBoundingClientRect()]));
+    const originalIds = siblings.map((item) => item.dataset.tabOrderId!);
+    const resetPreview = () => siblings.forEach((item) => {
+      item.style.removeProperty("translate");
+      item.removeAttribute("data-reordering");
+    });
     let dragging = false;
 
     try {
@@ -108,7 +115,22 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
       if (previewRef.current) {
         previewRef.current.style.transform = `translate3d(${pointerEvent.clientX + 12}px, ${pointerEvent.clientY + 12}px, 0)`;
       }
-      updateDropTarget(pointerEvent.clientX, pointerEvent.clientY);
+      updateDropTarget(pointerEvent.clientX, pointerEvent.clientY, rects, tab.id);
+      const target = dropTargetRef.current;
+      if (target?.paneId === sourcePaneId && target.beforeTabId !== undefined) {
+        const order = originalIds.filter((id) => id !== tab.id);
+        const index = target.beforeTabId === null ? order.length : order.indexOf(target.beforeTabId);
+        order.splice(Math.max(0, index), 0, tab.id);
+        const gap = siblings.length > 1 ? rects.get(originalIds[1])!.left - rects.get(originalIds[0])!.right : 0;
+        let left = rects.get(originalIds[0])?.left ?? 0;
+        for (const id of order) {
+          const item = siblings.find((candidate) => candidate.dataset.tabOrderId === id)!;
+          const rect = rects.get(id)!;
+          item.setAttribute("data-reordering", "true");
+          item.style.translate = `${left - rect.left}px 0`;
+          left += rect.width + gap;
+        }
+      } else resetPreview();
     };
 
     const finish = (pointerEvent: PointerEvent, commit: boolean) => {
@@ -118,6 +140,7 @@ export function WorkspaceArea(props: WorkspaceAreaProps) {
       window.removeEventListener("pointercancel", pointerCancel);
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
       tabElement?.removeAttribute("data-dragging");
+      resetPreview();
       document.body.classList.remove("is-dragging-tab");
       if (wasDragging) onDraggingChange?.(false);
 
@@ -276,7 +299,7 @@ function WorkspacePane({ node, ...props }: Omit<LayoutNodeProps, "node"> & { nod
     const tab = props.tabsById.get(tabId);
     return tab ? [tab] : [];
   });
-  const targetZone = props.dropTarget?.paneId === node.id ? props.dropTarget.zone : null;
+  const targetZone = props.dropTarget?.paneId === node.id && props.dropTarget.beforeTabId === undefined ? props.dropTarget.zone : null;
 
   return (
     <section
@@ -436,7 +459,7 @@ function sameBounds(current: Record<string, PaneBounds>, next: Record<string, Pa
   });
 }
 
-function resolveDropTarget(clientX: number, clientY: number): DropTarget | null {
+function resolveDropTarget(clientX: number, clientY: number, rects: Map<string, DOMRect>, draggedId: string): DropTarget | null {
   const pane = Array.from(
     document.querySelectorAll<HTMLElement>("[data-workspace-pane-id]"),
   ).find((candidate) => {
@@ -445,20 +468,17 @@ function resolveDropTarget(clientX: number, clientY: number): DropTarget | null 
       && clientY >= bounds.top && clientY <= bounds.bottom;
   });
   if (!pane) return null;
-  const bounds = pane.getBoundingClientRect();
+  const bounds = pane.querySelector<HTMLElement>("[data-workspace-pane-content]")?.getBoundingClientRect();
   const tabBarBounds = pane.querySelector<HTMLElement>(".tabbar")?.getBoundingClientRect();
-  const overTabBar = Boolean(
-    tabBarBounds
-      && clientX >= tabBarBounds.left
-      && clientX <= tabBarBounds.right
-      && clientY >= tabBarBounds.top
-      && clientY <= tabBarBounds.bottom,
-  );
+  const region = workspaceDragRegion(tabBarBounds, bounds, clientX, clientY);
+  if (!region) return null;
+  const overTabBar = region === "reorder";
   return {
     paneId: pane.dataset.workspacePaneId ?? "",
-    zone: resolveWorkspaceDropZone(bounds, clientX, clientY, overTabBar),
+    zone: overTabBar ? "center" : resolveWorkspaceDropZone(bounds!, clientX, clientY, false),
     beforeTabId: overTabBar ? Array.from(pane.querySelectorAll<HTMLElement>("[data-tab-order-id]")).find((tab) => {
-      const rect = tab.getBoundingClientRect();
+      if (tab.dataset.tabOrderId === draggedId) return false;
+      const rect = rects.get(tab.dataset.tabOrderId!) ?? tab.getBoundingClientRect();
       return clientX < rect.left + rect.width / 2;
     })?.dataset.tabOrderId ?? null : undefined,
   };

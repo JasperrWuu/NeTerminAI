@@ -5,7 +5,21 @@ import {
   collectTabIds,
   countWorkspacePanes,
   reorderPaneTabs,
+  workspaceDragRegion,
 } from "./layout.ts";
+
+test("drag mode follows actual tab/content geometry in both directions", () => {
+  const bar = { left: 100, right: 700, top: 20, bottom: 60, width: 600, height: 40 };
+  const content = { ...bar, top: 60, bottom: 500, height: 440 };
+  for (const x of [101, 300, 699]) {
+    assert.equal(workspaceDragRegion(bar, content, x, 40), "reorder");
+    assert.equal(workspaceDragRegion(bar, content, x, 60), "split");
+    assert.equal(workspaceDragRegion(bar, content, x, 300), "split");
+    assert.equal(workspaceDragRegion(bar, content, x, 59), "reorder");
+  }
+  assert.equal(workspaceDragRegion(bar, content, 50, 40), null);
+  assert.equal(workspaceDragRegion(bar, undefined, 300, 90), null);
+});
 
 test("tab reorder changes order only, including end drops and split pane identity", () => {
   const pane = { type: "pane", id: "pane-a", tabIds: ["ssh", "rdp", "serial"], activeTabId: "rdp" };

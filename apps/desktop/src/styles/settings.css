@@ -757,5 +757,8 @@
 .rule-drag-handle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
 .highlight-rule[data-dragging="true"] { position: relative; z-index: 1; box-shadow: var(--shadow-control); }
 .highlight-rule[data-drop-target="true"] { outline: 1px solid var(--accent); }
-.quick-text-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px 20px; }
-.quick-text-grid textarea { font-family: var(--font-family-mono); resize: vertical; }
+.custom-command-list { display: grid; gap: 14px; }
+.custom-command-row { display: grid; grid-template-columns: minmax(100px, 0.2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.custom-command-meta { display: grid; gap: 8px; padding-block: 6px; }
+.custom-command-meta small { color: var(--text-tertiary); }
+.custom-command-row textarea { width: 100%; min-height: 60px; padding: 8px 10px; line-height: 1.5; font-family: var(--font-family-mono); resize: vertical; }

@@ -9,7 +9,7 @@ export interface KeybindingCommand {
 
 export const keybindingCommands: KeybindingCommand[] = [
   { id: "toggleTerminalTimestamps", label: "终端时间戳", description: "在焦点终端的独立行边栏显示毫秒时间，不修改设备数据。" },
-  ...Array.from({ length: 10 }, (_, index): KeybindingCommand => ({ id: `quickText${index}` as KeybindingCommandId, label: `快捷文本 ${index}`, description: "将保存的文本发送到实际拥有输入焦点的终端，不自动回车。" })),
+  ...Array.from({ length: 10 }, (_, index): KeybindingCommand => ({ id: `quickText${index}` as KeybindingCommandId, label: `自定义命令 ${index}`, description: "发送到实际拥有输入焦点的终端，自动补齐末尾回车。" })),
   { id: "newTelnetSession", label: "新建 Telnet 会话", description: "打开 Telnet 连接窗口。" },
   { id: "closeCurrentSession", label: "关闭当前会话", description: "关闭当前活动分区中的会话。" },
   {

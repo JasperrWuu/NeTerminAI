@@ -29,6 +29,21 @@ export function ConnectionIcon(props: IconProps) {
   );
 }
 
+export function SubnetIcon(props: IconProps) {
+  return <IconFrame {...props}>
+    <rect x="8" y="3" width="8" height="5" rx="1.5" />
+    <path d="M12 8v5M5 16v-3h14v3" />
+    <rect x="2.5" y="16" width="5" height="5" rx="1.5" />
+    <rect x="16.5" y="16" width="5" height="5" rx="1.5" />
+  </IconFrame>;
+}
+
+export function DiagnosticTraceIcon(props: IconProps) {
+  return <IconFrame {...props}>
+    <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3M8 7h8M8 17h8M6 12h3l2-3 2 6 2-3h3" />
+  </IconFrame>;
+}
+
 export function WorkspaceIcon(props: IconProps) {
   return (
     <IconFrame {...props}>

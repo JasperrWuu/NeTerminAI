@@ -18,6 +18,11 @@ interface DropBounds {
   width: number;
 }
 
+export function workspaceDragRegion(tabBar: DropBounds | undefined, content: DropBounds | undefined, x: number, y: number) {
+  const contains = (bounds: DropBounds | undefined) => bounds && x >= bounds.left && x <= bounds.right && y >= bounds.top && y < bounds.bottom;
+  return contains(tabBar) ? "reorder" : contains(content) ? "split" : null;
+}
+
 export function resolveWorkspaceDropZone(
   bounds: DropBounds,
   clientX: number,

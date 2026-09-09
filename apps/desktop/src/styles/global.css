@@ -1032,6 +1032,9 @@ button:focus-visible,
 }
 
 .tab[data-dragging="true"] { opacity: 0.36; }
+.tab[data-reordering="true"] { transition: translate 180ms cubic-bezier(.23, 1, .32, 1); }
+.tab[data-reordering="true"][data-dragging="true"] { outline: 1px dashed var(--text-tertiary); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .tab[data-reordering="true"] { transition: none; } }
 .is-dragging-tab { cursor: grabbing; user-select: none; }
 
 .tab-drag-preview {

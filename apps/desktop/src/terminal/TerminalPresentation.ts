@@ -15,6 +15,8 @@ export class TerminalPresentation {
   private subscriptions: IDisposable[];
   private gutter = document.createElement("div");
   private enabled = false;
+  private armed = false;
+  private boundary: IMarker | undefined;
   private frame: number | undefined;
   private terminal: Terminal;
   constructor(terminal: Terminal) {
@@ -40,16 +42,30 @@ export class TerminalPresentation {
     this.schedule();
   }
   toggle() {
-    this.enabled = !this.enabled;
+    this.armed = !this.enabled && !this.armed;
+    this.enabled = false;
+    this.boundary?.dispose();
+    this.boundary = undefined;
     this.gutter.parentElement?.classList.toggle("terminal-with-timestamps", this.enabled);
     this.gutter.hidden = !this.enabled;
     this.schedule();
   }
+  startAfterEnter() {
+    if (!this.armed) return false;
+    this.armed = false;
+    this.enabled = true;
+    this.boundary = this.terminal.registerMarker(0);
+    this.gutter.parentElement?.classList.toggle("terminal-with-timestamps", true);
+    this.schedule();
+    return true;
+  }
+  get awaitingEnter() { return this.armed; }
   dispose() {
     this.subscriptions.forEach((subscription) => subscription.dispose());
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
     this.clearPaint();
     this.times.forEach((row) => row.marker.dispose());
+    this.boundary?.dispose();
     this.gutter.parentElement?.classList.remove("terminal-with-timestamps");
     this.gutter.remove();
   }
@@ -63,21 +79,15 @@ export class TerminalPresentation {
       else unique.set(row.marker.line, row);
     }
     this.times = [...unique.values()];
-    const known = new Set(this.times.map((row) => row.marker.line));
-    for (let y = 0; y < this.terminal.rows; y += 1) {
-      const index = buffer.baseY + y;
-      const line = buffer.getLine(index);
-      if (!line || line.isWrapped || known.has(index) || !line.translateToString(true)) continue;
-      this.recordLine(y - buffer.cursorY);
-    }
+    this.recordLine(0);
   }
   private recordLine(offset: number) {
     const buffer = this.terminal.buffer.active;
     if (!this.enabled || buffer.type !== "normal") return;
     const index = buffer.baseY + buffer.cursorY + offset;
+    if (this.boundary && !this.boundary.isDisposed && index <= this.boundary.line) return;
     const line = buffer.getLine(index);
-    const last = this.times.at(-1);
-    if (!line || line.isWrapped || (last && !last.marker.isDisposed && last.marker.line === index)) return;
+    if (!line || !line.translateToString(true) || line.isWrapped || this.times.some((row) => !row.marker.isDisposed && row.marker.line === index)) return;
     const marker = this.terminal.registerMarker(offset);
     if (!marker) return;
     const date = new Date();

@@ -1,9 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { TerminalPresentation } from "./TerminalPresentation.ts";
+import { executableQuickCommand } from "./quickCommand.ts";
 import { compileTerminalHighlightRules, terminalHighlightRanges } from "./highlighting.ts";
 
 const rule = { id: "up", name: "状态", enabled: true, matchMode: "text", pattern: "UP", color: "#112233", caseSensitive: true };
+
+test("custom commands append exactly one Enter without rewriting multiline text", () => {
+  for (const ending of ["\r", "\n", "\r\n"]) {
+    const text = `system-view\n display health${ending}`;
+    assert.equal(executableQuickCommand(text), text);
+  }
+  assert.equal(executableQuickCommand("display health"), "display health\r");
+  assert.equal(executableQuickCommand("a\nb"), "a\nb\r");
+  assert.equal(executableQuickCommand(""), "");
+});
 
 test("matching is repeatable after insertion/deletion/replacement and respects ordering", () => {
   const compiled = compileTerminalHighlightRules([rule]);
@@ -33,7 +44,7 @@ test("changed rows replace decorations, stable rows do not repaint, and raw cell
     onLineFeed: fn => { callbacks.line = fn; return { dispose() {} }; },
     onScroll: fn => { callbacks.scroll = fn; return { dispose() {} }; },
     onWriteParsed: fn => { callbacks.write = fn; return { dispose() {} }; },
-    registerMarker: () => ({ line: 0, isDisposed: false, dispose() { this.isDisposed = true; } }),
+    registerMarker: (offset = 0) => ({ line: terminal.buffer.active.baseY + terminal.buffer.active.cursorY + offset, isDisposed: false, dispose() { this.isDisposed = true; } }),
     registerDecoration: options => { const entry = { ...options, disposed: false, dispose() { this.disposed = true; } }; decorations.push(entry); return entry; },
   };
   const display = new TerminalPresentation(terminal);
@@ -47,6 +58,23 @@ test("changed rows replace decorations, stable rows do not repaint, and raw cell
   assert.equal(decorations.length, 2);
   assert.equal(decorations[1].width, 2);
   assert.equal(text, "UP");
+  display.toggle(); callbacks.write(); drain();
+  assert.equal(display.times.length, 0, "arming must not timestamp history or current input");
+  assert.equal(display.enabled, false);
+  assert.equal(display.startAfterEnter(), true);
+  callbacks.write(); drain();
+  assert.equal(display.times.length, 0, "Enter boundary excludes the current command line");
+  terminal.buffer.active.cursorY = 1;
+  callbacks.write(); drain();
+  assert.equal(display.times.length, 1);
+  assert.equal(display.times[0].marker.line, 1);
+  assert.match(display.times[0].time, /^\d{2}:\d{2}:\d{2}\.\d{3}$/);
+  callbacks.write(); drain();
+  assert.equal(display.times.length, 1, "cursor redraw does not duplicate timestamps");
+  display.toggle(); terminal.buffer.active.cursorY = 2; callbacks.write(); drain();
+  assert.equal(display.times.length, 1, "disabled output is not stamped");
+  display.toggle(); callbacks.write(); drain();
+  assert.equal(display.times.length, 1, "re-enabling remains armed until another Enter");
   display.dispose();
   assert.equal(decorations[1].disposed, true);
   delete globalThis.document; delete globalThis.requestAnimationFrame; delete globalThis.cancelAnimationFrame;

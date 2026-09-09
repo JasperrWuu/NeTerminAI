@@ -2,6 +2,7 @@ import type { AiSettings, AppearanceTheme, KeybindingPatch, KeybindingSettings, 
 import { AiSettingsView } from "./AiSettingsView";
 import { KeyboardShortcutsView } from "./KeyboardShortcutsView";
 import { TerminalSettingsView } from "./TerminalSettingsView";
+import { CustomCommandsView } from "./CustomCommandsView";
 
 interface SettingsPageProps {
   appearanceTheme: AppearanceTheme;
@@ -40,10 +41,11 @@ export function SettingsPage({
             onReset={onResetTerminal}
             settings={terminal}
           />
+        ) : section === "commands" ? (
+          <CustomCommandsView texts={terminal.quickTexts} keybindings={keybindings}
+            onChange={(quickTexts) => onChangeTerminal({ quickTexts })} />
         ) : section === "keyboard" ? (
           <KeyboardShortcutsView
-            quickTexts={terminal.quickTexts}
-            onQuickTextsChange={(quickTexts) => onChangeTerminal({ quickTexts })}
             onChange={onChangeKeybindings}
             onReset={onResetKeybindings}
             settings={keybindings}

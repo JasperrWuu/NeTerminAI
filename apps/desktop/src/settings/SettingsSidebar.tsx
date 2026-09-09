@@ -39,6 +39,12 @@ export function SettingsSidebar({ section, onSelect }: SettingsSidebarProps) {
         <KeyboardIcon />
         <span><strong>键盘快捷键</strong><small>操作与效率</small></span>
       </button>
+      <button aria-current={section === "commands" ? "page" : undefined}
+        className="settings-nav-item" data-active={section === "commands"}
+        onClick={() => onSelect("commands")} type="button">
+        <KeyboardIcon />
+        <span><strong>自定义命令</strong><small>Alt + 数字 · 快速执行</small></span>
+      </button>
     </nav>
   );
 }
