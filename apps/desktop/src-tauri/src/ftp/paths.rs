@@ -44,7 +44,8 @@ pub(super) fn resolve(
             }
             _ => {
                 let base = part.split('.').next().unwrap_or("").to_ascii_uppercase();
-                if part.ends_with([' ', '.'])
+                if part.to_ascii_lowercase().starts_with(".neterminai-upload-")
+                    || part.ends_with([' ', '.'])
                     || matches!(
                         base.as_str(),
                         "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
@@ -89,7 +90,9 @@ pub(super) fn listing(root: &Path, path: &Path, names_only: bool) -> io::Result<
             continue;
         }
         let name = path.file_name().unwrap_or_default().to_string_lossy();
-        if name.contains(['\r', '\n']) {
+        if name.to_ascii_lowercase().starts_with(".neterminai-upload-")
+            || name.contains(['\r', '\n'])
+        {
             continue;
         }
         if names_only {

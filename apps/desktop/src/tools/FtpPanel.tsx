@@ -7,6 +7,9 @@ import { ftpApi, type FtpLog, type FtpSnapshot } from "../ipc/ftp";
 import { readFtpDraft, persistFtpDraft, ftpPort } from "./ftpDraft";
 import { startSavedFtp } from "./ftpStartup";
 import "./ftp.css";
+import { ServerLogView } from "../ui/ServerLogView";
+import { ServerToolHeader } from "../ui/ServerToolHeader";
+import { FtpIcon } from "../workbench/icons";
 function stamp(value: number) { return `${new Date(value).toLocaleTimeString("zh-CN", { hour12: false })}.${String(value % 1000).padStart(3, "0")}`; }
 function size(value: number) { return value < 1024 ? `${value} B` : value < 1024 ** 2 ? `${(value / 1024).toFixed(1)} KiB` : `${(value / 1024 ** 2).toFixed(2)} MiB`; }
 export function FtpPanel() {
@@ -18,7 +21,6 @@ export function FtpPanel() {
   const [error, setError] = useState("");
   const latest = useRef(draft); latest.current = draft;
   const busy = useRef(false); const revision = useRef(0); const cursor = useRef(0);
-  const output = useRef<HTMLDivElement>(null); const follow = useRef(true);
   useEffect(() => {
     let active = true;
     void systemApi.listLocalIpv4().then((items) => { if (active) {
@@ -47,14 +49,13 @@ export function FtpPanel() {
     void startSavedFtp().then((failure) => { if (active) { if (failure) setError(failure); void poll(); } });
     return () => { active = false; clearTimeout(timer); };
   }, []);
-  useEffect(() => { if (output.current && follow.current) output.current.scrollTop = output.current.scrollHeight; }, [logs]);
   const action = async (operation: () => Promise<void>) => {
     if (busy.current) return; busy.current = true; revision.current++; setPending(true); setError("");
     try { await operation(); } catch (e) { setError(String(e)); } finally { busy.current = false; setPending(false); }
   };
   const port = ftpPort(draft.port); const disabled = pending || Boolean(snapshot?.running);
-  return <section className="ftp-tool" aria-label="FTP 服务器">
-    <header><h2>FTP 服务器</h2><p>共享本机文件 · Active FTP</p></header>
+  return <section className="ftp-tool server-tool" aria-label="FTP 服务器">
+    <ServerToolHeader icon={FtpIcon} title="FTP 服务器" subtitle="文件传输 · Active FTP" />
     <div className="ftp-fields">
       <label className="form-field"><span>服务器 IP</span><Select ariaLabel="FTP 监听网卡" value={`${draft.adapter}|${draft.ip}`} disabled={disabled}
         placeholder="选择本地网卡" emptyLabel="没有可用的本地 IPv4" options={adapters.map((item) => ({ value: `${item.name}|${item.address}`, label: `${item.name} · ${item.address}` }))}
@@ -74,9 +75,7 @@ export function FtpPanel() {
     {(error || snapshot?.error) && <p className="ftp-error" role="alert">{error || snapshot?.error}</p>}
     {snapshot?.transfers.map((transfer) => <div className="ftp-progress" key={transfer.client}><strong>{transfer.direction} · {transfer.file}</strong><small>{transfer.client} · {size(transfer.bytes)}{transfer.total !== null ? ` / ${size(transfer.total)}` : ""} · {size(transfer.bytesPerSecond)}/s · {transfer.seconds.toFixed(1)}s</small></div>)}
     <div className="ftp-actions"><h3>日志</h3><CopyButton label="FTP 日志" onError={setError} value={logs.map((entry) => `${stamp(entry.timestamp)}  ${entry.level}  ${entry.message}`).join("\n")} /></div>
-    <div className="ftp-output" tabIndex={0} aria-label="FTP 运行日志" ref={output} onScroll={(event) => { const el = event.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 16; }}>
-      {!logs.length && <p className="ftp-note">连接和传输记录会显示在这里。</p>}
-      {logs.map((entry) => <div key={entry.id} className="ftp-log"><span>{stamp(entry.timestamp)}  {entry.level}</span><pre>{entry.message}</pre></div>)}
-    </div><p className="ftp-note">保留最近 2,000 条记录；密码不会写入日志。</p>
+    <ServerLogView label="FTP 运行日志" empty="连接和传输记录会显示在这里。" entries={logs.map((e) => ({ ...e, metadata: e.level }))} />
+    <p className="ftp-note">保留最近 2,000 条记录；密码不会写入日志。文件请使用 binary 模式；SHA-256 可与源文件核对。</p>
   </section>;
 }

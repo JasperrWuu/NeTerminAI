@@ -59,7 +59,8 @@ for (const deviceType of ["FW", "AR"]) {
       const fixture = readFileSync(new URL(`./fixtures/${name}.txt`, import.meta.url), "utf8")
         .replaceAll("\r\n", "\n").trimEnd().replace("# NetOpsTools", "# NeTerminAI")
         .replace("# ===== 管理口路由 =====\n", "# ===== 管理口路由 =====\nreturn\nsystem-view\n") + "\n";
-      assert.equal(buildConfig({ ...input, deviceType, vpnEnabled }), fixture);
+      const expected = vpnEnabled ? fixture.replace(`info-center loghost ${input.localIpv4}\n`, `info-center loghost ${input.localIpv4} vpn-instance ${input.vpnName}\n`) : fixture;
+      assert.equal(buildConfig({ ...input, deviceType, vpnEnabled }), expected);
     });
   }
 }
@@ -69,6 +70,7 @@ test("custom parameters replace all address/interface/VPN references; route rema
   assert.match(result, /ip address 10\.20\.30\.99 255\.255\.255\.0/u);
   assert.match(result, /ip route-static vpn-instance ops_vpn 90\.0\.0\.0 8 10\.20\.30\.1/u);
   assert.match(result, /firewall log host 172\.16\.1\.8 514 vpn-instance ops_vpn/u);
+  assert.match(result, /info-center loghost 172\.16\.1\.8 vpn-instance ops_vpn\n/u);
   assert.match(result, /snmp-agent trap source GE0\/0\/6/u);
   assert.doesNotMatch(result, /90\.32\.106|192\.168\.1\.3|MEth|_management_vpn_/u);
 });

@@ -3,10 +3,11 @@ mod paths;
 mod tests;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
-    collections::{HashMap, VecDeque},
-    fs::{File, OpenOptions},
-    io::{self, Read, Write},
+    collections::{HashMap, HashSet, VecDeque},
+    fs::File,
+    io::{self, Read, Seek, Write},
     net::{IpAddr, Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream},
     path::PathBuf,
     sync::{
@@ -51,7 +52,17 @@ struct Shared {
     logs: Mutex<VecDeque<Log>>,
     sockets: Mutex<HashMap<u64, (TcpStream, Option<TcpStream>)>>,
     transfers: Mutex<HashMap<u64, Progress>>,
+    paths: Mutex<HashSet<String>>,
     error: Mutex<Option<String>>,
+}
+struct PathLease {
+    shared: Arc<Shared>,
+    key: String,
+}
+impl Drop for PathLease {
+    fn drop(&mut self) {
+        lock(&self.shared.paths).remove(&self.key);
+    }
 }
 fn lock<T>(value: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     value.lock().unwrap_or_else(|e| e.into_inner())
@@ -436,7 +447,22 @@ impl Session {
         let Ok((path, _)) = paths::resolve(&self.root, &self.cwd, arg, verb == "STOR") else {
             return self.reply(550, "Path unavailable or outside root");
         };
+        let _lease = if matches!(verb, "STOR" | "RETR") {
+            let key = path.to_string_lossy().into_owned();
+            #[cfg(windows)]
+            let key = key.to_lowercase();
+            if !lock(&self.shared.paths).insert(key.clone()) {
+                return self.reply(450, "File is already being transferred; retry later");
+            }
+            Some(PathLease {
+                shared: self.shared.clone(),
+                key,
+            })
+        } else {
+            None
+        };
         let mut file = None;
+        let mut staged = None;
         let mut listing = None;
         let prepared: io::Result<()> = (|| {
             match verb {
@@ -448,13 +474,21 @@ impl Session {
                     file = Some(f);
                 }
                 "STOR" => {
-                    file = Some(
-                        OpenOptions::new()
-                            .write(true)
-                            .create(true)
-                            .truncate(false)
-                            .open(&path)?,
-                    );
+                    if path.is_dir() || (path.exists() && path.metadata()?.permissions().readonly())
+                    {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "Target is not writable",
+                        ));
+                    }
+                    let temporary = tempfile::Builder::new()
+                        .prefix(".neterminai-upload-")
+                        .tempfile_in(
+                            path.parent()
+                                .ok_or_else(|| io::Error::other("Missing parent directory"))?,
+                        )?;
+                    file = Some(temporary.as_file().try_clone()?);
+                    staged = Some(temporary);
                 }
                 _ => {
                     listing = Some(paths::listing(&self.root, &path, verb == "NLST")?);
@@ -514,6 +548,7 @@ impl Session {
         let mut report = Instant::now();
         let mut activity = Instant::now();
         let mut source_bytes = 0u64;
+        let mut digest = Sha256::new();
         let result: io::Result<()> = (|| {
             if verb == "STOR" {
                 file.as_ref().unwrap().set_len(0)?;
@@ -545,6 +580,7 @@ impl Session {
                 }
                 if verb == "STOR" {
                     file.as_mut().unwrap().write_all(payload)?;
+                    digest.update(payload);
                     count += size as u64;
                 } else {
                     let mut offset = 0;
@@ -563,6 +599,7 @@ impl Session {
                                 ));
                             }
                             Ok(n) => {
+                                digest.update(&payload[offset..offset + n]);
                                 offset += n;
                                 count += n as u64;
                                 activity = Instant::now();
@@ -604,6 +641,24 @@ impl Session {
                 let f = file.as_mut().unwrap();
                 f.flush()?;
                 f.sync_all()?;
+                if f.metadata()?.len() != count {
+                    return Err(io::Error::other("Stored byte count mismatch"));
+                }
+                f.rewind()?;
+                let mut stored = Sha256::new();
+                loop {
+                    if self.shared.stop.load(Ordering::Acquire) {
+                        return Err(io::Error::other("Server stopped"));
+                    }
+                    let n = f.read(&mut block)?;
+                    if n == 0 {
+                        break;
+                    }
+                    stored.update(&block[..n]);
+                }
+                if stored.finalize() != digest.clone().finalize() {
+                    return Err(io::Error::other("Stored SHA-256 mismatch"));
+                }
             }
             data.flush()?;
             Ok(())
@@ -617,10 +672,26 @@ impl Session {
         lock(&self.shared.transfers).remove(&self.id);
         self.shared
             .log("DATA", format!("{} · Closed · {count} bytes", self.peer));
-        let result = result.and(shutdown);
+        let mut result = result.and(shutdown);
         let seconds = start.elapsed().as_secs_f64();
         if self.shared.stop.load(Ordering::Acquire) {
             return Ok(());
+        }
+        if result.is_ok()
+            && let Some(temporary) = staged.take()
+        {
+            result = paths::resolve(&self.root, &self.cwd, arg, true).and_then(|(target, _)| {
+                if target != path {
+                    return Err(io::Error::other("Target path changed"));
+                }
+                temporary.persist(&target).map(|_| ()).map_err(|e| e.error)
+            });
+        }
+        if result.is_ok() && matches!(verb, "STOR" | "RETR") {
+            self.shared.log(
+                "SHA256",
+                format!("{} · {arg} · {:x}", self.peer, digest.finalize()),
+            );
         }
         match result {
             Ok(()) => self.reply(

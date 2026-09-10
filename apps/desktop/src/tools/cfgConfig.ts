@@ -157,7 +157,7 @@ export function buildConfig(input: ConfigValues): string {
     "web-manager security server-certificate server_vpnf.crt",
   ]);
   if (features.netconf) systemSection("NETCONF", ["netconf", "protocol inbound ssh port 830"]);
-  if (features.infoCenter) systemSection("Info-Center", [`info-center loghost source ${managementInterface}`, `info-center loghost ${localIpv4}`]);
+  if (features.infoCenter) systemSection("Info-Center", [`info-center loghost source ${managementInterface}`, `info-center loghost ${localIpv4}${vpnEnabled ? ` vpn-instance ${vpnName}` : ""}`]);
   if (features.firewallLog) systemSection("Firewall Log", [
     `firewall log source ${managementIp} 1617`,
     `firewall log host ${localIpv4} 514${vpnEnabled ? ` vpn-instance ${vpnName}` : ""}`,

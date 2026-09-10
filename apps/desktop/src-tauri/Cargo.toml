@@ -18,6 +18,8 @@ md-5 = "0.10"
 hmac = "0.12"
 getrandom = "0.3"
 socket2 = "0.6"
+tempfile = "3"
+sha2 = "0.10"
 portable-pty = "0.9"
 regex = "1"
 serde = { version = "1", features = ["derive"] }

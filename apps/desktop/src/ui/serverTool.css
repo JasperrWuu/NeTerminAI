@@ -1,0 +1,28 @@
+.server-tool { container: server-tool / inline-size; width: 100%; max-width: 100%; grid-template-columns: minmax(0, 1fr); gap: 20px; box-sizing: border-box; }
+.server-tool > *, .server-tool .form-field, .server-tool .form-field > *, .server-tool .ftp-folder { min-width: 0; }
+.server-tool .server-heading { display: flex; align-items: center; gap: 12px; padding-block: 4px 8px; }
+.server-heading > div { min-width: 0; }
+.server-heading h2 { font-size: 17px; font-weight: 600; letter-spacing: -.025em; line-height: 1.35; }
+.server-tool h3 { font-size: 13px; font-weight: 600; line-height: 1.5; letter-spacing: -.01em; }
+.server-tool .form-field { display: grid; gap: 6px; font-size: 12px; }
+.server-tool .form-field > span:first-child { color: var(--text-secondary); }
+.server-heading p { margin-top: 4px; }
+.server-heading-icon { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--text-secondary); }
+.server-heading-icon svg { width: 21px; height: 21px; }
+.server-tool :is(.ftp-actions, .radius-actions, .syslog-actions, .syslog-log-heading) { flex-wrap: wrap; gap: 10px; }
+.server-tool :is(.ftp-actions, .radius-actions, .syslog-actions) > span { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.server-tool :is(.ftp-note, .radius-note, .syslog-note, .ftp-progress, .radius-policy, .ftp-error, .radius-error, .syslog-error) { overflow-wrap: anywhere; }
+.server-tool :is(.ftp-fields, .radius-fields, .syslog-fields) { gap: 12px; }
+.server-log-view { min-width: 0; width: 100%; box-sizing: border-box; height: clamp(260px, 42vh, 500px); overflow-y: auto; overflow-x: hidden; padding: 4px 12px; border-radius: var(--radius-sm); background: var(--bg-elevated); scrollbar-gutter: stable; }
+.server-log-line { min-width: 0; padding-block: 11px; font: 12px/1.65 "Cascadia Mono", Consolas, var(--font-family-mono); }
+.server-log-line + .server-log-line { border-top: 1px solid var(--border-subtle); }
+.server-log-meta { display: flex; flex-wrap: wrap; gap: 3px 10px; color: var(--text-tertiary); font-size: 11px; margin-bottom: 3px; }
+.server-log-meta span { min-width: 0; overflow-wrap: anywhere; }
+.server-log-meta time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.server-log-line pre { margin: 0; max-width: 100%; font: inherit; white-space: break-spaces; overflow-wrap: anywhere; tab-size: 4; }
+.server-log-empty { color: var(--text-secondary); font-size: 12px; line-height: 1.6; padding-block: 12px; overflow-wrap: anywhere; }
+@container server-tool (max-width: 350px) {
+  .server-tool :is(.ftp-fields, .radius-fields, .syslog-fields) { grid-template-columns: minmax(0, 1fr); }
+  .server-tool .ftp-wide { grid-column: auto; }
+  .server-tool .radius-policy > div { display: grid; gap: 3px; }
+}

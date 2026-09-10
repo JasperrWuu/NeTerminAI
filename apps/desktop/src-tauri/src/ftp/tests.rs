@@ -2,6 +2,32 @@ use super::*;
 use std::io::{BufRead, BufReader};
 
 #[test]
+fn concurrent_upload_cannot_mix_files_and_stop_preserves_original() {
+    let (manager, root, address) = setup();
+    std::fs::write(root.join("same.bin"), b"original complete file").unwrap();
+    let mut first = Client::new(&address);
+    first.login();
+    let mut second = Client::new(&address);
+    second.login();
+    let listener = first.endpoint(false);
+    first.send("STOR same.bin");
+    first.reply(150);
+    let (mut data, _) = listener.accept().unwrap();
+    data.write_all(b"partial replacement").unwrap();
+    let _listener = second.endpoint(true);
+    second.command("STOR same.bin", 450);
+    second.command("NOOP", 200);
+    manager.stop();
+    drop(data);
+    assert_eq!(
+        std::fs::read(root.join("same.bin")).unwrap(),
+        b"original complete file"
+    );
+    assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn file_bytes_survive_default_binary_and_overwrite() {
     let (manager, root, address) = setup();
     let mut client = Client::new(&address);

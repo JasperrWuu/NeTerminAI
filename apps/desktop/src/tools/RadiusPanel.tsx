@@ -5,6 +5,9 @@ import { systemApi } from "../ipc/system";
 import { radiusApi, type RadiusEntry, type RadiusSnapshot } from "../ipc/radius";
 import { readRadiusDraft, persistRadiusDraft, radiusInteger, radiusCodeOptions } from "./radiusDraft";
 import "./radius.css";
+import { ServerLogView } from "../ui/ServerLogView";
+import { ServerToolHeader } from "../ui/ServerToolHeader";
+import { RadiusIcon } from "../workbench/icons";
 
 const time = (timestamp: number) => `${new Date(timestamp).toLocaleTimeString("zh-CN", { hour12: false })}.${String(timestamp % 1000).padStart(3, "0")}`;
 export function RadiusPanel() {
@@ -15,7 +18,7 @@ export function RadiusPanel() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const busy = useRef(false); const revision = useRef(0); const cursor = useRef(0);
-  const follow = useRef(true); const output = useRef<HTMLDivElement>(null); const alive = useRef(true);
+  const alive = useRef(true);
   useEffect(() => {
     let active = true;
     void systemApi.listLocalIpv4().then((items) => { if (active) setAdapters(items); }).catch((e) => { if (active) setError(String(e)); });
@@ -36,7 +39,6 @@ export function RadiusPanel() {
     };
     void poll(); return () => { active = false; alive.current = false; clearTimeout(timer); };
   }, []);
-  useEffect(() => { if (output.current && follow.current) output.current.scrollTop = output.current.scrollHeight; }, [entries]);
   const action = async () => {
     if (busy.current) return;
     busy.current = true; revision.current++; setPending(true); setError("");
@@ -50,8 +52,8 @@ export function RadiusPanel() {
   const disabled = pending || Boolean(snapshot?.running);
   const options = [{ value: "0.0.0.0", label: "0.0.0.0 · 所有 IPv4" }, { value: "::", label: ":: · 所有 IPv6" },
     ...adapters.filter((item, i, all) => all.findIndex((a) => a.address === item.address) === i).map((item) => ({ value: item.address, label: `${item.name} · ${item.address}` }))];
-  return <section className="radius-tool" aria-label="RADIUS 服务器">
-    <header><h2>RADIUS 服务器</h2><p>设备认证联调 · UDP / PAP / CHAP</p></header>
+  return <section className="radius-tool server-tool" aria-label="RADIUS 服务器">
+    <ServerToolHeader icon={RadiusIcon} title="RADIUS 服务器" subtitle="认证联调 · PAP / CHAP" />
     <div className="radius-fields">
       <label className="form-field"><span>监听地址</span><Select ariaLabel="RADIUS 监听地址" value={draft.ip} options={options} disabled={disabled} onChange={(ip) => setDraft({ ...draft, ip })} placeholder="选择监听地址" /></label>
       <label className="form-field"><span>端口</span><input className="settings-text-input" inputMode="numeric" value={draft.port} disabled={disabled} aria-invalid={!port} onChange={(e) => setDraft({ ...draft, port: e.target.value })} />{!port && <small role="alert">1–65535</small>}</label>
@@ -72,9 +74,7 @@ export function RadiusPanel() {
     </div>
     {(error || snapshot?.error) && <p className="radius-error" role="alert">{error || snapshot?.error}</p>}
     <div className="radius-actions"><h3>认证日志</h3><CopyButton label="认证日志" value={entries.map((e) => `${time(e.timestamp)}  ${e.source}  ${e.message}`).join("\n")} onError={setError} /></div>
-    <div className="radius-output" ref={output} tabIndex={0} aria-label="RADIUS 认证日志" onScroll={(e) => { const el = e.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 16; }}>
-      {!entries.length && <p className="radius-note">认证结果将显示在这里，不记录密码和挑战码。</p>}
-      {entries.map((e) => <div key={e.id}><span>{time(e.timestamp)} · {e.source}</span><pre>{e.message}</pre></div>)}
-    </div><p className="radius-note">保留最近 1,000 条记录；切换工具不会停止服务。</p>
+    <ServerLogView label="RADIUS 认证日志" empty="认证结果将显示在这里，不记录密码和挑战码。" entries={entries.map((e) => ({ ...e, metadata: e.source }))} />
+    <p className="radius-note">保留最近 1,000 条记录；切换工具不会停止服务。</p>
   </section>;
 }

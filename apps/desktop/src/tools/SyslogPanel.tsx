@@ -5,6 +5,9 @@ import { systemApi } from "../ipc/system";
 import { syslogApi, type SyslogEntry, type SyslogSnapshot } from "../ipc/syslog";
 import { readSyslogDraft, persistSyslogDraft, syslogPort } from "./syslogDraft";
 import "./syslog.css";
+import { ServerLogView } from "../ui/ServerLogView";
+import { ServerToolHeader } from "../ui/ServerToolHeader";
+import { SyslogIcon } from "../workbench/icons";
 
 function time(value: number) {
   const date = new Date(value);
@@ -21,8 +24,6 @@ export function SyslogPanel() {
   const cursor = useRef(0);
   const revision = useRef(0);
   const busy = useRef(false);
-  const follow = useRef(true);
-  const scroll = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   const apply = (value: SyslogSnapshot, replace: boolean) => {
     cursor.current = value.cursor; setSnapshot(value);
@@ -65,7 +66,6 @@ export function SyslogPanel() {
     void poll();
     return () => { cancelled = true; alive.current = false; clearTimeout(timer); };
   }, []);
-  useEffect(() => { if (scroll.current && follow.current) scroll.current.scrollTop = scroll.current.scrollHeight; }, [logs]);
   const selected = adapters.find((item) => `${item.name}|${item.address}` === draft.adapter);
   const port = syslogPort(draft.port);
   const action = async (operation: () => Promise<SyslogSnapshot>) => {
@@ -75,8 +75,8 @@ export function SyslogPanel() {
     catch (reason) { if (alive.current) setError(String(reason)); }
     finally { busy.current = false; if (alive.current) setPending(false); }
   };
-  return <section className="syslog-tool" aria-label="SYSLOG 服务器">
-    <header><h2>SYSLOG 服务器</h2><p>接收网络设备日志 · UDP</p></header>
+  return <section className="syslog-tool server-tool" aria-label="SYSLOG 服务器">
+    <ServerToolHeader icon={SyslogIcon} title="SYSLOG 服务器" subtitle="设备日志 · UDP" />
     <div className="syslog-fields">
       <label className="form-field"><span>服务器</span>
         <Select ariaLabel="本地网卡 IPv4" value={draft.adapter} disabled={pending || snapshot?.running}
@@ -102,12 +102,7 @@ export function SyslogPanel() {
       <CopyButton label="日志" value={logs.map((entry) => `${time(entry.timestamp)}  ${entry.source}  ${entry.message}`).join("\n")} onError={setError} />
       <button className="secondary-button" disabled={pending || !logs.length} type="button" onClick={() => void action(syslogApi.clear)}>清空</button>
     </div></div>
-    <div className="syslog-output" ref={scroll} tabIndex={0} aria-label="收到的 SYSLOG 日志" onScroll={(event) => {
-      const el = event.currentTarget; follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 16;
-    }}>
-      {!logs.length && <p className="syslog-empty">{snapshot?.running ? "等待设备日志…" : "启动服务器后，设备日志会显示在这里。"}</p>}
-      {logs.map((entry) => <div className="syslog-entry" key={entry.id}><span className="syslog-meta">{time(entry.timestamp)}  {entry.source}</span><pre>{entry.message}</pre></div>)}
-    </div>
+    <ServerLogView label="收到的 SYSLOG 日志" empty={snapshot?.running ? "等待设备日志…" : "启动服务器后，设备日志会显示在这里。"} entries={logs.map((e) => ({ ...e, metadata: e.source }))} />
     <p className="syslog-note">仅保留最近 2,000 条 / 2 MiB 日志，较早内容会移出显示。{snapshot?.discarded ? ` 已移出 ${snapshot.discarded} 条。` : ""}</p>
   </section>;
 }

@@ -12,7 +12,3 @@
 .radius-actions .copy-result-button { opacity: 1; position: relative; }
 .radius-error, .radius-fields small { color: var(--danger); font-size: 12px; }
 .radius-fields [aria-invalid="true"] { border-color: var(--danger); }
-.radius-output { height: clamp(240px, 38vh, 460px); overflow: auto; background: var(--bg-elevated); border-radius: var(--radius-sm); padding: 12px; }
-.radius-output > div { padding-block: 6px; font: 12px/1.6 "Cascadia Mono", Consolas, var(--font-family-mono); }
-.radius-output span { color: var(--text-tertiary); white-space: pre; }
-.radius-output pre { margin: 0; font: inherit; white-space: pre; }

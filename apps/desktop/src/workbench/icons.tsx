@@ -36,15 +36,15 @@ export function SubnetIcon(props: IconProps) {
 }
 
 export function SyslogIcon(props: IconProps) {
-  return <IconFrame {...props}><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M12 3v11m-4-4 4 4 4-4M8 17h8" /></IconFrame>;
+  return <IconFrame {...props}><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M7 8h.01M10 8h7M7 12h.01M10 12h7M7 16h.01M10 16h4" /></IconFrame>;
 }
 
 export function FtpIcon(props: IconProps) {
-  return <IconFrame {...props}><path d="M7 16V3m-3 3 3-3 3 3M17 3v13m-3-3 3 3 3-3M3 18v3h18v-3" /></IconFrame>;
+  return <IconFrame {...props}><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M8 16V8m-2 2 2-2 2 2M16 8v8m-2-2 2 2 2-2" /></IconFrame>;
 }
 
 export function RadiusIcon(props: IconProps) {
-  return <IconFrame {...props}><path d="M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6l-8-3Z" /><path d="m8 12 3 3 5-6" /></IconFrame>;
+  return <IconFrame {...props}><rect x="3" y="4" width="18" height="16" rx="3" /><circle cx="9" cy="12" r="2.5" /><path d="M11.5 12H18m-2 0v3" /></IconFrame>;
 }
 
 export function DiagnosticTraceIcon(props: IconProps) {
