@@ -2,27 +2,52 @@ use super::*;
 use std::io::{BufRead, BufReader};
 
 #[test]
-fn ascii_conversion_preserves_split_crlf_and_binary_is_separate() {
-    let mut pending = false;
-    let mut wire = Vec::new();
-    for byte in b"one\ntwo\r\nthree\rfour\r" {
-        wire.extend(ascii_chunk(&[*byte], &mut pending, false, true));
-    }
-    wire.extend(ascii_chunk(&[], &mut pending, true, true));
-    assert_eq!(wire, b"one\r\ntwo\r\nthree\r\0four\r\0");
-    let mut decoded = Vec::new();
-    for byte in &wire {
-        decoded.extend(ascii_chunk(&[*byte], &mut pending, false, false));
-    }
-    decoded.extend(ascii_chunk(&[], &mut pending, true, false));
-    assert_eq!(
-        decoded,
-        if cfg!(windows) {
-            &b"one\r\ntwo\r\nthree\rfour\r"[..]
-        } else {
-            &b"one\ntwo\nthree\rfour\r"[..]
+fn file_bytes_survive_default_binary_and_overwrite() {
+    let (manager, root, address) = setup();
+    let mut client = Client::new(&address);
+    client.command("USER admin - 测试", 331);
+    client.command("PASS  pass word ", 230);
+    let mut bytes = vec![b'x'; 65535];
+    bytes.extend_from_slice(b"\r\n\r\0\n\r\r\n");
+    bytes.extend((0..=255).cycle().take(150000));
+    bytes.extend_from_slice("中文\n尾部\r".as_bytes());
+    for (round, payload) in [&bytes[..], &bytes[..17], &b""[..]].iter().enumerate() {
+        // First round deliberately sends no TYPE; later rounds overwrite a larger file.
+        if round == 1 {
+            client.command("TYPE I", 200);
         }
-    );
+        if round == 2 {
+            client.command("TYPE L 8", 200);
+        }
+        let listener = client.endpoint(round % 2 == 0);
+        client.send("STOR exact.bin");
+        client.reply(150);
+        let (mut data, _) = listener.accept().unwrap();
+        for chunk in payload.chunks(3) {
+            data.write_all(chunk).unwrap();
+        }
+        data.shutdown(Shutdown::Write).unwrap();
+        drop(data);
+        client.reply(226);
+        assert_eq!(std::fs::read(root.join("exact.bin")).unwrap(), *payload);
+        let listener = client.endpoint(round % 2 != 0);
+        client.send("RETR exact.bin");
+        client.reply(150);
+        let (mut data, _) = listener.accept().unwrap();
+        let mut received = Vec::new();
+        data.read_to_end(&mut received).unwrap();
+        client.reply(226);
+        assert_eq!(received, *payload);
+        client.command("NOOP", 200);
+    }
+    std::fs::write(root.join("exact.bin"), &bytes).unwrap();
+    client.command("TYPE A", 200);
+    client.command("STOR exact.bin", 504);
+    client.command("RETR exact.bin", 504);
+    assert_eq!(std::fs::read(root.join("exact.bin")).unwrap(), bytes);
+    client.command("NOOP", 200);
+    manager.stop();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

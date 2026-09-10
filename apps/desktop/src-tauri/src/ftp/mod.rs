@@ -189,7 +189,7 @@ impl FtpManager {
                                         endpoint: None,
                                         user_ok: false,
                                         authenticated: false,
-                                        binary: false,
+                                        binary: true,
                                     };
                                     if let Err(e) = session.run() {
                                         state.log("ERROR", format!("{peer} · {e}"));
@@ -420,6 +420,11 @@ impl Session {
         Ok(true)
     }
     fn transfer(&mut self, verb: &str, arg: &str) -> io::Result<()> {
+        // Device archives and firmware must never undergo text conversion.
+        // TYPE A remains usable for listings, but not for file payloads.
+        if !self.binary && matches!(verb, "RETR" | "STOR") {
+            return self.reply(504, "File transfers require binary mode; use TYPE I");
+        }
         let Some(endpoint) = self.endpoint.take() else {
             return self.reply(425, "Use PORT or EPRT first");
         };
@@ -508,7 +513,6 @@ impl Session {
         let mut count = 0u64;
         let mut report = Instant::now();
         let mut activity = Instant::now();
-        let mut pending_cr = false;
         let mut source_bytes = 0u64;
         let result: io::Result<()> = (|| {
             if verb == "STOR" {
@@ -535,13 +539,7 @@ impl Session {
                 };
                 let eof = size == 0;
                 source_bytes += size as u64;
-                let converted;
-                let payload = if !self.binary && matches!(verb, "STOR" | "RETR") {
-                    converted = ascii_chunk(&block[..size], &mut pending_cr, eof, verb == "RETR");
-                    &converted[..]
-                } else {
-                    &block[..size]
-                };
+                let payload = &block[..size];
                 if eof && payload.is_empty() {
                     break;
                 }
@@ -647,43 +645,6 @@ fn timeout(e: &io::Error) -> bool {
     )
 }
 
-fn ascii_chunk(bytes: &[u8], pending_cr: &mut bool, eof: bool, encode: bool) -> Vec<u8> {
-    let mut result = Vec::with_capacity(bytes.len() + 2);
-    for &byte in bytes {
-        if *pending_cr {
-            *pending_cr = false;
-            if byte == b'\n' {
-                if encode || cfg!(windows) {
-                    result.extend_from_slice(b"\r\n");
-                } else {
-                    result.push(b'\n');
-                }
-                continue;
-            }
-            result.push(b'\r');
-            if encode {
-                result.push(0);
-            } else if byte == 0 {
-                continue;
-            }
-        }
-        if byte == b'\r' {
-            *pending_cr = true;
-        } else if encode && byte == b'\n' {
-            result.extend_from_slice(b"\r\n");
-        } else {
-            result.push(byte);
-        }
-    }
-    if eof && *pending_cr {
-        result.push(b'\r');
-        if encode {
-            result.push(0);
-        }
-        *pending_cr = false;
-    }
-    result
-}
 fn active_endpoint(verb: &str, arg: &str, peer: IpAddr) -> Option<SocketAddr> {
     let endpoint = if verb == "PORT" {
         let parts: Vec<u8> = arg

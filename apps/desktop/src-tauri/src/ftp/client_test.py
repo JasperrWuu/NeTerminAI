@@ -28,10 +28,12 @@ with connect() as ftp, connect() as other:
         assert ftp.size(name) == len(data)
         assert ftp.voidcmd("NOOP").startswith("200")
     assert "transfer-0.bin" in ftp.nlst()
-    assert ftp.storlines("STOR text.txt", io.BytesIO(b"one\ntwo\n")).startswith("226")
-    text_lines = []
-    assert ftp.retrlines("RETR text.txt", text_lines.append).startswith("226")
-    assert text_lines == ["one", "two"]
+    try:
+        ftp.storlines("STOR text.txt", io.BytesIO(b"one\ntwo\n"))
+        raise AssertionError("ASCII file transfer was accepted")
+    except ftplib.error_perm as error:
+        assert str(error).startswith("504")
+    assert not (root / "text.txt").exists()
     lines = []
     ftp.retrlines("LIST", lines.append)
     assert any("transfer-0.bin" in line for line in lines)
@@ -45,6 +47,7 @@ with connect() as ftp, connect() as other:
         except ftplib.error_perm as error:
             assert str(error).startswith("502")
         assert ftp.voidcmd("NOOP").startswith("200")
+    ftp.voidcmd("TYPE I")
     upload = ftp.transfercmd("STOR aborted.bin")
     upload.sendall(b"partial")
     upload.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("hh" if os.name == "nt" else "ii", 1, 0))
