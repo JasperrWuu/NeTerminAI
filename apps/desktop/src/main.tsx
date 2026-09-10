@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { TruncatedTextTooltip } from "./ui/TruncatedTextTooltip";
+import { FtpStartupNotice } from "./tools/FtpStartupNotice";
 import "./styles/global.css";
 import "./styles/controls.css";
 import "./styles/settings.css";
@@ -19,6 +20,7 @@ if (!root) {
 createRoot(root).render(
   <StrictMode>
     <App />
+    <FtpStartupNotice />
     <TruncatedTextTooltip />
   </StrictMode>,
 );

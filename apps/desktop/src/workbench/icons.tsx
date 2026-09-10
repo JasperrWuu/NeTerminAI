@@ -39,6 +39,10 @@ export function SyslogIcon(props: IconProps) {
   return <IconFrame {...props}><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M12 3v11m-4-4 4 4 4-4M8 17h8" /></IconFrame>;
 }
 
+export function FtpIcon(props: IconProps) {
+  return <IconFrame {...props}><path d="M7 16V3m-3 3 3-3 3 3M17 3v13m-3-3 3 3 3-3M3 18v3h18v-3" /></IconFrame>;
+}
+
 export function DiagnosticTraceIcon(props: IconProps) {
   return <IconFrame {...props}>
     <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3M8 7h8M8 17h8M6 12h3l2-3 2 6 2-3h3" />

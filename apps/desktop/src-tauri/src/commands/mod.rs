@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod automation;
+pub mod folder;
 pub mod fonts;
 pub mod log_export;
 pub mod rdp;

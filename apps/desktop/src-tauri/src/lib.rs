@@ -4,6 +4,7 @@ pub(crate) mod ai_process;
 pub(crate) mod automation;
 mod commands;
 pub(crate) mod connection_state;
+mod ftp;
 pub(crate) mod io_pump;
 #[allow(dead_code)]
 pub(crate) mod lifecycle;
@@ -26,6 +27,7 @@ pub fn run() {
         .manage(output_stream::TerminalOutputHub::default())
         .manage(automation::AutomationManager::default())
         .manage(syslog::SyslogManager::default())
+        .manage(ftp::FtpManager::default())
         .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![
             commands::ai::run_ai_process,
@@ -62,6 +64,10 @@ pub fn run() {
             syslog::stop_syslog,
             syslog::read_syslog,
             syslog::clear_syslog,
+            ftp::start_ftp,
+            ftp::stop_ftp,
+            ftp::read_ftp,
+            commands::folder::choose_ftp_root,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build NeTerminAI")

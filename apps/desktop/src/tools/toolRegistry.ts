@@ -1,7 +1,8 @@
 import type { ComponentType } from "react";
 import type { TerminalCapability } from "../capabilities/terminal";
-import { AutomationIcon, ConfigurationIcon, DiagnosticTraceIcon, SubnetIcon, SyslogIcon } from "../workbench/icons";
+import { AutomationIcon, ConfigurationIcon, DiagnosticTraceIcon, SubnetIcon, SyslogIcon, FtpIcon } from "../workbench/icons";
 import { SyslogPanel } from "./SyslogPanel";
+import { FtpPanel } from "./FtpPanel";
 import { IpCalculatorPanel } from "./IpCalculatorPanel";
 import { DiagnosticPanel } from "./DiagnosticPanel";
 import { AutomationPanel } from "./AutomationPanel";
@@ -38,4 +39,5 @@ export const toolRegistry: readonly ToolDefinition[] = [
   { id: "diagnostic", name: "诊断信息检查", description: "按命令检索、阅读与复制华为诊断 TXT", icon: DiagnosticTraceIcon, component: DiagnosticPanel },
   { id: "ip-calculator", name: "IP 地址计算器", description: "IPv4 / IPv6 子网与整数转换", icon: SubnetIcon, component: IpCalculatorPanel },
   { id: "syslog", name: "SYSLOG 服务器", description: "接收本地网卡上的设备 UDP 日志", icon: SyslogIcon, component: SyslogPanel },
+  { id: "ftp", name: "FTP 服务器", description: "主动模式文件上传与下载", icon: FtpIcon, component: FtpPanel },
 ];

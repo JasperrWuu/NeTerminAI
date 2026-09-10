@@ -1,0 +1,22 @@
+.ftp-tool { display: grid; gap: 16px; padding: 8px 2px 24px; min-width: 0; }
+.ftp-tool h2, .ftp-tool h3, .ftp-tool p { margin: 0; }
+.ftp-tool header { display: grid; gap: 6px; }
+.ftp-tool header p, .ftp-note, .ftp-actions small { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.ftp-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .6fr); gap: 14px; }
+.ftp-fields input { width: 100%; min-width: 0; }
+.ftp-wide { grid-column: 1 / -1; }
+.ftp-folder { display: flex; gap: 8px; }
+.ftp-folder button { flex-shrink: 0; }
+.ftp-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ftp-actions small { display: block; margin-top: 4px; }
+.ftp-actions .copy-result-button { position: relative; opacity: 1; }
+.ftp-error { color: var(--danger); font-size: 12px; }
+.ftp-fields [aria-invalid="true"] { border-color: var(--danger); }
+.ftp-output { height: clamp(250px, 40vh, 480px); overflow: auto; padding: 12px; border-radius: var(--radius-sm); background: var(--bg-elevated); }
+.ftp-log { padding-block: 5px; font: 12px/1.6 "Cascadia Mono", Consolas, var(--font-family-mono); }
+.ftp-log > span { color: var(--text-tertiary); }
+.ftp-log pre { margin: 0; font: inherit; white-space: pre; }
+.ftp-progress { display: grid; gap: 4px; font: 12px/1.5 var(--font-family-mono); }
+.ftp-progress small { color: var(--text-secondary); }
+.ftp-startup-feedback { position: fixed; bottom: 20px; right: 20px; max-width: min(420px, 90vw); padding: 16px; background: var(--bg-elevated); color: var(--text-primary); border-radius: var(--radius-md); box-shadow: var(--shadow-panel); z-index: 250; }
+.ftp-startup-feedback p { overflow-wrap: anywhere; font-size: 13px; }
