@@ -54,6 +54,7 @@ impl ShutdownCoordinator {
                 let deadline = Instant::now() + GLOBAL_SHUTDOWN_TIMEOUT;
                 app.state::<crate::syslog::SyslogManager>().stop();
                 app.state::<crate::ftp::FtpManager>().stop();
+                app.state::<crate::radius::RadiusManager>().stop();
                 let ai_processes = app.state::<AiProcessManager>();
                 let automation = app.state::<AutomationManager>();
                 ai_processes.cancel_all();

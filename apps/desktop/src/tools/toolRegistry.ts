@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { TerminalCapability } from "../capabilities/terminal";
-import { AutomationIcon, ConfigurationIcon, DiagnosticTraceIcon, SubnetIcon, SyslogIcon, FtpIcon } from "../workbench/icons";
+import { AutomationIcon, ConfigurationIcon, DiagnosticTraceIcon, SubnetIcon, SyslogIcon, FtpIcon, RadiusIcon } from "../workbench/icons";
+import { RadiusPanel } from "./RadiusPanel";
 import { SyslogPanel } from "./SyslogPanel";
 import { FtpPanel } from "./FtpPanel";
 import { IpCalculatorPanel } from "./IpCalculatorPanel";
@@ -40,4 +41,5 @@ export const toolRegistry: readonly ToolDefinition[] = [
   { id: "ip-calculator", name: "IP 地址计算器", description: "IPv4 / IPv6 子网与整数转换", icon: SubnetIcon, component: IpCalculatorPanel },
   { id: "syslog", name: "SYSLOG 服务器", description: "接收本地网卡上的设备 UDP 日志", icon: SyslogIcon, component: SyslogPanel },
   { id: "ftp", name: "FTP 服务器", description: "主动模式文件上传与下载", icon: FtpIcon, component: FtpPanel },
+  { id: "radius", name: "RADIUS 服务器", description: "PAP / CHAP 与挑战认证联调", icon: RadiusIcon, component: RadiusPanel },
 ];

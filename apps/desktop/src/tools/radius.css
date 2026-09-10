@@ -1,0 +1,18 @@
+.radius-tool { display: grid; gap: 18px; min-width: 0; padding: 8px 2px 24px; }
+.radius-tool h2, .radius-tool h3, .radius-tool p { margin: 0; }
+.radius-tool header { display: grid; gap: 6px; }
+.radius-tool header p, .radius-note { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.radius-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(60px, 85px); gap: 12px; }
+.radius-fields input { width: 100%; min-width: 0; font-family: var(--font-family-mono); }
+.radius-policy { display: grid; gap: 14px; font-size: 12px; line-height: 1.7; }
+.radius-policy > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
+.radius-policy > div > span:first-child { color: var(--text-secondary); }
+.radius-policy code { font-family: "Cascadia Mono", Consolas, var(--font-family-mono); }
+.radius-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.radius-actions .copy-result-button { opacity: 1; position: relative; }
+.radius-error, .radius-fields small { color: var(--danger); font-size: 12px; }
+.radius-fields [aria-invalid="true"] { border-color: var(--danger); }
+.radius-output { height: clamp(240px, 38vh, 460px); overflow: auto; background: var(--bg-elevated); border-radius: var(--radius-sm); padding: 12px; }
+.radius-output > div { padding-block: 6px; font: 12px/1.6 "Cascadia Mono", Consolas, var(--font-family-mono); }
+.radius-output span { color: var(--text-tertiary); white-space: pre; }
+.radius-output pre { margin: 0; font: inherit; white-space: pre; }

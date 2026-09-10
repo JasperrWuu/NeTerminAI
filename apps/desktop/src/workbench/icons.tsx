@@ -43,6 +43,10 @@ export function FtpIcon(props: IconProps) {
   return <IconFrame {...props}><path d="M7 16V3m-3 3 3-3 3 3M17 3v13m-3-3 3 3 3-3M3 18v3h18v-3" /></IconFrame>;
 }
 
+export function RadiusIcon(props: IconProps) {
+  return <IconFrame {...props}><path d="M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6l-8-3Z" /><path d="m8 12 3 3 5-6" /></IconFrame>;
+}
+
 export function DiagnosticTraceIcon(props: IconProps) {
   return <IconFrame {...props}>
     <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3M8 7h8M8 17h8M6 12h3l2-3 2 6 2-3h3" />

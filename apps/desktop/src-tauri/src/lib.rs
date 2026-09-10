@@ -9,6 +9,7 @@ pub(crate) mod io_pump;
 #[allow(dead_code)]
 pub(crate) mod lifecycle;
 pub(crate) mod output_stream;
+mod radius;
 mod rdp;
 mod serial;
 mod shutdown;
@@ -28,6 +29,7 @@ pub fn run() {
         .manage(automation::AutomationManager::default())
         .manage(syslog::SyslogManager::default())
         .manage(ftp::FtpManager::default())
+        .manage(radius::RadiusManager::default())
         .manage(shutdown::ShutdownCoordinator::default())
         .invoke_handler(tauri::generate_handler![
             commands::ai::run_ai_process,
@@ -67,6 +69,9 @@ pub fn run() {
             ftp::start_ftp,
             ftp::stop_ftp,
             ftp::read_ftp,
+            radius::start_radius,
+            radius::stop_radius,
+            radius::read_radius,
             commands::folder::choose_ftp_root,
         ])
         .build(tauri::generate_context!())
